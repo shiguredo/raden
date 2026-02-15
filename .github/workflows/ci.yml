@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    paths-ignore:
+      - "**.md"
+  schedule:
+    # JST 11:00 (UTC 02:00), 月-金
+    - cron: "0 2 * * 1-5"
+
+jobs:
+  ci:
+    name: CI
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-24.04
+          - os: ubuntu-24.04-arm
+          - os: ubuntu-22.04
+          - os: ubuntu-22.04-arm
+          - os: macos-26
+          - os: macos-15
+          - os: windows-2025
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v6
+
+      - run: rustup update stable
+      - uses: shiguredo/github-actions/.github/actions/rust-cache@main
+        with:
+          os: ${{ matrix.os }}
+          toolchain: stable
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        # cmake: SDL3 ビルドに必要
+        # libclang-dev: bindgen による FFI バインディング生成に必要
+        # libasound2-dev: SDL3 の ALSA 音声出力に必要
+        # libxi-dev: SDL3 の X11 XINPUT (入力デバイス処理) に必要
+        # libxrandr-dev: SDL3 の X11 XRANDR (画面解像度変更) に必要
+        # libxfixes-dev: SDL3 の X11 XFIXES (カーソル制御等) に必要
+        run: >
+          sudo apt-get update && sudo apt-get install -y
+          cmake libclang-dev
+          libasound2-dev
+          libxi-dev libxrandr-dev libxfixes-dev
+
+      - run: cargo fmt --all --check
+      - run: cargo check --workspace
+      - run: cargo test --workspace
+      - run: cargo clippy --workspace -- -D warnings
+
+  slack_notify_failed:
+    needs: [ci]
+    if: failure()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Slack Notification
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_CHANNEL: rust-oss
+          SLACK_COLOR: danger
+          SLACK_ICON_EMOJI: ":japanese_ogre:"
+          SLACK_TITLE: "FAILED"
+          SLACK_MESSAGE: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|${{github.event.head_commit.message || 'Scheduled run'}}>
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}

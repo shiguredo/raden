@@ -1,0 +1,179 @@
+/// Blend2D 準拠フォント機能。
+///
+/// TrueType アウトライン (glyf/loca) の最小限サポートを提供する。
+/// グリフのアウトラインは既存の `fill_path` パイプラインで描画する。
+pub(crate) mod glyph;
+pub(crate) mod tables;
+
+use std::sync::Arc;
+
+use crate::api::path::Path;
+use crate::font::tables::ParsedTables;
+
+/// フォントエラー。
+#[derive(Debug)]
+pub enum FontError {
+    Io(std::io::Error),
+    InvalidData(&'static str),
+}
+
+impl std::fmt::Display for FontError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FontError::Io(e) => write!(f, "I/O error: {e}"),
+            FontError::InvalidData(msg) => write!(f, "invalid font data: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for FontError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            FontError::Io(e) => Some(e),
+            FontError::InvalidData(_) => None,
+        }
+    }
+}
+
+impl From<std::io::Error> for FontError {
+    fn from(e: std::io::Error) -> Self {
+        FontError::Io(e)
+    }
+}
+
+/// フォントファイルのバイトデータ。
+pub struct FontData {
+    data: Vec<u8>,
+}
+
+impl FontData {
+    /// ファイルからフォントデータを読み込む。
+    pub fn from_file(path: &str) -> Result<Self, FontError> {
+        let data = std::fs::read(path)?;
+        Ok(Self { data })
+    }
+
+    /// バイト列からフォントデータを作成する。
+    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+        Self { data: bytes }
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+}
+
+/// パース済みフォントフェイス。フォントデータから解析された情報を保持する。
+pub struct FontFace {
+    data: Arc<Vec<u8>>,
+    tables: ParsedTables,
+}
+
+impl FontFace {
+    /// FontData からフォントフェイスを作成する。
+    ///
+    /// `index` は TTC 内のフォントインデックス。単体フォントの場合は 0。
+    pub fn from_data(font_data: &FontData, index: u32) -> Result<Self, FontError> {
+        let data = Arc::new(font_data.data.clone());
+        let tables = tables::parse_all(&data, index)?;
+        Ok(Self { data, tables })
+    }
+
+    pub fn units_per_em(&self) -> u16 {
+        self.tables.units_per_em
+    }
+
+    pub fn ascent(&self) -> i16 {
+        self.tables.ascent
+    }
+
+    pub fn descent(&self) -> i16 {
+        self.tables.descent
+    }
+
+    pub fn line_gap(&self) -> i16 {
+        self.tables.line_gap
+    }
+}
+
+/// サイズ指定済みフォント。描画に使用する。
+pub struct Font {
+    face: Arc<FontFaceInner>,
+    size: f64,
+    scale: f64,
+}
+
+/// FontFace の内部共有データ。
+struct FontFaceInner {
+    data: Arc<Vec<u8>>,
+    tables: ParsedTables,
+}
+
+impl Font {
+    /// FontFace とサイズからフォントを作成する。
+    pub fn from_face(face: &FontFace, size: f64) -> Self {
+        let scale = size / face.tables.units_per_em as f64;
+        let inner = Arc::new(FontFaceInner {
+            data: Arc::clone(&face.data),
+            tables: face.tables.clone(),
+        });
+        Self {
+            face: inner,
+            size,
+            scale,
+        }
+    }
+
+    pub fn size(&self) -> f64 {
+        self.size
+    }
+
+    pub fn scale(&self) -> f64 {
+        self.scale
+    }
+
+    /// 文字 (Unicode コードポイント) をグリフ ID にマッピングする。
+    pub fn map_char_to_glyph(&self, ch: char) -> u16 {
+        self.face.tables.cmap.map(ch as u32)
+    }
+
+    /// グリフの水平アドバンス幅 (ピクセル単位) を返す。
+    pub fn glyph_advance(&self, glyph_id: u16) -> f64 {
+        let gid = glyph_id as usize;
+        let aw = if gid < self.face.tables.hmtx.advance_widths.len() {
+            self.face.tables.hmtx.advance_widths[gid]
+        } else {
+            0
+        };
+        aw as f64 * self.scale
+    }
+
+    /// グリフのアウトラインを Path に追加する。
+    pub fn append_glyph_outline(
+        &self,
+        glyph_id: u16,
+        offset_x: f64,
+        offset_y: f64,
+        path: &mut Path,
+    ) -> Result<(), FontError> {
+        glyph::append_glyph_outline(
+            glyph_id,
+            offset_x,
+            offset_y,
+            self.scale,
+            &self.face.tables,
+            &self.face.data,
+            path,
+        )
+    }
+
+    /// アセント (ピクセル単位)。
+    pub fn ascent(&self) -> f64 {
+        self.face.tables.ascent as f64 * self.scale
+    }
+
+    /// ディセント (ピクセル単位、負値)。
+    pub fn descent(&self) -> f64 {
+        self.face.tables.descent as f64 * self.scale
+    }
+}
