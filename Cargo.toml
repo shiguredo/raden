@@ -19,6 +19,12 @@ cranelift-native = "=0.128.3"
 
 [dev-dependencies]
 raw_player = "2026.1.0-canary.0"
+criterion = { version = "0.8", features = ["html_reports"] }
+rand = { version = "0.10", features = ["chacha"] }
+
+[[bench]]
+name = "fill_rect"
+harness = false
 
 [workspace]
 members = ["pbt"]
