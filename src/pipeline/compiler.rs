@@ -1404,7 +1404,9 @@ fn build_src_over(mut bcx: FunctionBuilder, ptr_type: Type) {
     let next_dst = bcx.ins().iadd(current_dst, thirty_two);
     let one = bcx.ins().iconst(ptr_type, 1);
     let next_i = bcx.ins().iadd(unroll_i, one);
-    let cont = bcx.ins().icmp(IntCC::UnsignedLessThan, next_i, unroll_count);
+    let cont = bcx
+        .ins()
+        .icmp(IntCC::UnsignedLessThan, next_i, unroll_count);
     bcx.ins().brif(
         cont,
         unroll_loop,
@@ -1446,16 +1448,20 @@ fn build_src_over(mut bcx: FunctionBuilder, ptr_type: Type) {
 
     let sixteen = bcx.ins().iconst(ptr_type, 16);
     let next_dst = bcx.ins().iadd(current_dst, sixteen);
-    bcx.ins()
-        .jump(scalar_check, &block_args(&[next_dst]));
+    bcx.ins().jump(scalar_check, &block_args(&[next_dst]));
 
     // === scalar_check ブロック ===
     bcx.append_block_param(scalar_check, ptr_type);
     bcx.switch_to_block(scalar_check);
     let current_dst = bcx.block_params(scalar_check)[0];
     let has_remainder = bcx.ins().icmp(IntCC::NotEqual, remainder, zero);
-    bcx.ins()
-        .brif(has_remainder, scalar_loop, &block_args(&[current_dst, zero]), exit, &[]);
+    bcx.ins().brif(
+        has_remainder,
+        scalar_loop,
+        &block_args(&[current_dst, zero]),
+        exit,
+        &[],
+    );
 
     // === scalar_loop ブロック (AG/RB スカラ版) ===
     bcx.append_block_param(scalar_loop, ptr_type);
@@ -1491,7 +1497,13 @@ fn build_src_over(mut bcx: FunctionBuilder, ptr_type: Type) {
     let one = bcx.ins().iconst(ptr_type, 1);
     let next_si = bcx.ins().iadd(scalar_i, one);
     let cont = bcx.ins().icmp(IntCC::UnsignedLessThan, next_si, remainder);
-    bcx.ins().brif(cont, scalar_loop, &block_args(&[next_dst, next_si]), exit, &[]);
+    bcx.ins().brif(
+        cont,
+        scalar_loop,
+        &block_args(&[next_dst, next_si]),
+        exit,
+        &[],
+    );
 
     // === exit ブロック ===
     bcx.switch_to_block(exit);

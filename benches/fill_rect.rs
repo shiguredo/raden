@@ -3,7 +3,7 @@ use rand::RngExt;
 use rand::SeedableRng;
 use rand::rngs::ChaCha8Rng;
 
-use raden::{CompOp, Context, Image, PixelFormat, PipelineRuntime, Rect, Rgba32};
+use raden::{CompOp, Context, Image, PipelineRuntime, PixelFormat, Rect, Rgba32};
 
 const CANVAS_WIDTH: u32 = 512;
 const CANVAS_HEIGHT: u32 = 600;
@@ -61,20 +61,17 @@ fn bench_fill_rect(c: &mut Criterion) {
         let rects = gen_rect_data(size);
         let size_f = size as f64;
 
-        group.bench_function(
-            BenchmarkId::new("SrcOver", format!("{size}x{size}")),
-            |b| {
-                b.iter(|| {
-                    let mut ctx = Context::new(&mut image, &mut runtime);
-                    ctx.set_comp_op(CompOp::SrcOver);
-                    for rect_data in &rects {
-                        ctx.set_fill_style(rect_data.color);
-                        ctx.fill_rect(&Rect::new(rect_data.x, rect_data.y, size_f, size_f));
-                    }
-                    ctx.end();
-                });
-            },
-        );
+        group.bench_function(BenchmarkId::new("SrcOver", format!("{size}x{size}")), |b| {
+            b.iter(|| {
+                let mut ctx = Context::new(&mut image, &mut runtime);
+                ctx.set_comp_op(CompOp::SrcOver);
+                for rect_data in &rects {
+                    ctx.set_fill_style(rect_data.color);
+                    ctx.fill_rect(&Rect::new(rect_data.x, rect_data.y, size_f, size_f));
+                }
+                ctx.end();
+            });
+        });
     }
 
     group.finish();
