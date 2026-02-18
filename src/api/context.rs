@@ -245,25 +245,53 @@ impl<'a> Context<'a> {
             return;
         }
 
+        let prgb32 = self.fill_color_prgb32;
+        let alpha = prgb32 >> 24;
+
+        // alpha ファストパス: SrcOver で完全透明なら描画不要
+        if self.comp_op == CompOp::SrcOver && alpha == 0 {
+            return;
+        }
+
         let Some(boxi) = self.clip_rect(rect) else {
             return;
         };
 
+        // alpha ファストパス: SrcOver で完全不透明なら SrcCopy と等価
+        let effective_op = if self.comp_op == CompOp::SrcOver && alpha == 255 {
+            CompOp::SrcCopy
+        } else {
+            self.comp_op
+        };
+
+        let stride = self.image.stride();
+        let base = self.image.data_ptr_mut();
+        let width = (boxi.x1 - boxi.x0) as usize;
+        let height = (boxi.y1 - boxi.y0) as usize;
+        let offset = boxi.y0 as usize * stride + boxi.x0 as usize * 4;
+        let dst = unsafe { base.add(offset) };
+
+        // Box パイプライン: y ループを JIT 内に含み間接呼び出しを排除
+        if let Some(box_fn) =
+            self.runtime
+                .get_or_compile_box(self.image.format(), effective_op, FetchType::Solid)
+        {
+            unsafe {
+                box_fn(dst, prgb32, width, height, stride);
+            }
+            return;
+        }
+
+        // フォールバック: scanline ごとに呼び出し
         let pipeline_fn = self.runtime.get_or_compile(
             self.image.format(),
-            self.comp_op,
+            effective_op,
             FillType::BoxA,
             FetchType::Solid,
         );
 
-        let stride = self.image.stride();
-        let base = self.image.data_ptr_mut();
-        let prgb32 = self.fill_color_prgb32;
-        let width = (boxi.x1 - boxi.x0) as usize;
-
-        for y in boxi.y0..boxi.y1 {
-            let offset = y as usize * stride + boxi.x0 as usize * 4;
-            let dst_row = unsafe { base.add(offset) };
+        for y in 0..height {
+            let dst_row = unsafe { dst.add(y * stride) };
             unsafe {
                 pipeline_fn(dst_row, prgb32, width);
             }
@@ -271,6 +299,11 @@ impl<'a> Context<'a> {
     }
 
     pub fn fill_path(&mut self, path: &Path) {
+        // alpha ファストパス: SrcOver で完全透明なら描画不要
+        if self.comp_op == CompOp::SrcOver && (self.fill_color_prgb32 >> 24) == 0 {
+            return;
+        }
+
         // バウンディングボックスを計算
         let points = path.points();
         if points.is_empty() {

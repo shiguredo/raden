@@ -1,6 +1,8 @@
 use crate::api::style::{CompOp, FillRule};
 
-use super::cache::{PipelineCache, PipelineCovFn, PipelineFn, SweepFn, TransformEdgesFn};
+use super::cache::{
+    PipelineBoxFn, PipelineCache, PipelineCovFn, PipelineFn, SweepFn, TransformEdgesFn,
+};
 use super::compiler::PipelineCompiler;
 use super::key::{FetchType, FillType, PipelineKey};
 use crate::pixel::PixelFormat;
@@ -60,6 +62,30 @@ impl PipelineRuntime {
                 let f = self.compiler.compile_cov(&key, comp_op);
                 self.cache.insert_cov(key, f);
                 f
+            }
+        }
+    }
+
+    /// 矩形塗りつぶし専用パイプライン関数を取得またはコンパイルする。
+    ///
+    /// y ループを JIT 内に含む専用シグネチャの関数を返す。
+    /// SrcOver / SrcCopy のみサポートし、それ以外は None を返す。
+    pub fn get_or_compile_box(
+        &mut self,
+        dst_format: PixelFormat,
+        comp_op: CompOp,
+        fetch_type: FetchType,
+    ) -> Option<PipelineBoxFn> {
+        if !matches!(comp_op, CompOp::SrcOver | CompOp::SrcCopy) {
+            return None;
+        }
+        let key = PipelineKey::new(dst_format, comp_op, FillType::BoxA, fetch_type);
+        match self.cache.get_box(&key) {
+            Some(f) => Some(f),
+            None => {
+                let f = self.compiler.compile_box(&key, comp_op);
+                self.cache.insert_box(key, f);
+                Some(f)
             }
         }
     }

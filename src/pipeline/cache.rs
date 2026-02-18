@@ -37,6 +37,19 @@ pub type TransformEdgesFn = unsafe extern "C" fn(
     m21: f64,
 );
 
+/// 矩形塗りつぶし専用パイプライン関数のシグネチャ。
+///
+/// y ループを JIT 内に含み、scanline ごとの関数呼び出しオーバーヘッドを排除する。
+/// ループ不変値 (splat 済みベクタ等) は関数内で 1 回だけ計算される。
+///
+/// - `dst`: 矩形左上ピクセルのポインタ
+/// - `src_solid`: premultiplied ARGB32 カラー
+/// - `width`: 矩形の幅 (ピクセル数)
+/// - `height`: 矩形の高さ (スキャンライン数)
+/// - `stride`: スキャンライン間のバイトストライド
+pub type PipelineBoxFn =
+    unsafe extern "C" fn(dst: *mut u8, src_solid: u32, width: usize, height: usize, stride: usize);
+
 /// JIT コンパイル済み sweep 関数のシグネチャ。
 ///
 /// area-cover パック値の prefix sum を計算し、算術右シフト 9 + abs + clamp(255) で
@@ -52,6 +65,7 @@ pub type SweepFn = unsafe extern "C" fn(cells: *const i32, cov_buf: *mut u8, len
 pub struct PipelineCache {
     map: HashMap<PipelineKey, PipelineFn>,
     cov_map: HashMap<PipelineKey, PipelineCovFn>,
+    box_map: HashMap<PipelineKey, PipelineBoxFn>,
 }
 
 impl PipelineCache {
@@ -73,5 +87,13 @@ impl PipelineCache {
 
     pub fn insert_cov(&mut self, key: PipelineKey, func: PipelineCovFn) {
         self.cov_map.insert(key, func);
+    }
+
+    pub fn get_box(&self, key: &PipelineKey) -> Option<PipelineBoxFn> {
+        self.box_map.get(key).copied()
+    }
+
+    pub fn insert_box(&mut self, key: PipelineKey, func: PipelineBoxFn) {
+        self.box_map.insert(key, func);
     }
 }
