@@ -9,6 +9,7 @@ description = "2D Vector Graphics Library"
 homepage = "https://github.com/shiguredo/raden"
 repository = "https://github.com/shiguredo/raden"
 readme = "README.md"
+autobenches = false
 
 [dependencies]
 cranelift-codegen = "=0.128.3"
@@ -24,6 +25,34 @@ rand = { version = "0.10", features = ["chacha"] }
 
 [[bench]]
 name = "fill_rect"
+harness = false
+
+[[bench]]
+name = "fill_rect_smooth"
+harness = false
+
+[[bench]]
+name = "fill_rect_rotated"
+harness = false
+
+[[bench]]
+name = "fill_polygon"
+harness = false
+
+[[bench]]
+name = "fill_shape"
+harness = false
+
+[[bench]]
+name = "stroke_rect"
+harness = false
+
+[[bench]]
+name = "stroke_polygon"
+harness = false
+
+[[bench]]
+name = "stroke_shape"
 harness = false
 
 [workspace]
