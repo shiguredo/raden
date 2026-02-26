@@ -2,7 +2,7 @@
 name = "raden"
 version = "2026.1.0-canary.2"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.91"
 authors = ["Shiguredo Inc."]
 license = "Apache-2.0"
 description = "2D Vector Graphics Library"
@@ -12,11 +12,11 @@ readme = "README.md"
 autobenches = false
 
 [dependencies]
-cranelift-codegen = "=0.128.3"
-cranelift-frontend = "=0.128.3"
-cranelift-jit = "=0.128.3"
-cranelift-module = "=0.128.3"
-cranelift-native = "=0.128.3"
+cranelift-codegen = "=0.129.1"
+cranelift-frontend = "=0.129.1"
+cranelift-jit = "=0.129.1"
+cranelift-module = "=0.129.1"
+cranelift-native = "=0.129.1"
 
 [dev-dependencies]
 raw_player = "2026.1.0-canary.0"
