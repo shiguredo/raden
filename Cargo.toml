@@ -12,11 +12,11 @@ readme = "README.md"
 autobenches = false
 
 [dependencies]
-cranelift-codegen = "=0.129.1"
-cranelift-frontend = "=0.129.1"
-cranelift-jit = "=0.129.1"
-cranelift-module = "=0.129.1"
-cranelift-native = "=0.129.1"
+cranelift-codegen = "=0.130.0"
+cranelift-frontend = "=0.130.0"
+cranelift-jit = "=0.130.0"
+cranelift-module = "=0.130.0"
+cranelift-native = "=0.130.0"
 
 [dev-dependencies]
 raw_player = "2026.1.0-canary.0"
