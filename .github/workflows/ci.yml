@@ -48,7 +48,6 @@ jobs:
           libxi-dev libxrandr-dev libxfixes-dev
 
       - run: cargo fmt --all --check
-      - run: cargo check --workspace
       - run: cargo test --workspace
       - run: cargo clippy --workspace -- -D warnings
 
