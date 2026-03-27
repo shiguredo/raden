@@ -25,43 +25,84 @@ impl Default for StrokeOptions {
 
 /// 入力パスをストローク輪郭に変換し、output に追加する。
 pub fn stroke_to_fill(input: &Path, options: &StrokeOptions, output: &mut Path) {
+    let mut workspace = StrokeWorkspace::new();
+    stroke_to_fill_with_workspace(input, options, output, &mut workspace);
+}
+
+/// ワークスペースを再利用してストローク輪郭に変換する。
+pub fn stroke_to_fill_with_workspace(
+    input: &Path,
+    options: &StrokeOptions,
+    output: &mut Path,
+    workspace: &mut StrokeWorkspace,
+) {
     let half_width = options.width * 0.5;
     if half_width <= 0.0 {
         return;
     }
 
     // 入力パスを平坦化して線分列に変換する
-    let segments = flatten_to_segments(input);
+    flatten_into_workspace(input, workspace);
 
     // サブパス単位で処理する
-    for subpath in &segments {
-        if subpath.points.len() < 2 {
+    for i in 0..workspace.subpath_ranges.len() {
+        let range = workspace.subpath_ranges[i];
+        let pts = &workspace.flat_points[range.start..range.end];
+        if pts.len() < 2 {
             continue;
         }
-        stroke_subpath(
+        stroke_subpath_slice(
             output,
-            subpath,
+            pts,
+            range.closed,
             half_width,
             options.start_cap,
             options.end_cap,
             options.join,
             options.miter_limit,
+            &mut workspace.seg_normals,
         );
     }
 }
 
-/// 平坦化されたサブパス。
-struct FlatSubpath {
-    points: Vec<Point>,
+/// ストローク処理の中間バッファ。呼び出し間で再利用してアロケーションを回避する。
+pub struct StrokeWorkspace {
+    flat_points: Vec<Point>,
+    subpath_ranges: Vec<SubpathRange>,
+    seg_normals: Vec<(usize, f64, f64)>,
+}
+
+#[derive(Clone, Copy)]
+struct SubpathRange {
+    start: usize,
+    end: usize,
     closed: bool,
 }
 
-/// 入力パスを平坦化し、サブパス単位の線分列に分割する。
-fn flatten_to_segments(input: &Path) -> Vec<FlatSubpath> {
+impl StrokeWorkspace {
+    pub fn new() -> Self {
+        Self {
+            flat_points: Vec::new(),
+            subpath_ranges: Vec::new(),
+            seg_normals: Vec::new(),
+        }
+    }
+}
+
+impl Default for StrokeWorkspace {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// 入力パスを平坦化し、ワークスペースのバッファに書き込む。
+fn flatten_into_workspace(input: &Path, workspace: &mut StrokeWorkspace) {
+    workspace.flat_points.clear();
+    workspace.subpath_ranges.clear();
+
     let cmds = input.cmds();
     let points = input.points();
-    let mut result: Vec<FlatSubpath> = Vec::new();
-    let mut current: Option<FlatSubpath> = None;
+    let mut subpath_start_idx: Option<usize> = None;
     let mut pt_idx = 0usize;
     let mut cur = Point::new(0.0, 0.0);
     let mut start = Point::new(0.0, 0.0);
@@ -70,25 +111,28 @@ fn flatten_to_segments(input: &Path) -> Vec<FlatSubpath> {
         match cmd {
             PathCmd::MoveTo => {
                 // 前のサブパスを確定する
-                if let Some(sp) = current.take()
-                    && sp.points.len() >= 2
-                {
-                    result.push(sp);
+                if let Some(sp_start) = subpath_start_idx.take() {
+                    let len = workspace.flat_points.len() - sp_start;
+                    if len >= 2 {
+                        workspace.subpath_ranges.push(SubpathRange {
+                            start: sp_start,
+                            end: workspace.flat_points.len(),
+                            closed: false,
+                        });
+                    }
                 }
                 let p = points[pt_idx];
                 pt_idx += 1;
                 start = p;
                 cur = p;
-                current = Some(FlatSubpath {
-                    points: vec![p],
-                    closed: false,
-                });
+                subpath_start_idx = Some(workspace.flat_points.len());
+                workspace.flat_points.push(p);
             }
             PathCmd::LineTo => {
                 let p = points[pt_idx];
                 pt_idx += 1;
-                if let Some(ref mut sp) = current {
-                    sp.points.push(p);
+                if subpath_start_idx.is_some() {
+                    workspace.flat_points.push(p);
                 }
                 cur = p;
             }
@@ -97,8 +141,8 @@ fn flatten_to_segments(input: &Path) -> Vec<FlatSubpath> {
                 let cp2 = points[pt_idx + 1];
                 let end = points[pt_idx + 2];
                 pt_idx += 3;
-                if let Some(ref mut sp) = current {
-                    flatten_cubic_into(&mut sp.points, cur, cp1, cp2, end, 0);
+                if subpath_start_idx.is_some() {
+                    flatten_cubic_into(&mut workspace.flat_points, cur, cp1, cp2, end, 0);
                 }
                 cur = end;
             }
@@ -106,38 +150,42 @@ fn flatten_to_segments(input: &Path) -> Vec<FlatSubpath> {
                 let cp = points[pt_idx];
                 let end = points[pt_idx + 1];
                 pt_idx += 2;
-                if let Some(ref mut sp) = current {
-                    flatten_quad_into(&mut sp.points, cur, cp, end, 0);
+                if subpath_start_idx.is_some() {
+                    flatten_quad_into(&mut workspace.flat_points, cur, cp, end, 0);
                 }
                 cur = end;
             }
             PathCmd::Close => {
-                if let Some(ref mut sp) = current {
-                    // Close で始点に戻る線分を追加する
-                    if cur.x != start.x || cur.y != start.y {
-                        sp.points.push(start);
-                    }
-                    sp.closed = true;
+                if subpath_start_idx.is_some() && (cur.x != start.x || cur.y != start.y) {
+                    workspace.flat_points.push(start);
                 }
                 cur = start;
                 // 閉じたサブパスを確定する
-                if let Some(sp) = current.take()
-                    && sp.points.len() >= 2
-                {
-                    result.push(sp);
+                if let Some(sp_start) = subpath_start_idx.take() {
+                    let len = workspace.flat_points.len() - sp_start;
+                    if len >= 2 {
+                        workspace.subpath_ranges.push(SubpathRange {
+                            start: sp_start,
+                            end: workspace.flat_points.len(),
+                            closed: true,
+                        });
+                    }
                 }
             }
         }
     }
 
     // 最後の開いたサブパスを確定する
-    if let Some(sp) = current.take()
-        && sp.points.len() >= 2
-    {
-        result.push(sp);
+    if let Some(sp_start) = subpath_start_idx.take() {
+        let len = workspace.flat_points.len() - sp_start;
+        if len >= 2 {
+            workspace.subpath_ranges.push(SubpathRange {
+                start: sp_start,
+                end: workspace.flat_points.len(),
+                closed: false,
+            });
+        }
     }
-
-    result
 }
 
 const FLATNESS_TOLERANCE: f64 = 0.25;
@@ -233,39 +281,42 @@ fn unit_normal(p0: Point, p1: Point) -> (f64, f64) {
 }
 
 /// サブパスをストローク輪郭に変換して output に書き込む。
-fn stroke_subpath(
+/// seg_normals_buf は呼び出し間で再利用される。
+#[allow(clippy::too_many_arguments)]
+fn stroke_subpath_slice(
     output: &mut Path,
-    subpath: &FlatSubpath,
+    pts: &[Point],
+    closed: bool,
     half_width: f64,
     start_cap: StrokeCap,
     end_cap: StrokeCap,
     join: StrokeJoin,
     miter_limit: f64,
+    seg_normals_buf: &mut Vec<(usize, f64, f64)>,
 ) {
-    let pts = &subpath.points;
     let n = pts.len();
 
     // ゼロ長の退化ケースを除去した有効な線分の法線を計算する
-    let mut seg_normals: Vec<(usize, f64, f64)> = Vec::new();
+    seg_normals_buf.clear();
     for i in 0..n - 1 {
         let (nx, ny) = unit_normal(pts[i], pts[i + 1]);
         if nx == 0.0 && ny == 0.0 {
             continue;
         }
-        seg_normals.push((i, nx, ny));
+        seg_normals_buf.push((i, nx, ny));
     }
 
-    if seg_normals.is_empty() {
+    if seg_normals_buf.is_empty() {
         return;
     }
 
-    if subpath.closed {
-        stroke_closed_subpath(output, pts, &seg_normals, half_width, join, miter_limit);
+    if closed {
+        stroke_closed_subpath(output, pts, seg_normals_buf, half_width, join, miter_limit);
     } else {
         stroke_open_subpath(
             output,
             pts,
-            &seg_normals,
+            seg_normals_buf,
             half_width,
             start_cap,
             end_cap,

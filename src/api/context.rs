@@ -1,7 +1,7 @@
 use crate::api::image::Image;
 use crate::api::matrix::Matrix2D;
 use crate::api::path::Path;
-use crate::api::stroke::{StrokeOptions, stroke_to_fill};
+use crate::api::stroke::{StrokeOptions, StrokeWorkspace, stroke_to_fill_with_workspace};
 use crate::api::style::{CompOp, FillRule, Rgba32, StrokeCap, StrokeJoin};
 use crate::font::Font;
 use crate::pipeline::key::{FetchType, FillType};
@@ -121,6 +121,7 @@ pub struct Context<'a> {
     state_stack: Vec<ContextState>,
     tmp_path: Path,
     stroke_path_buf: Path,
+    stroke_workspace: StrokeWorkspace,
     edge_buf: Vec<(f64, f64, f64, f64)>,
     rasterizer: AnalyticRasterizer,
 }
@@ -143,6 +144,7 @@ impl<'a> Context<'a> {
             state_stack: Vec::new(),
             tmp_path: Path::new(),
             stroke_path_buf: Path::new(),
+            stroke_workspace: StrokeWorkspace::new(),
             edge_buf: Vec::new(),
             rasterizer: AnalyticRasterizer::new(),
         }
@@ -542,7 +544,9 @@ impl<'a> Context<'a> {
             join: self.stroke_join,
             miter_limit: self.stroke_miter_limit,
         };
-        stroke_to_fill(path, &options, &mut stroke_buf);
+        let mut workspace = std::mem::take(&mut self.stroke_workspace);
+        stroke_to_fill_with_workspace(path, &options, &mut stroke_buf, &mut workspace);
+        self.stroke_workspace = workspace;
         // fill 色を一時的にストローク色に差し替えて描画する
         let saved_fill = self.fill_color_prgb32;
         self.fill_color_prgb32 = self.stroke_color_prgb32;
