@@ -1,4 +1,4 @@
-.PHONY: test cover pbt pbt-cover fuzz fuzzing fuzzing-parallel fuzzing-list check clippy fmt clean
+.PHONY: test cover pbt pbt-cover fuzz fuzzing fuzzing-parallel fuzzing-list check clippy fmt clean bench bench-save bench-compare
 
 # 全テストを実行する
 test:
@@ -52,6 +52,30 @@ clippy:
 # cargo fmt を実行する
 fmt:
 	cargo fmt --all
+
+# ベンチマークを実行する（BENCH=fill_rect で特定のベンチマークのみ実行可能）
+bench:
+ifdef BENCH
+	cargo bench --bench $(BENCH)
+else
+	cargo bench --benches
+endif
+
+# ベンチマークのベースラインを保存する（BENCH=fill_rect で特定のベンチマークのみ保存可能）
+bench-save:
+ifdef BENCH
+	cargo bench --bench $(BENCH) -- --save-baseline before
+else
+	cargo bench --benches -- --save-baseline before
+endif
+
+# 保存したベースラインと比較してベンチマークを実行する（BENCH=fill_rect で特定のベンチマークのみ比較可能）
+bench-compare:
+ifdef BENCH
+	cargo bench --bench $(BENCH) -- --baseline before
+else
+	cargo bench --benches -- --baseline before
+endif
 
 # ビルド成果物を削除する
 clean:

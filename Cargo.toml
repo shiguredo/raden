@@ -11,6 +11,9 @@ repository = "https://github.com/shiguredo/raden"
 readme = "README.md"
 autobenches = false
 
+[lib]
+bench = false
+
 [dependencies]
 cranelift-codegen = "=0.130.0"
 cranelift-frontend = "=0.130.0"
