@@ -1,6 +1,7 @@
 # グラデーション (Linear / Radial / Conic) を実装する
 
 Created: 2026-03-28
+Completed: 2026-03-28
 Model: Opus 4.6
 
 ## 概要
@@ -77,3 +78,27 @@ Blend2D はグラデーションの色停止点から PRGB32 の LUT を事前�
 1. Linear Gradient (最も基本的で実装が単純)
 2. Radial Gradient (2 次方程式の係数計算が必要)
 3. Conic Gradient (atan 近似が必要)
+
+## 解決方法
+
+### 実装内容
+
+- `src/api/gradient.rs`: Gradient 型 (GradientStop, ExtendMode, Linear/Radial/Conic GradientValues)、LUT 生成、PreparedGradient、fetch_span、融合 fill_rect を実装
+- `src/api/context.rs`: set_fill_style_gradient、fill_rect/fill_path でのグラデーション描画対応
+- `src/pipeline/compiler/span_pipelines.rs`: JIT スパン合成パイプライン (PipelineSpanFn/PipelineSpanCovFn)
+- `src/api/matrix.rs`: 逆行列計算 (invert) を追加
+- `benches/fill_gradient.rs`: ベンチマーク
+
+### 最適化
+
+- Linear: fetch+blend 融合、固定小数点 (i64 16.16)、不透明高速パス、4px アンロール
+- Radial: 増分座標計算、逆数乗算、融合 fill_rect
+- Conic: 7 次多項式 fast_atan2、融合 fill_rect
+
+### 性能 (1920x1080)
+
+| 種別 | 初期 | 最終 | Solid 比 |
+|------|------|------|----------|
+| Linear | 4.58 ms | 929 µs | 1.3x |
+| Radial | 8.05 ms | 3.49 ms | 4.7x |
+| Conic | 24.8 ms | 8.10 ms | 10.9x |

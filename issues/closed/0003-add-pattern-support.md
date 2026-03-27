@@ -1,6 +1,7 @@
 # 画像パターン塗りつぶしを実装する
 
 Created: 2026-03-28
+Completed: 2026-03-28
 Model: Opus 4.6
 
 ## 概要
@@ -76,3 +77,13 @@ Blend2D の `BLPattern` に相当する画像パターン塗りつぶしが rade
 2. Simple + Bilinear (並進・バイリニア補間)
 3. Affine + Nearest (アフィン変換)
 4. X/Y 独立拡張モード
+
+## 解決方法
+
+Phase 1 (Simple + Nearest) を実装した。
+
+- `src/api/pattern.rs`: Pattern 型、PreparedPattern、fill_rect (融合 fetch+blend)、fetch_span
+- `src/api/context.rs`: set_fill_style_pattern、fill_rect/fill_path でのパターン描画対応
+- Pad/Repeat/Reflect 全拡張モードに対応
+- 不透明ソース画像の場合は SrcOver 合成をスキップする高速パスを提供
+- Bilinear 補間、Affine 変換、X/Y 独立拡張モードは未実装 (後続タスク)
