@@ -271,6 +271,20 @@ impl<'a> Context<'a> {
             let stride = self.image.stride();
             let base = self.image.data_ptr_mut();
             let width = (boxi.x1 - boxi.x0) as usize;
+            let offset = boxi.y0 as usize * stride + boxi.x0 as usize * 4;
+            let dst = unsafe { base.add(offset) };
+            let height = (boxi.y1 - boxi.y0) as usize;
+
+            // Linear は融合パス (固定小数点 fetch + blend、中間バッファなし)
+            if matches!(
+                gradient.values(),
+                crate::api::gradient::GradientValues::Linear(_)
+            ) {
+                prepared.fill_rect_linear(dst, stride, boxi.x0, boxi.y0, width, height);
+                return;
+            }
+
+            // Radial / Conic はスパンバッファ経由
             let mut span_buf = std::mem::take(&mut self.gradient_span_buf);
             span_buf.resize(width, 0);
 
@@ -461,7 +475,7 @@ impl<'a> Context<'a> {
                 sweep_fn,
                 |y, x_start, coverage| {
                     span_buf.resize(coverage.len(), 0);
-                    gradient.fetch_span(x_start, y, &mut span_buf);
+                    gradient.fetch_span_linear_fixed(x_start, y, &mut span_buf);
 
                     let offset = y as usize * stride + x_start as usize * 4;
                     let dst_row = unsafe { base.add(offset) };

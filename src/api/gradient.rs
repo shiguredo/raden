@@ -225,6 +225,9 @@ impl Gradient {
 /// LUT サイズ。Blend2D のデフォルトに合わせる。
 const LUT_SIZE: usize = 256;
 
+/// 固定小数点の小数ビット数。
+const FRAC_BITS: u32 = 16;
+
 /// 描画用に事前計算されたグラデーション状態。
 #[derive(Clone)]
 pub(crate) struct PreparedGradient {
@@ -325,6 +328,133 @@ impl PreparedGradient {
         }
     }
 
+    /// Linear グラデーションを矩形に直接描画する。
+    ///
+    /// fetch (固定小数点 t → LUT) と blend (SrcOver) を融合し、
+    /// 中間バッファへの書き込み・読み戻しによるキャッシュ汚染を排除する。
+    /// Linear 以外のグラデーションでは何もしない (呼び出し側で分岐)。
+    pub(crate) fn fill_rect_linear(
+        &self,
+        dst: *mut u8,
+        stride: usize,
+        x0: i32,
+        y0: i32,
+        width: usize,
+        height: usize,
+    ) {
+        let PreparedGradientKind::Linear {
+            dt_dx,
+            dt_dy,
+            t_origin,
+        } = &self.kind
+        else {
+            return;
+        };
+
+        let max_idx = (LUT_SIZE - 1) as f64;
+        let scale = max_idx * ((1u64 << FRAC_BITS) as f64);
+
+        let dt_dx_fixed = (dt_dx * scale) as i64;
+        let dt_dy_fixed = (dt_dy * scale) as i64;
+
+        // 最初の行、最初のピクセル中心での t (固定小数点)
+        let t_row0 =
+            ((dt_dx * (x0 as f64 + 0.5) + dt_dy * (y0 as f64 + 0.5) + t_origin) * scale) as i64;
+        let mut t_row_start = t_row0;
+
+        let lut = &self.lut;
+
+        for row in 0..height {
+            let mut t = t_row_start;
+            let dst_row = unsafe { (dst.add(row * stride)) as *mut u32 };
+
+            match self.extend_mode {
+                ExtendMode::Pad => {
+                    let max_fixed = (max_idx as i64) << FRAC_BITS;
+                    for x in 0..width {
+                        // clamp + shift で LUT インデックスを取得
+                        let idx = (t.clamp(0, max_fixed) >> FRAC_BITS) as usize;
+                        blend_pixel_src_over(dst_row, x, lut[idx]);
+                        t += dt_dx_fixed;
+                    }
+                }
+                ExtendMode::Repeat => {
+                    // LUT_SIZE=256 なので周期は 2^24。ビットマスクで剰余を計算。
+                    let cycle_mask = ((LUT_SIZE as u64) << FRAC_BITS) - 1;
+                    for x in 0..width {
+                        let idx = (((t as u64) & cycle_mask) >> FRAC_BITS) as usize;
+                        blend_pixel_src_over(dst_row, x, lut[idx]);
+                        t += dt_dx_fixed;
+                    }
+                }
+                ExtendMode::Reflect => {
+                    // 周期 512 (= 2 * LUT_SIZE)。512 は 2 のべき乗なのでマスク可能。
+                    let cycle_mask = ((LUT_SIZE as u64 * 2) << FRAC_BITS) - 1;
+                    for x in 0..width {
+                        let t_abs = t.unsigned_abs();
+                        let t_mod = ((t_abs & cycle_mask) >> FRAC_BITS) as usize;
+                        let idx = if t_mod > 255 { 511 - t_mod } else { t_mod };
+                        blend_pixel_src_over(dst_row, x, lut[idx]);
+                        t += dt_dx_fixed;
+                    }
+                }
+            }
+
+            t_row_start += dt_dy_fixed;
+        }
+    }
+
+    /// Linear グラデーションのスパンを固定小数点で計算し、JIT span_cov 用のバッファに書き込む。
+    pub(crate) fn fetch_span_linear_fixed(&self, x_start: i32, y: i32, span: &mut [u32]) {
+        let PreparedGradientKind::Linear {
+            dt_dx,
+            dt_dy,
+            t_origin,
+        } = &self.kind
+        else {
+            self.fetch_span(x_start, y, span);
+            return;
+        };
+
+        let max_idx = (LUT_SIZE - 1) as f64;
+        let scale = max_idx * ((1u64 << FRAC_BITS) as f64);
+
+        let dt_dx_fixed = (dt_dx * scale) as i64;
+        let mut t =
+            ((dt_dx * (x_start as f64 + 0.5) + dt_dy * (y as f64 + 0.5) + t_origin) * scale) as i64;
+
+        let lut = &self.lut;
+
+        match self.extend_mode {
+            ExtendMode::Pad => {
+                let max_fixed = (max_idx as i64) << FRAC_BITS;
+                for pixel in span.iter_mut() {
+                    let idx = (t.clamp(0, max_fixed) >> FRAC_BITS) as usize;
+                    *pixel = lut[idx];
+                    t += dt_dx_fixed;
+                }
+            }
+            ExtendMode::Repeat => {
+                let cycle_mask = ((LUT_SIZE as u64) << FRAC_BITS) - 1;
+                for pixel in span.iter_mut() {
+                    let idx = (((t as u64) & cycle_mask) >> FRAC_BITS) as usize;
+                    *pixel = lut[idx];
+                    t += dt_dx_fixed;
+                }
+            }
+            ExtendMode::Reflect => {
+                let cycle_mask = ((LUT_SIZE as u64 * 2) << FRAC_BITS) - 1;
+                for pixel in span.iter_mut() {
+                    let t_abs = t.unsigned_abs();
+                    let t_mod = ((t_abs & cycle_mask) >> FRAC_BITS) as usize;
+                    let idx = if t_mod > 255 { 511 - t_mod } else { t_mod };
+                    *pixel = lut[idx];
+                    t += dt_dx_fixed;
+                }
+            }
+        }
+    }
+
     /// t 値を LUT インデックスに変換する。
     #[inline(always)]
     fn t_to_index(&self, t: f64) -> usize {
@@ -398,32 +528,38 @@ fn interpolate_stops(stops: &[GradientStop], t: f64) -> u32 {
 // fill_rect 等のカバレッジ不要なパスで使用する。
 // LLVM の自動ベクタ化により、JIT スパンパイプラインと同等以上の性能が出る。
 
+/// 1 ピクセルの SrcOver 合成。
+#[inline(always)]
+fn blend_pixel_src_over(dst_row: *mut u32, x: usize, src: u32) {
+    let sa = src >> 24;
+    if sa == 0 {
+        return;
+    }
+    if sa == 255 {
+        unsafe {
+            *dst_row.add(x) = src;
+        }
+    } else {
+        let d = unsafe { *dst_row.add(x) };
+        let inv_sa = 256 - sa;
+        let out_a = sa + ((((d >> 24) & 0xFF) * inv_sa) >> 8);
+        let out_r = ((src >> 16) & 0xFF) + ((((d >> 16) & 0xFF) * inv_sa) >> 8);
+        let out_g = ((src >> 8) & 0xFF) + ((((d >> 8) & 0xFF) * inv_sa) >> 8);
+        let out_b = (src & 0xFF) + (((d & 0xFF) * inv_sa) >> 8);
+        unsafe {
+            *dst_row.add(x) = (out_a << 24) | (out_r << 16) | (out_g << 8) | out_b;
+        }
+    }
+}
+
 /// SrcOver: out = src + dst * (1 - srcA)
 ///
 /// 全ピクセルが完全にカバーされる場合 (coverage=255) に使用する。
-/// LLVM が自動ベクタ化するため、Cranelift JIT 版と同等以上の性能。
+/// Radial / Conic 等の非 Linear グラデーション用。
 pub(crate) fn blend_span_src_over(dst: *mut u8, src_span: &[u32]) {
     let dst_pixels = dst as *mut u32;
     for (i, &s) in src_span.iter().enumerate() {
-        let sa = s >> 24;
-        if sa == 0 {
-            continue;
-        }
-        if sa == 255 {
-            unsafe {
-                *dst_pixels.add(i) = s;
-            }
-        } else {
-            let d = unsafe { *dst_pixels.add(i) };
-            let inv_sa = 256 - sa;
-            let out_a = sa + ((((d >> 24) & 0xFF) * inv_sa) >> 8);
-            let out_r = ((s >> 16) & 0xFF) + ((((d >> 16) & 0xFF) * inv_sa) >> 8);
-            let out_g = ((s >> 8) & 0xFF) + ((((d >> 8) & 0xFF) * inv_sa) >> 8);
-            let out_b = (s & 0xFF) + (((d & 0xFF) * inv_sa) >> 8);
-            unsafe {
-                *dst_pixels.add(i) = (out_a << 24) | (out_r << 16) | (out_g << 8) | out_b;
-            }
-        }
+        blend_pixel_src_over(dst_pixels, i, s);
     }
 }
 
