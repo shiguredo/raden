@@ -2,6 +2,7 @@ use crate::api::gradient::Gradient;
 use crate::api::image::Image;
 use crate::api::matrix::Matrix2D;
 use crate::api::path::Path;
+use crate::api::pattern::Pattern;
 use crate::api::stroke::{StrokeOptions, StrokeWorkspace, stroke_to_fill_with_workspace};
 use crate::api::style::{CompOp, FillRule, Rgba32, StrokeCap, StrokeJoin};
 use crate::font::Font;
@@ -98,6 +99,7 @@ struct ContextState {
     fill_rule: FillRule,
     fill_color_prgb32: u32,
     fill_gradient: Option<Gradient>,
+    fill_pattern: Option<Pattern>,
     stroke_color_prgb32: u32,
     stroke_width: f64,
     stroke_start_cap: StrokeCap,
@@ -114,6 +116,7 @@ pub struct Context<'a> {
     fill_rule: FillRule,
     fill_color_prgb32: u32,
     fill_gradient: Option<Gradient>,
+    fill_pattern: Option<Pattern>,
     stroke_color_prgb32: u32,
     stroke_width: f64,
     stroke_start_cap: StrokeCap,
@@ -127,7 +130,7 @@ pub struct Context<'a> {
     stroke_workspace: StrokeWorkspace,
     edge_buf: Vec<(f64, f64, f64, f64)>,
     rasterizer: AnalyticRasterizer,
-    /// グラデーションスパン計算用の一時バッファ。
+    /// グラデーション/パターンスパン計算用の一時バッファ。
     gradient_span_buf: Vec<u32>,
 }
 
@@ -140,6 +143,7 @@ impl<'a> Context<'a> {
             fill_rule: FillRule::default(),
             fill_color_prgb32: 0,
             fill_gradient: None,
+            fill_pattern: None,
             stroke_color_prgb32: 0,
             stroke_width: 1.0,
             stroke_start_cap: StrokeCap::default(),
@@ -164,6 +168,7 @@ impl<'a> Context<'a> {
             fill_rule: self.fill_rule,
             fill_color_prgb32: self.fill_color_prgb32,
             fill_gradient: self.fill_gradient.clone(),
+            fill_pattern: self.fill_pattern.clone(),
             stroke_color_prgb32: self.stroke_color_prgb32,
             stroke_width: self.stroke_width,
             stroke_start_cap: self.stroke_start_cap,
@@ -181,6 +186,7 @@ impl<'a> Context<'a> {
             self.fill_rule = state.fill_rule;
             self.fill_color_prgb32 = state.fill_color_prgb32;
             self.fill_gradient = state.fill_gradient;
+            self.fill_pattern = state.fill_pattern;
             self.stroke_color_prgb32 = state.stroke_color_prgb32;
             self.stroke_width = state.stroke_width;
             self.stroke_start_cap = state.stroke_start_cap;
@@ -203,11 +209,19 @@ impl<'a> Context<'a> {
     pub fn set_fill_style(&mut self, color: Rgba32) {
         self.fill_color_prgb32 = color.to_prgb32();
         self.fill_gradient = None;
+        self.fill_pattern = None;
     }
 
     /// 塗りつぶしスタイルをグラデーションに設定する。
     pub fn set_fill_style_gradient(&mut self, gradient: &Gradient) {
         self.fill_gradient = Some(gradient.clone());
+        self.fill_pattern = None;
+    }
+
+    /// 塗りつぶしスタイルをパターンに設定する。
+    pub fn set_fill_style_pattern(&mut self, pattern: &Pattern) {
+        self.fill_pattern = Some(pattern.clone());
+        self.fill_gradient = None;
     }
 
     /// ストローク色を設定する。
@@ -259,6 +273,22 @@ impl<'a> Context<'a> {
             path.close();
             self.fill_path(&path);
             self.tmp_path = path;
+            return;
+        }
+
+        // パターンの場合はラスタライザを経由せず直接描画する
+        if let Some(ref pattern) = self.fill_pattern {
+            let Some(boxi) = self.clip_rect(rect) else {
+                return;
+            };
+            let prepared = pattern.prepare();
+            let stride = self.image.stride();
+            let base = self.image.data_ptr_mut();
+            let width = (boxi.x1 - boxi.x0) as usize;
+            let offset = boxi.y0 as usize * stride + boxi.x0 as usize * 4;
+            let dst = unsafe { base.add(offset) };
+            let height = (boxi.y1 - boxi.y0) as usize;
+            prepared.fill_rect(dst, stride, boxi.x0, boxi.y0, width, height);
             return;
         }
 
@@ -434,6 +464,45 @@ impl<'a> Context<'a> {
         let sweep_fn = self.runtime.get_or_compile_sweep(self.fill_rule);
         let stride = self.image.stride();
         let base = self.image.data_ptr_mut();
+
+        // パターン描画
+        let prepared_pattern = self.fill_pattern.as_ref().map(|p| p.prepare());
+        if let Some(ref pattern) = prepared_pattern {
+            let span_cov_fn = self.runtime.get_or_compile_span_cov(
+                self.image.format(),
+                self.comp_op,
+                FetchType::Solid,
+            );
+            let mut span_buf = std::mem::take(&mut self.gradient_span_buf);
+
+            self.rasterizer.rasterize(
+                &edge_buf,
+                clip_x0,
+                clip_y0,
+                clip_x1,
+                clip_y1,
+                sweep_fn,
+                |y, x_start, coverage| {
+                    span_buf.resize(coverage.len(), 0);
+                    pattern.fetch_span(x_start, y, &mut span_buf);
+
+                    let offset = y as usize * stride + x_start as usize * 4;
+                    let dst_row = unsafe { base.add(offset) };
+                    unsafe {
+                        span_cov_fn(
+                            dst_row,
+                            span_buf.as_ptr(),
+                            coverage.len(),
+                            coverage.as_ptr(),
+                        );
+                    }
+                },
+            );
+
+            self.gradient_span_buf = span_buf;
+            self.edge_buf = edge_buf;
+            return;
+        }
 
         // グラデーション描画は描画時に PreparedGradient を生成してスカラ合成する。
         // 単色描画は既存の JIT パイプラインを使用する。
