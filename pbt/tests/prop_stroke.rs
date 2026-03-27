@@ -31,7 +31,7 @@ fn stroke_line_area() {
             start_cap: StrokeCap::Butt,
             end_cap: StrokeCap::Butt,
             join: StrokeJoin::Bevel,
-            miter_limit: 4.0,
+            miter_limit: 4.0, ..Default::default()
         };
 
         let mut output = Path::new();
@@ -76,7 +76,7 @@ fn stroke_closed_path_symmetry() {
             start_cap: StrokeCap::Butt,
             end_cap: StrokeCap::Butt,
             join: StrokeJoin::Bevel,
-            miter_limit: 4.0,
+            miter_limit: 4.0, ..Default::default()
         };
 
         let mut output = Path::new();
@@ -105,7 +105,7 @@ fn stroke_zero_width_empty() {
             start_cap: StrokeCap::Butt,
             end_cap: StrokeCap::Butt,
             join: StrokeJoin::Bevel,
-            miter_limit: 4.0,
+            miter_limit: 4.0, ..Default::default()
         };
 
         let mut output = Path::new();
@@ -133,7 +133,7 @@ fn stroke_degenerate_no_panic() {
             start_cap: StrokeCap::Butt,
             end_cap: StrokeCap::Butt,
             join: StrokeJoin::Bevel,
-            miter_limit: 4.0,
+            miter_limit: 4.0, ..Default::default()
         };
 
         let mut output = Path::new();
@@ -193,7 +193,7 @@ fn stroke_cap_types_no_panic() {
             start_cap: cap,
             end_cap: cap,
             join: StrokeJoin::Bevel,
-            miter_limit: 4.0,
+            miter_limit: 4.0, ..Default::default()
         };
 
         let mut output = Path::new();
@@ -241,7 +241,7 @@ fn stroke_join_types_no_panic() {
             start_cap: StrokeCap::Butt,
             end_cap: StrokeCap::Butt,
             join,
-            miter_limit: 4.0,
+            miter_limit: 4.0, ..Default::default()
         };
 
         let mut output = Path::new();

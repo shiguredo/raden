@@ -106,6 +106,8 @@ struct ContextState {
     stroke_end_cap: StrokeCap,
     stroke_join: StrokeJoin,
     stroke_miter_limit: f64,
+    stroke_dash_array: Vec<f64>,
+    stroke_dash_offset: f64,
     matrix: Matrix2D,
 }
 
@@ -123,6 +125,8 @@ pub struct Context<'a> {
     stroke_end_cap: StrokeCap,
     stroke_join: StrokeJoin,
     stroke_miter_limit: f64,
+    stroke_dash_array: Vec<f64>,
+    stroke_dash_offset: f64,
     matrix: Matrix2D,
     state_stack: Vec<ContextState>,
     tmp_path: Path,
@@ -150,6 +154,8 @@ impl<'a> Context<'a> {
             stroke_end_cap: StrokeCap::default(),
             stroke_join: StrokeJoin::default(),
             stroke_miter_limit: 4.0,
+            stroke_dash_array: Vec::new(),
+            stroke_dash_offset: 0.0,
             matrix: Matrix2D::IDENTITY,
             state_stack: Vec::new(),
             tmp_path: Path::new(),
@@ -175,6 +181,8 @@ impl<'a> Context<'a> {
             stroke_end_cap: self.stroke_end_cap,
             stroke_join: self.stroke_join,
             stroke_miter_limit: self.stroke_miter_limit,
+            stroke_dash_array: self.stroke_dash_array.clone(),
+            stroke_dash_offset: self.stroke_dash_offset,
             matrix: self.matrix,
         });
     }
@@ -193,6 +201,8 @@ impl<'a> Context<'a> {
             self.stroke_end_cap = state.stroke_end_cap;
             self.stroke_join = state.stroke_join;
             self.stroke_miter_limit = state.stroke_miter_limit;
+            self.stroke_dash_array = state.stroke_dash_array;
+            self.stroke_dash_offset = state.stroke_dash_offset;
             self.matrix = state.matrix;
         }
     }
@@ -664,6 +674,19 @@ impl<'a> Context<'a> {
         self.stroke_miter_limit = limit;
     }
 
+    /// ストロークのダッシュパターンを設定する。
+    ///
+    /// 交互に「描画区間」「空白区間」の長さを指定する。
+    /// 空の配列を渡すと実線に戻る。
+    pub fn set_stroke_dash_array(&mut self, dash_array: &[f64]) {
+        self.stroke_dash_array = dash_array.to_vec();
+    }
+
+    /// ストロークのダッシュオフセットを設定する。
+    pub fn set_stroke_dash_offset(&mut self, offset: f64) {
+        self.stroke_dash_offset = offset;
+    }
+
     /// パスをストローク描画する。
     ///
     /// stroke_to_fill でストロークを塗りつぶしパスに変換し、
@@ -677,6 +700,8 @@ impl<'a> Context<'a> {
             end_cap: self.stroke_end_cap,
             join: self.stroke_join,
             miter_limit: self.stroke_miter_limit,
+            dash_array: self.stroke_dash_array.clone(),
+            dash_offset: self.stroke_dash_offset,
         };
         let mut workspace = std::mem::take(&mut self.stroke_workspace);
         stroke_to_fill_with_workspace(path, &options, &mut stroke_buf, &mut workspace);

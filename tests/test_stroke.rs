@@ -14,6 +14,7 @@ fn stroke_line_point_count() {
         end_cap: StrokeCap::Butt,
         join: StrokeJoin::Bevel,
         miter_limit: 4.0,
+        ..Default::default()
     };
 
     let mut output = Path::new();
@@ -59,6 +60,7 @@ fn stroke_square_cap_extends() {
         end_cap: StrokeCap::Square,
         join: StrokeJoin::Bevel,
         miter_limit: 4.0,
+        ..Default::default()
     };
 
     let mut output = Path::new();
@@ -100,6 +102,7 @@ fn stroke_round_cap_has_curves() {
         end_cap: StrokeCap::Round,
         join: StrokeJoin::Bevel,
         miter_limit: 4.0,
+        ..Default::default()
     };
 
     let mut output = Path::new();

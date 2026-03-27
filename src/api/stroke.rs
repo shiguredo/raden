@@ -9,6 +9,11 @@ pub struct StrokeOptions {
     pub join: StrokeJoin,
     /// マイターリミット (デフォルト 4.0、Blend2D 準拠)。
     pub miter_limit: f64,
+    /// ダッシュパターン。交互に「描画区間」「空白区間」の長さを指定する。
+    /// 空の場合は実線。奇数要素の場合はパターンが 2 回繰り返される (SVG 準拠)。
+    pub dash_array: Vec<f64>,
+    /// ダッシュパターンの開始オフセット。
+    pub dash_offset: f64,
 }
 
 impl Default for StrokeOptions {
@@ -19,6 +24,8 @@ impl Default for StrokeOptions {
             end_cap: StrokeCap::default(),
             join: StrokeJoin::default(),
             miter_limit: 4.0,
+            dash_array: Vec::new(),
+            dash_offset: 0.0,
         }
     }
 }
@@ -43,6 +50,11 @@ pub fn stroke_to_fill_with_workspace(
 
     // 入力パスを平坦化して線分列に変換する
     flatten_into_workspace(input, workspace);
+
+    // ダッシュパターンがある場合、サブパスをダッシュで分断する
+    if !options.dash_array.is_empty() {
+        apply_dash(workspace, &options.dash_array, options.dash_offset);
+    }
 
     // サブパス単位で処理する
     for i in 0..workspace.subpath_ranges.len() {
@@ -70,6 +82,10 @@ pub struct StrokeWorkspace {
     flat_points: Vec<Point>,
     subpath_ranges: Vec<SubpathRange>,
     seg_normals: Vec<(usize, f64, f64)>,
+    /// ダッシュ分断後の点列バッファ。
+    dash_points: Vec<Point>,
+    /// ダッシュ分断後のサブパス範囲。
+    dash_ranges: Vec<SubpathRange>,
 }
 
 #[derive(Clone, Copy)]
@@ -85,6 +101,8 @@ impl StrokeWorkspace {
             flat_points: Vec::new(),
             subpath_ranges: Vec::new(),
             seg_normals: Vec::new(),
+            dash_points: Vec::new(),
+            dash_ranges: Vec::new(),
         }
     }
 }
@@ -96,6 +114,135 @@ impl Default for StrokeWorkspace {
 }
 
 /// 入力パスを平坦化し、ワークスペースのバッファに書き込む。
+/// ダッシュパターンを平坦化済みサブパスに適用する。
+///
+/// 各サブパスの線分列をダッシュパターンに従って分断し、
+/// 「描画区間」のみを新しいサブパス群として workspace に書き戻す。
+fn apply_dash(workspace: &mut StrokeWorkspace, dash_array: &[f64], dash_offset: f64) {
+    // SVG 準拠: 奇数要素はパターンを 2 回繰り返す
+    let pattern: Vec<f64> = if dash_array.len() % 2 == 1 {
+        dash_array
+            .iter()
+            .chain(dash_array.iter())
+            .copied()
+            .collect()
+    } else {
+        dash_array.to_vec()
+    };
+
+    // パターンの合計長
+    let pattern_len: f64 = pattern.iter().sum();
+    if pattern_len <= 0.0 {
+        return;
+    }
+
+    workspace.dash_points.clear();
+    workspace.dash_ranges.clear();
+
+    let original_ranges = workspace.subpath_ranges.clone();
+    let original_points = workspace.flat_points.clone();
+
+    for range in &original_ranges {
+        let pts = &original_points[range.start..range.end];
+        if pts.len() < 2 {
+            continue;
+        }
+
+        // dash_offset をパターン内位置に正規化する
+        let mut offset = ((dash_offset % pattern_len) + pattern_len) % pattern_len;
+        let mut pat_idx = 0usize;
+        // offset 分をスキップしてパターン位置を確定する
+        while offset > 0.0 && pat_idx < pattern.len() {
+            if offset < pattern[pat_idx] {
+                break;
+            }
+            offset -= pattern[pat_idx];
+            pat_idx = (pat_idx + 1) % pattern.len();
+        }
+        let mut remaining = pattern[pat_idx] - offset;
+        let mut drawing = pat_idx.is_multiple_of(2); // 偶数インデックスが描画区間
+        let mut dash_start: Option<usize> = None;
+
+        if drawing {
+            dash_start = Some(workspace.dash_points.len());
+            workspace.dash_points.push(pts[0]);
+        }
+
+        // 各線分を走査する
+        for seg in 0..pts.len() - 1 {
+            let p0 = pts[seg];
+            let p1 = pts[seg + 1];
+            let dx = p1.x - p0.x;
+            let dy = p1.y - p0.y;
+            let seg_len = (dx * dx + dy * dy).sqrt();
+            if seg_len < 1e-10 {
+                continue;
+            }
+            let ux = dx / seg_len;
+            let uy = dy / seg_len;
+
+            let mut consumed = 0.0;
+
+            while consumed < seg_len {
+                let avail = seg_len - consumed;
+                if remaining <= avail {
+                    // パターン境界が線分内にある
+                    consumed += remaining;
+                    let split_x = p0.x + ux * consumed;
+                    let split_y = p0.y + uy * consumed;
+                    let split = Point::new(split_x, split_y);
+
+                    if drawing {
+                        // 描画区間の終了
+                        workspace.dash_points.push(split);
+                        if let Some(start) = dash_start.take() {
+                            let end = workspace.dash_points.len();
+                            if end - start >= 2 {
+                                workspace.dash_ranges.push(SubpathRange {
+                                    start,
+                                    end,
+                                    closed: false,
+                                });
+                            }
+                        }
+                    } else {
+                        // 空白区間の終了 → 次の描画区間の開始
+                        dash_start = Some(workspace.dash_points.len());
+                        workspace.dash_points.push(split);
+                    }
+
+                    drawing = !drawing;
+                    pat_idx = (pat_idx + 1) % pattern.len();
+                    remaining = pattern[pat_idx];
+                } else {
+                    // 線分の残りがパターン区間内に収まる
+                    remaining -= avail;
+                    if drawing {
+                        workspace.dash_points.push(p1);
+                    }
+                    break;
+                }
+            }
+        }
+
+        // 最後の描画区間を閉じる
+        if drawing && let Some(start) = dash_start.take() {
+            let end = workspace.dash_points.len();
+            if end - start >= 2 {
+                workspace.dash_ranges.push(SubpathRange {
+                    start,
+                    end,
+                    closed: false,
+                });
+            }
+        }
+    }
+
+    // ダッシュ結果で workspace を上書きする
+    std::mem::swap(&mut workspace.flat_points, &mut workspace.dash_points);
+    std::mem::swap(&mut workspace.subpath_ranges, &mut workspace.dash_ranges);
+}
+
 fn flatten_into_workspace(input: &Path, workspace: &mut StrokeWorkspace) {
     workspace.flat_points.clear();
     workspace.subpath_ranges.clear();
