@@ -1,4 +1,4 @@
-use crate::api::gradient::{Gradient, blend_span_src_over};
+use crate::api::gradient::Gradient;
 use crate::api::image::Image;
 use crate::api::matrix::Matrix2D;
 use crate::api::path::Path;
@@ -275,27 +275,8 @@ impl<'a> Context<'a> {
             let dst = unsafe { base.add(offset) };
             let height = (boxi.y1 - boxi.y0) as usize;
 
-            // Linear は融合パス (固定小数点 fetch + blend、中間バッファなし)
-            if matches!(
-                gradient.values(),
-                crate::api::gradient::GradientValues::Linear(_)
-            ) {
-                prepared.fill_rect_linear(dst, stride, boxi.x0, boxi.y0, width, height);
-                return;
-            }
-
-            // Radial / Conic はスパンバッファ経由
-            let mut span_buf = std::mem::take(&mut self.gradient_span_buf);
-            span_buf.resize(width, 0);
-
-            for y in boxi.y0..boxi.y1 {
-                prepared.fetch_span(boxi.x0, y, &mut span_buf[..width]);
-                let offset = y as usize * stride + boxi.x0 as usize * 4;
-                let dst_row = unsafe { base.add(offset) };
-                blend_span_src_over(dst_row, &span_buf[..width]);
-            }
-
-            self.gradient_span_buf = span_buf;
+            // 融合パス: fetch + blend を 1 ループで処理し中間バッファを排除する
+            prepared.fill_rect(dst, stride, boxi.x0, boxi.y0, width, height);
             return;
         }
 

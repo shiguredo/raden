@@ -195,18 +195,36 @@ impl Gradient {
                     }
                 }
             }
-            GradientValues::Radial(v) => PreparedGradientKind::Radial {
-                cx: v.x0,
-                cy: v.y0,
-                r0: v.r0,
-                r_diff: v.r1 - v.r0,
-                inv,
-            },
+            GradientValues::Radial(v) => {
+                let r_diff = v.r1 - v.r0;
+                let inv_r_diff = if r_diff.abs() < 1e-10 {
+                    0.0
+                } else {
+                    1.0 / r_diff
+                };
+                PreparedGradientKind::Radial {
+                    cx: v.x0,
+                    cy: v.y0,
+                    r0: v.r0,
+                    inv_r_diff,
+                    dux_dx: inv.m00,
+                    duy_dx: inv.m01,
+                    dux_dy: inv.m10,
+                    duy_dy: inv.m11,
+                    ux_origin: inv.m20,
+                    uy_origin: inv.m21,
+                }
+            }
             GradientValues::Conic(v) => PreparedGradientKind::Conic {
                 cx: v.x0,
                 cy: v.y0,
                 angle_offset: v.angle,
-                inv,
+                dux_dx: inv.m00,
+                duy_dx: inv.m01,
+                dux_dy: inv.m10,
+                duy_dy: inv.m11,
+                ux_origin: inv.m20,
+                uy_origin: inv.m21,
             },
         };
 
@@ -253,17 +271,35 @@ enum PreparedGradientKind {
         t_origin: f64,
     },
     Radial {
+        /// ユーザー空間の中心 X (逆変換後の比較用)。
         cx: f64,
+        /// ユーザー空間の中心 Y。
         cy: f64,
         r0: f64,
-        r_diff: f64,
-        inv: Matrix2D,
+        inv_r_diff: f64,
+        /// デバイス→ユーザー変換の X 方向増分。
+        dux_dx: f64,
+        duy_dx: f64,
+        /// 行頭のユーザー座標計算用。
+        dux_dy: f64,
+        duy_dy: f64,
+        ux_origin: f64,
+        uy_origin: f64,
     },
     Conic {
+        /// ユーザー空間の中心 X。
         cx: f64,
+        /// ユーザー空間の中心 Y。
         cy: f64,
         angle_offset: f64,
-        inv: Matrix2D,
+        /// デバイス→ユーザー変換の X 方向増分。
+        dux_dx: f64,
+        duy_dx: f64,
+        /// 行頭のユーザー座標計算用。
+        dux_dy: f64,
+        duy_dy: f64,
+        ux_origin: f64,
+        uy_origin: f64,
     },
 }
 
@@ -290,46 +326,85 @@ impl PreparedGradient {
                 cx,
                 cy,
                 r0,
-                r_diff,
-                inv,
+                inv_r_diff,
+                dux_dx,
+                duy_dx,
+                dux_dy,
+                duy_dy,
+                ux_origin,
+                uy_origin,
             } => {
-                for (i, pixel) in span.iter_mut().enumerate() {
-                    let px = (x_start + i as i32) as f64 + 0.5;
-                    let py = y as f64 + 0.5;
-                    let ux = inv.m00 * px + inv.m10 * py + inv.m20;
-                    let uy = inv.m01 * px + inv.m11 * py + inv.m21;
+                // 行頭のユーザー座標を事前計算し、X 方向は増分で更新する
+                let px0 = x_start as f64 + 0.5;
+                let py = y as f64 + 0.5;
+                let mut ux = dux_dx * px0 + dux_dy * py + ux_origin;
+                let mut uy = duy_dx * px0 + duy_dy * py + uy_origin;
 
+                for pixel in span.iter_mut() {
                     let dx = ux - cx;
                     let dy = uy - cy;
                     let dist = (dx * dx + dy * dy).sqrt();
-                    let t = if r_diff.abs() < 1e-10 {
-                        if dist <= *r0 { 0.0 } else { 1.0 }
-                    } else {
-                        (dist - r0) / r_diff
-                    };
+                    let t = (dist - r0) * inv_r_diff;
                     let idx = self.t_to_index(t);
                     *pixel = self.lut[idx];
+                    ux += dux_dx;
+                    uy += duy_dx;
                 }
             }
             PreparedGradientKind::Conic {
                 cx,
                 cy,
                 angle_offset,
-                inv,
+                dux_dx,
+                duy_dx,
+                dux_dy,
+                duy_dy,
+                ux_origin,
+                uy_origin,
             } => {
-                for (i, pixel) in span.iter_mut().enumerate() {
-                    let px = (x_start + i as i32) as f64 + 0.5;
-                    let py = y as f64 + 0.5;
-                    let ux = inv.m00 * px + inv.m10 * py + inv.m20;
-                    let uy = inv.m01 * px + inv.m11 * py + inv.m21;
+                let px0 = x_start as f64 + 0.5;
+                let py = y as f64 + 0.5;
+                let mut ux = dux_dx * px0 + dux_dy * py + ux_origin;
+                let mut uy = duy_dx * px0 + duy_dy * py + uy_origin;
+                let inv_2pi = 1.0 / (2.0 * std::f64::consts::PI);
 
-                    let angle = (uy - cy).atan2(ux - cx) - angle_offset;
+                for pixel in span.iter_mut() {
+                    let dx = ux - cx;
+                    let dy = uy - cy;
+                    let angle = fast_atan2(dy, dx) - angle_offset;
                     // [0, 1) に正規化
-                    let t = angle / (2.0 * std::f64::consts::PI);
+                    let t = angle * inv_2pi;
                     let t = t - t.floor();
                     let idx = self.t_to_index(t);
                     *pixel = self.lut[idx];
+                    ux += dux_dx;
+                    uy += duy_dx;
                 }
+            }
+        }
+    }
+
+    /// グラデーションを矩形に直接描画する (融合 fetch + blend)。
+    ///
+    /// 種別に応じた最適化パスにディスパッチする。
+    pub(crate) fn fill_rect(
+        &self,
+        dst: *mut u8,
+        stride: usize,
+        x0: i32,
+        y0: i32,
+        width: usize,
+        height: usize,
+    ) {
+        match &self.kind {
+            PreparedGradientKind::Linear { .. } => {
+                self.fill_rect_linear(dst, stride, x0, y0, width, height);
+            }
+            PreparedGradientKind::Radial { .. } => {
+                self.fill_rect_radial(dst, stride, x0, y0, width, height);
+            }
+            PreparedGradientKind::Conic { .. } => {
+                self.fill_rect_conic(dst, stride, x0, y0, width, height);
             }
         }
     }
@@ -338,8 +413,7 @@ impl PreparedGradient {
     ///
     /// fetch (固定小数点 t → LUT) と blend (SrcOver) を融合し、
     /// 中間バッファへの書き込み・読み戻しによるキャッシュ汚染を排除する。
-    /// Linear 以外のグラデーションでは何もしない (呼び出し側で分岐)。
-    pub(crate) fn fill_rect_linear(
+    fn fill_rect_linear(
         &self,
         dst: *mut u8,
         stride: usize,
@@ -533,6 +607,119 @@ impl PreparedGradient {
     }
 
     /// Linear グラデーションのスパンを固定小数点で計算し、JIT span_cov 用のバッファに書き込む。
+    /// Radial グラデーションを矩形に直接描画する。
+    fn fill_rect_radial(
+        &self,
+        dst: *mut u8,
+        stride: usize,
+        x0: i32,
+        y0: i32,
+        width: usize,
+        height: usize,
+    ) {
+        let PreparedGradientKind::Radial {
+            cx,
+            cy,
+            r0,
+            inv_r_diff,
+            dux_dx,
+            duy_dx,
+            dux_dy,
+            duy_dy,
+            ux_origin,
+            uy_origin,
+        } = &self.kind
+        else {
+            return;
+        };
+
+        let lut = &self.lut;
+        let opaque = self.lut_opaque;
+        let px0 = x0 as f64 + 0.5;
+
+        for row in 0..height {
+            let y = y0 + row as i32;
+            let py = y as f64 + 0.5;
+            let mut ux = dux_dx * px0 + dux_dy * py + ux_origin;
+            let mut uy = duy_dx * px0 + duy_dy * py + uy_origin;
+            let dst_row = unsafe { (dst.add(row * stride)) as *mut u32 };
+
+            for x in 0..width {
+                let dx = ux - cx;
+                let dy = uy - cy;
+                let dist = (dx * dx + dy * dy).sqrt();
+                let t = (dist - r0) * inv_r_diff;
+                let idx = self.t_to_index(t);
+                if opaque {
+                    unsafe {
+                        *dst_row.add(x) = lut[idx];
+                    }
+                } else {
+                    blend_pixel_src_over(dst_row, x, lut[idx]);
+                }
+                ux += dux_dx;
+                uy += duy_dx;
+            }
+        }
+    }
+
+    /// Conic グラデーションを矩形に直接描画する。
+    fn fill_rect_conic(
+        &self,
+        dst: *mut u8,
+        stride: usize,
+        x0: i32,
+        y0: i32,
+        width: usize,
+        height: usize,
+    ) {
+        let PreparedGradientKind::Conic {
+            cx,
+            cy,
+            angle_offset,
+            dux_dx,
+            duy_dx,
+            dux_dy,
+            duy_dy,
+            ux_origin,
+            uy_origin,
+        } = &self.kind
+        else {
+            return;
+        };
+
+        let lut = &self.lut;
+        let opaque = self.lut_opaque;
+        let px0 = x0 as f64 + 0.5;
+        let inv_2pi = 1.0 / (2.0 * std::f64::consts::PI);
+
+        for row in 0..height {
+            let y = y0 + row as i32;
+            let py = y as f64 + 0.5;
+            let mut ux = dux_dx * px0 + dux_dy * py + ux_origin;
+            let mut uy = duy_dx * px0 + duy_dy * py + uy_origin;
+            let dst_row = unsafe { (dst.add(row * stride)) as *mut u32 };
+
+            for x in 0..width {
+                let dx = ux - cx;
+                let dy = uy - cy;
+                let angle = fast_atan2(dy, dx) - angle_offset;
+                let t = angle * inv_2pi;
+                let t = t - t.floor();
+                let idx = self.t_to_index(t);
+                if opaque {
+                    unsafe {
+                        *dst_row.add(x) = lut[idx];
+                    }
+                } else {
+                    blend_pixel_src_over(dst_row, x, lut[idx]);
+                }
+                ux += dux_dx;
+                uy += duy_dx;
+            }
+        }
+    }
+
     pub(crate) fn fetch_span_linear_fixed(&self, x_start: i32, y: i32, span: &mut [u32]) {
         let PreparedGradientKind::Linear {
             dt_dx,
@@ -680,15 +867,50 @@ fn blend_pixel_src_over(dst_row: *mut u32, x: usize, src: u32) {
     }
 }
 
-/// SrcOver: out = src + dst * (1 - srcA)
+// =============================================================================
+// 高速 atan2 近似
+// =============================================================================
+
+/// atan2 の多項式近似。標準ライブラリの atan2 (~50-100 サイクル) の代わりに使用する。
 ///
-/// 全ピクセルが完全にカバーされる場合 (coverage=255) に使用する。
-/// Radial / Conic 等の非 Linear グラデーション用。
-pub(crate) fn blend_span_src_over(dst: *mut u8, src_span: &[u32]) {
-    let dst_pixels = dst as *mut u32;
-    for (i, &s) in src_span.iter().enumerate() {
-        blend_pixel_src_over(dst_pixels, i, s);
-    }
+/// Conic グラデーションの内部ループで使用。最大誤差 ~0.01 ラジアン (0.6 度)。
+/// グラデーションの LUT が 256 エントリなので、角度分解能 (2pi/256 ≈ 0.025 rad)
+/// より十分小さい誤差。
+///
+/// アルゴリズム: |y/x| <= 1 の場合は minimax 多項式で atan を近似し、
+/// |y/x| > 1 の場合は pi/2 - atan(x/y) で回避。象限は符号で復元。
+#[inline(always)]
+fn fast_atan2(y: f64, x: f64) -> f64 {
+    let ax = x.abs();
+    let ay = y.abs();
+
+    // atan(z) の 7 次 minimax 多項式 (|z| <= 1)
+    // 係数は Blend2D の pipeline/jit/fetchgradientpart.cpp を参考にした
+    let (z, base) = if ax >= ay {
+        if ax < 1e-10 {
+            return 0.0;
+        }
+        (ay / ax, 0.0)
+    } else {
+        (ax / ay, std::f64::consts::FRAC_PI_2)
+    };
+
+    let z2 = z * z;
+    // atan(z) ≈ z - z³/3 + z⁵/5 - z⁷/7 の Horner 形式最適化
+    let p = -0.0464964749;
+    let p = p * z2 + 0.15931422;
+    let p = p * z2 - 0.327622764;
+    let result = (p * z2 + 1.0) * z;
+
+    let result = if ax >= ay { result } else { base - result };
+
+    // 象限の復元
+    let result = if x < 0.0 {
+        std::f64::consts::PI - result
+    } else {
+        result
+    };
+    if y < 0.0 { -result } else { result }
 }
 
 /// 2 色間を premultiplied ARGB32 空間で線形補間する。
