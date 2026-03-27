@@ -35,31 +35,37 @@ proptest! {
         let sweep_fn = compile_sweep(fill_rule);
         let len = cells.len();
 
-        // JIT sweep
-        let mut jit_buf = vec![0xFFu8; len]; // 0xFF で初期化して書き込み確認
-        if len > 0 {
-            unsafe {
-                sweep_fn(cells.as_ptr(), jit_buf.as_mut_ptr(), len);
-            }
-        }
-
-        // リファレンス sweep
+        // リファレンス sweep (JIT が cells を破壊する前に実行する)
         let mut ref_buf = vec![0xFFu8; len];
         if len > 0 {
             sweep_reference(&cells, &mut ref_buf, 0, len, fill_rule);
         }
 
+        // JIT sweep (cells をゼロクリアする)
+        let mut jit_cells = cells;
+        let mut jit_buf = vec![0xFFu8; len]; // 0xFF で初期化して書き込み確認
+        if len > 0 {
+            unsafe {
+                sweep_fn(jit_cells.as_mut_ptr(), jit_buf.as_mut_ptr(), len);
+            }
+        }
+
         prop_assert_eq!(&jit_buf, &ref_buf, "JIT sweep とリファレンスの出力が不一致 (fill_rule={:?})", fill_rule);
+
+        // JIT sweep がセルをゼロクリアしたことを検証する
+        if len > 0 {
+            prop_assert!(jit_cells.iter().all(|&c| c == 0), "JIT sweep がセルをゼロクリアしていない");
+        }
     }
 
     /// len=0 で JIT sweep がクラッシュしないことを検証する。
     #[test]
     fn jit_sweep_empty(fill_rule in fill_rule_strategy()) {
         let sweep_fn = compile_sweep(fill_rule);
-        let cells: Vec<i32> = vec![];
+        let mut cells: Vec<i32> = vec![];
         let mut buf: Vec<u8> = vec![];
         unsafe {
-            sweep_fn(cells.as_ptr(), buf.as_mut_ptr(), 0);
+            sweep_fn(cells.as_mut_ptr(), buf.as_mut_ptr(), 0);
         }
         prop_assert!(buf.is_empty());
     }
@@ -80,14 +86,16 @@ proptest! {
             cells[i] = v;
         }
 
-        let mut jit_buf = vec![0u8; total_len];
         let mut ref_buf = vec![0u8; total_len];
+        if total_len > 0 {
+            sweep_reference(&cells, &mut ref_buf, 0, total_len, fill_rule);
+        }
 
+        let mut jit_buf = vec![0u8; total_len];
         if total_len > 0 {
             unsafe {
-                sweep_fn(cells.as_ptr(), jit_buf.as_mut_ptr(), total_len);
+                sweep_fn(cells.as_mut_ptr(), jit_buf.as_mut_ptr(), total_len);
             }
-            sweep_reference(&cells, &mut ref_buf, 0, total_len, fill_rule);
         }
 
         prop_assert_eq!(&jit_buf, &ref_buf, "余り要素の処理が不一致 (len={}, fill_rule={:?})", total_len, fill_rule);
@@ -100,14 +108,14 @@ proptest! {
         fill_rule in fill_rule_strategy()
     ) {
         let sweep_fn = compile_sweep(fill_rule);
-        let cells = vec![scale, 0, 0, -scale];
-        let mut jit_buf = vec![0u8; 4];
+        let mut cells = vec![scale, 0, 0, -scale];
         let mut ref_buf = vec![0u8; 4];
-
-        unsafe {
-            sweep_fn(cells.as_ptr(), jit_buf.as_mut_ptr(), 4);
-        }
         sweep_reference(&cells, &mut ref_buf, 0, 4, fill_rule);
+
+        let mut jit_buf = vec![0u8; 4];
+        unsafe {
+            sweep_fn(cells.as_mut_ptr(), jit_buf.as_mut_ptr(), 4);
+        }
 
         prop_assert_eq!(&jit_buf, &ref_buf);
         // NonZero では |cover >> 9| > 255 なので必ず 255 にクランプされる。
@@ -125,13 +133,14 @@ proptest! {
     ) {
         let sweep_fn = compile_sweep(fill_rule);
         let len = cells.len();
-        let mut jit_buf = vec![0u8; len];
         let mut ref_buf = vec![0u8; len];
-
-        unsafe {
-            sweep_fn(cells.as_ptr(), jit_buf.as_mut_ptr(), len);
-        }
         sweep_reference(&cells, &mut ref_buf, 0, len, fill_rule);
+
+        let mut jit_cells = cells;
+        let mut jit_buf = vec![0u8; len];
+        unsafe {
+            sweep_fn(jit_cells.as_mut_ptr(), jit_buf.as_mut_ptr(), len);
+        }
 
         prop_assert_eq!(&jit_buf, &ref_buf);
     }
@@ -158,13 +167,13 @@ proptest! {
             cells[cell_pos + 1] = area;
         }
 
-        let mut jit_buf = vec![0u8; len];
         let mut ref_buf = vec![0u8; len];
-
-        unsafe {
-            sweep_fn(cells.as_ptr(), jit_buf.as_mut_ptr(), len);
-        }
         sweep_reference(&cells, &mut ref_buf, 0, len, fill_rule);
+
+        let mut jit_buf = vec![0u8; len];
+        unsafe {
+            sweep_fn(cells.as_mut_ptr(), jit_buf.as_mut_ptr(), len);
+        }
 
         prop_assert_eq!(&jit_buf, &ref_buf, "area-cover パック値の sweep が不一致 (fill_rule={:?})", fill_rule);
 
@@ -194,13 +203,13 @@ proptest! {
             *c = cell_value;
         }
 
-        let mut jit_buf = vec![0u8; len];
         let mut ref_buf = vec![0u8; len];
-
-        unsafe {
-            sweep_fn(cells.as_ptr(), jit_buf.as_mut_ptr(), len);
-        }
         sweep_reference(&cells, &mut ref_buf, 0, len, FillRule::EvenOdd);
+
+        let mut jit_buf = vec![0u8; len];
+        unsafe {
+            sweep_fn(cells.as_mut_ptr(), jit_buf.as_mut_ptr(), len);
+        }
 
         prop_assert_eq!(&jit_buf, &ref_buf, "EvenOdd 周期性テストで JIT とリファレンスが不一致");
 

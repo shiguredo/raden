@@ -83,9 +83,14 @@ impl AnalyticRasterizer {
             ctx.top = y as f64;
             ctx.bottom = (y + 1) as f64;
 
-            // 前スキャンラインで書き込んだセルだけクリアする
-            if ctx.dirty_min < ctx.dirty_max {
-                self.cells[ctx.dirty_min..ctx.dirty_max].fill(0);
+            // セルのゼロクリアは sweep 関数内で読み取り直後に行う (Blend2D 方式)。
+            // sweep で処理されなかったセル (sweep_dirty_min 未満) はクリアが必要。
+            // ただし sweep は dirty_min..sweep_max を処理するので、
+            // dirty_min..dirty_max のうち sweep_max..dirty_max は未処理の可能性がある。
+            // → sweep_max は right_clipped 時に width まで拡張されるため、
+            //   dirty_max が width+1 に達する cells[x+1] のスピルオーバーのみ残る。
+            if ctx.dirty_max > width && ctx.dirty_max <= width + 1 {
+                self.cells[width] = 0;
             }
             ctx.dirty_min = width + 1;
             ctx.dirty_max = 0;
@@ -130,10 +135,11 @@ impl AnalyticRasterizer {
                 if sweep_dirty_min < sweep_max {
                     let sweep_len = sweep_max - sweep_dirty_min;
 
-                    // JIT sweep: prefix sum + sar(9) + abs + clamp(255) を計算する
+                    // JIT sweep: prefix sum + sar(9) + abs + clamp(255) を計算する。
+                    // sweep 関数はセルを読み取り後にゼロクリアする。
                     unsafe {
                         sweep_fn(
-                            self.cells[sweep_dirty_min..].as_ptr(),
+                            self.cells[sweep_dirty_min..].as_mut_ptr(),
                             self.cov_buf[sweep_dirty_min..].as_mut_ptr(),
                             sweep_len,
                         );

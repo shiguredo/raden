@@ -53,12 +53,12 @@ pub type PipelineBoxFn =
 /// JIT コンパイル済み sweep 関数のシグネチャ。
 ///
 /// area-cover パック値の prefix sum を計算し、算術右シフト 9 + abs + clamp(255) で
-/// 0-255 カバレッジマスクを生成する。
+/// 0-255 カバレッジマスクを生成する。読み取ったセルは 0 にクリアされる。
 ///
-/// - `cells`: area-cover パック値配列の先頭ポインタ
+/// - `cells`: area-cover パック値配列の先頭ポインタ (読み取り後にゼロクリアされる)
 /// - `cov_buf`: カバレッジ出力バッファの先頭ポインタ
 /// - `len`: 処理する要素数
-pub type SweepFn = unsafe extern "C" fn(cells: *const i32, cov_buf: *mut u8, len: usize);
+pub type SweepFn = unsafe extern "C" fn(cells: *mut i32, cov_buf: *mut u8, len: usize);
 
 /// コンパイル済みパイプライン関数のキャッシュ。
 #[derive(Default)]

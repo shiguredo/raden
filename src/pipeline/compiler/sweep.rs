@@ -149,6 +149,11 @@ pub(super) fn build_sweep(mut bcx: FunctionBuilder, ptr_type: Type, fill_rule: F
     let c2 = bcx.ins().load(types::I32, MemFlags::new(), cells_p, 8);
     let c3 = bcx.ins().load(types::I32, MemFlags::new(), cells_p, 12);
 
+    // セルを読み取った直後にゼロクリアする (Blend2D 方式)。
+    // これによりラスタライザ側での fill(0) が不要になる。
+    // zero_vec_loop はブロックパラメータのループ不変値を再利用する。
+    bcx.ins().store(MemFlags::new(), zero_vec_loop, cells_p, 0);
+
     // スカラー prefix sum: 逐次依存のためスカラーで計算
     let cover0 = bcx.ins().iadd(cover, c0);
     let cover1 = bcx.ins().iadd(cover0, c1);
@@ -225,6 +230,9 @@ pub(super) fn build_sweep(mut bcx: FunctionBuilder, ptr_type: Type, fill_rule: F
     let cover = bcx.block_params(scalar_loop)[3];
 
     let cell_val = bcx.ins().load(types::I32, MemFlags::new(), cells_p, 0);
+    // セルを読み取った直後にゼロクリアする
+    let i32_zero_s = bcx.ins().iconst(types::I32, 0);
+    bcx.ins().store(MemFlags::new(), i32_zero_s, cells_p, 0);
     let cover = bcx.ins().iadd(cover, cell_val);
     let shifted = bcx.ins().sshr_imm(cover, 9);
     let clamped = emit_fill_rule_convert(&mut bcx, shifted, c255, fill_rule);
