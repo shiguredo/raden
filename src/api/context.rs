@@ -1,3 +1,4 @@
+use crate::api::gradient::{Gradient, blend_span_src_over};
 use crate::api::image::Image;
 use crate::api::matrix::Matrix2D;
 use crate::api::path::Path;
@@ -96,6 +97,7 @@ struct ContextState {
     comp_op: CompOp,
     fill_rule: FillRule,
     fill_color_prgb32: u32,
+    fill_gradient: Option<Gradient>,
     stroke_color_prgb32: u32,
     stroke_width: f64,
     stroke_start_cap: StrokeCap,
@@ -111,6 +113,7 @@ pub struct Context<'a> {
     comp_op: CompOp,
     fill_rule: FillRule,
     fill_color_prgb32: u32,
+    fill_gradient: Option<Gradient>,
     stroke_color_prgb32: u32,
     stroke_width: f64,
     stroke_start_cap: StrokeCap,
@@ -124,6 +127,8 @@ pub struct Context<'a> {
     stroke_workspace: StrokeWorkspace,
     edge_buf: Vec<(f64, f64, f64, f64)>,
     rasterizer: AnalyticRasterizer,
+    /// グラデーションスパン計算用の一時バッファ。
+    gradient_span_buf: Vec<u32>,
 }
 
 impl<'a> Context<'a> {
@@ -134,6 +139,7 @@ impl<'a> Context<'a> {
             comp_op: CompOp::SrcOver,
             fill_rule: FillRule::default(),
             fill_color_prgb32: 0,
+            fill_gradient: None,
             stroke_color_prgb32: 0,
             stroke_width: 1.0,
             stroke_start_cap: StrokeCap::default(),
@@ -147,6 +153,7 @@ impl<'a> Context<'a> {
             stroke_workspace: StrokeWorkspace::new(),
             edge_buf: Vec::new(),
             rasterizer: AnalyticRasterizer::new(),
+            gradient_span_buf: Vec::new(),
         }
     }
 
@@ -156,6 +163,7 @@ impl<'a> Context<'a> {
             comp_op: self.comp_op,
             fill_rule: self.fill_rule,
             fill_color_prgb32: self.fill_color_prgb32,
+            fill_gradient: self.fill_gradient.clone(),
             stroke_color_prgb32: self.stroke_color_prgb32,
             stroke_width: self.stroke_width,
             stroke_start_cap: self.stroke_start_cap,
@@ -172,6 +180,7 @@ impl<'a> Context<'a> {
             self.comp_op = state.comp_op;
             self.fill_rule = state.fill_rule;
             self.fill_color_prgb32 = state.fill_color_prgb32;
+            self.fill_gradient = state.fill_gradient;
             self.stroke_color_prgb32 = state.stroke_color_prgb32;
             self.stroke_width = state.stroke_width;
             self.stroke_start_cap = state.stroke_start_cap;
@@ -193,6 +202,12 @@ impl<'a> Context<'a> {
 
     pub fn set_fill_style(&mut self, color: Rgba32) {
         self.fill_color_prgb32 = color.to_prgb32();
+        self.fill_gradient = None;
+    }
+
+    /// 塗りつぶしスタイルをグラデーションに設定する。
+    pub fn set_fill_style_gradient(&mut self, gradient: &Gradient) {
+        self.fill_gradient = Some(gradient.clone());
     }
 
     /// ストローク色を設定する。
@@ -244,6 +259,29 @@ impl<'a> Context<'a> {
             path.close();
             self.fill_path(&path);
             self.tmp_path = path;
+            return;
+        }
+
+        // グラデーションの場合はラスタライザを経由せず直接描画する
+        if let Some(ref gradient) = self.fill_gradient {
+            let Some(boxi) = self.clip_rect(rect) else {
+                return;
+            };
+            let prepared = gradient.prepare(&self.matrix);
+            let stride = self.image.stride();
+            let base = self.image.data_ptr_mut();
+            let width = (boxi.x1 - boxi.x0) as usize;
+            let mut span_buf = std::mem::take(&mut self.gradient_span_buf);
+            span_buf.resize(width, 0);
+
+            for y in boxi.y0..boxi.y1 {
+                prepared.fetch_span(boxi.x0, y, &mut span_buf[..width]);
+                let offset = y as usize * stride + boxi.x0 as usize * 4;
+                let dst_row = unsafe { base.add(offset) };
+                blend_span_src_over(dst_row, &span_buf[..width]);
+            }
+
+            self.gradient_span_buf = span_buf;
             return;
         }
 
@@ -301,9 +339,12 @@ impl<'a> Context<'a> {
     }
 
     pub fn fill_path(&mut self, path: &Path) {
-        // alpha ファストパス: SrcOver で完全透明なら描画不要
-        if self.comp_op == CompOp::SrcOver && (self.fill_color_prgb32 >> 24) == 0 {
-            return;
+        // グラデーションの場合は透明チェックをスキップ
+        if self.fill_gradient.is_none() {
+            // alpha ファストパス: SrcOver で完全透明なら描画不要
+            if self.comp_op == CompOp::SrcOver && (self.fill_color_prgb32 >> 24) == 0 {
+                return;
+            }
         }
 
         // バウンディングボックスを計算
@@ -395,43 +436,72 @@ impl<'a> Context<'a> {
             }
         }
 
-        // カバレッジ付きパイプライン関数を取得する。
-        //
-        // 旧方式ではスキャンラインごとに cov=0/255/1-254 をグループ化し、
-        // cov=255 は pipeline_fn、cov=1-254 は pipeline_cov_fn と使い分けていた。
-        // これは 1 スキャンラインあたり最大 3 回の関数ポインタ呼び出しを生じ、
-        // SIMD パイプラインのランが短くなるという問題があった。
-        //
-        // 新方式: sweep() が返す非ゼロカバレッジ範囲全体を pipeline_cov_fn に
-        // 一括で渡す。cov=255 のピクセルは cov パイプライン内で
-        // (src * 255 * 257 + 257) >> 16 = src として正しく処理される。
-        // 関数呼び出しが 1 回/スキャンラインに削減され、SIMD ランが長くなる。
-        let pipeline_cov_fn =
-            self.runtime
-                .get_or_compile_cov(self.image.format(), self.comp_op, FetchType::Solid);
         let sweep_fn = self.runtime.get_or_compile_sweep(self.fill_rule);
-
         let stride = self.image.stride();
         let base = self.image.data_ptr_mut();
-        let prgb32 = self.fill_color_prgb32;
 
-        // ラスタライズする。
-        // コールバックは非ゼロカバレッジ範囲に対して 1 回/スキャンライン呼ばれる。
-        self.rasterizer.rasterize(
-            &edge_buf,
-            clip_x0,
-            clip_y0,
-            clip_x1,
-            clip_y1,
-            sweep_fn,
-            |y, x_start, coverage| {
-                let offset = y as usize * stride + x_start as usize * 4;
-                let dst_row = unsafe { base.add(offset) };
-                unsafe {
-                    pipeline_cov_fn(dst_row, prgb32, coverage.len(), coverage.as_ptr());
-                }
-            },
-        );
+        // グラデーション描画は描画時に PreparedGradient を生成してスカラ合成する。
+        // 単色描画は既存の JIT パイプラインを使用する。
+        let prepared_gradient = self.fill_gradient.as_ref().map(|g| g.prepare(&self.matrix));
+
+        if let Some(ref gradient) = prepared_gradient {
+            let span_cov_fn = self.runtime.get_or_compile_span_cov(
+                self.image.format(),
+                self.comp_op,
+                FetchType::Solid,
+            );
+            let mut span_buf = std::mem::take(&mut self.gradient_span_buf);
+
+            self.rasterizer.rasterize(
+                &edge_buf,
+                clip_x0,
+                clip_y0,
+                clip_x1,
+                clip_y1,
+                sweep_fn,
+                |y, x_start, coverage| {
+                    span_buf.resize(coverage.len(), 0);
+                    gradient.fetch_span(x_start, y, &mut span_buf);
+
+                    let offset = y as usize * stride + x_start as usize * 4;
+                    let dst_row = unsafe { base.add(offset) };
+                    unsafe {
+                        span_cov_fn(
+                            dst_row,
+                            span_buf.as_ptr(),
+                            coverage.len(),
+                            coverage.as_ptr(),
+                        );
+                    }
+                },
+            );
+
+            self.gradient_span_buf = span_buf;
+        } else {
+            // 単色: 既存の JIT パイプラインを使用
+            let pipeline_cov_fn = self.runtime.get_or_compile_cov(
+                self.image.format(),
+                self.comp_op,
+                FetchType::Solid,
+            );
+            let prgb32 = self.fill_color_prgb32;
+
+            self.rasterizer.rasterize(
+                &edge_buf,
+                clip_x0,
+                clip_y0,
+                clip_x1,
+                clip_y1,
+                sweep_fn,
+                |y, x_start, coverage| {
+                    let offset = y as usize * stride + x_start as usize * 4;
+                    let dst_row = unsafe { base.add(offset) };
+                    unsafe {
+                        pipeline_cov_fn(dst_row, prgb32, coverage.len(), coverage.as_ptr());
+                    }
+                },
+            );
+        }
 
         self.edge_buf = edge_buf;
     }

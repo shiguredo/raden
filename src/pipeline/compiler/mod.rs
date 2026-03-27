@@ -66,6 +66,7 @@ mod blend_modes;
 mod box_pipelines;
 mod core_pipelines;
 mod porter_duff;
+mod span_pipelines;
 mod sweep;
 mod transform;
 
@@ -79,7 +80,9 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
 
-use super::cache::{PipelineBoxFn, PipelineCovFn, PipelineFn, SweepFn};
+use super::cache::{
+    PipelineBoxFn, PipelineCovFn, PipelineFn, PipelineSpanCovFn, PipelineSpanFn, SweepFn,
+};
 use super::key::PipelineKey;
 use crate::api::style::{CompOp, FillRule};
 
@@ -87,6 +90,7 @@ use blend_build::*;
 use box_pipelines::*;
 use core_pipelines::*;
 use porter_duff::*;
+use span_pipelines::*;
 use sweep::build_sweep;
 use transform::build_transform_edges;
 
@@ -422,6 +426,94 @@ impl PipelineCompiler {
 
         let code = module.get_finalized_function(func_id);
         let func: SweepFn = unsafe { std::mem::transmute(code) };
+
+        self.modules.push(module);
+        func
+    }
+
+    /// スパンパイプライン関数を JIT コンパイルする (カバレッジなし)。
+    ///
+    /// ## シグネチャ
+    ///
+    /// ```text
+    /// fn pipeline_span(dst: *mut u8, src_span: *const u32, count: usize)
+    /// ```
+    ///
+    /// グラデーション等のピクセルごとに色が異なるソースを dst に合成する。
+    /// SrcOver のみサポート。
+    pub fn compile_span(&mut self, key: &PipelineKey, comp_op: CompOp) -> PipelineSpanFn {
+        let mut module = new_module(&self.flags);
+        let ptr_type = module.target_config().pointer_type();
+
+        let mut sig = module.make_signature();
+        sig.params.push(AbiParam::new(ptr_type)); // dst: *mut u8
+        sig.params.push(AbiParam::new(ptr_type)); // src_span: *const u32
+        sig.params.push(AbiParam::new(ptr_type)); // count: usize
+
+        let func_name = format!("pipeline_span_{:#x}", key.value());
+        let func_id = module
+            .declare_function(&func_name, Linkage::Local, &sig)
+            .unwrap();
+
+        let mut ctx = module.make_context();
+        let mut func_ctx = FunctionBuilderContext::new();
+        ctx.func.signature = sig;
+
+        {
+            let bcx = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
+            match comp_op {
+                CompOp::SrcOver => build_src_over_span(bcx, ptr_type),
+                _ => build_src_over_span(bcx, ptr_type),
+            }
+        }
+
+        finalize_function(&mut module, func_id, &mut ctx, &func_name);
+
+        let code = module.get_finalized_function(func_id);
+        let func: PipelineSpanFn = unsafe { std::mem::transmute(code) };
+
+        self.modules.push(module);
+        func
+    }
+
+    /// カバレッジ付きスパンパイプライン関数を JIT コンパイルする。
+    ///
+    /// ## シグネチャ
+    ///
+    /// ```text
+    /// fn pipeline_span_cov(dst: *mut u8, src_span: *const u32, count: usize, coverage: *const u8)
+    /// ```
+    pub fn compile_span_cov(&mut self, key: &PipelineKey, comp_op: CompOp) -> PipelineSpanCovFn {
+        let mut module = new_module(&self.flags);
+        let ptr_type = module.target_config().pointer_type();
+
+        let mut sig = module.make_signature();
+        sig.params.push(AbiParam::new(ptr_type)); // dst: *mut u8
+        sig.params.push(AbiParam::new(ptr_type)); // src_span: *const u32
+        sig.params.push(AbiParam::new(ptr_type)); // count: usize
+        sig.params.push(AbiParam::new(ptr_type)); // coverage: *const u8
+
+        let func_name = format!("pipeline_span_cov_{:#x}", key.value());
+        let func_id = module
+            .declare_function(&func_name, Linkage::Local, &sig)
+            .unwrap();
+
+        let mut ctx = module.make_context();
+        let mut func_ctx = FunctionBuilderContext::new();
+        ctx.func.signature = sig;
+
+        {
+            let bcx = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
+            match comp_op {
+                CompOp::SrcOver => build_src_over_span_cov(bcx, ptr_type),
+                _ => build_src_over_span_cov(bcx, ptr_type),
+            }
+        }
+
+        finalize_function(&mut module, func_id, &mut ctx, &func_name);
+
+        let code = module.get_finalized_function(func_id);
+        let func: PipelineSpanCovFn = unsafe { std::mem::transmute(code) };
 
         self.modules.push(module);
         func

@@ -8,6 +8,10 @@ pub mod pixel;
 pub mod raster;
 
 pub use api::context::{Arc, Circle, Context, Line, Rect};
+pub use api::gradient::{
+    ConicGradientValues, ExtendMode, Gradient, GradientStop, GradientValues, LinearGradientValues,
+    RadialGradientValues,
+};
 pub use api::image::Image;
 pub use api::matrix::Matrix2D;
 pub use api::path::{Path, PathCmd, Point};

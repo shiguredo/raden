@@ -1,4 +1,5 @@
 pub mod context;
+pub mod gradient;
 pub mod image;
 pub mod matrix;
 pub mod path;

@@ -60,12 +60,33 @@ pub type PipelineBoxFn =
 /// - `len`: 処理する要素数
 pub type SweepFn = unsafe extern "C" fn(cells: *mut i32, cov_buf: *mut u8, len: usize);
 
+/// JIT コンパイル済みスパンパイプライン関数のシグネチャ。
+///
+/// グラデーション等のピクセルごとに色が異なるソースを合成する。
+/// `src_solid` の代わりにソース色の配列ポインタを受け取る。
+///
+/// - `dst`: スキャンライン先頭ポインタ
+/// - `src_span`: ピクセルごとの premultiplied ARGB32 色配列ポインタ (count 要素)
+/// - `count`: 処理ピクセル数
+pub type PipelineSpanFn = unsafe extern "C" fn(dst: *mut u8, src_span: *const u32, count: usize);
+
+/// カバレッジ付きスパンパイプライン関数のシグネチャ。
+///
+/// - `dst`: スキャンライン先頭ポインタ
+/// - `src_span`: ピクセルごとの premultiplied ARGB32 色配列ポインタ (count 要素)
+/// - `count`: 処理ピクセル数
+/// - `coverage`: ピクセルごとのカバレッジ値 (0-255) の配列ポインタ
+pub type PipelineSpanCovFn =
+    unsafe extern "C" fn(dst: *mut u8, src_span: *const u32, count: usize, coverage: *const u8);
+
 /// コンパイル済みパイプライン関数のキャッシュ。
 #[derive(Default)]
 pub struct PipelineCache {
     map: HashMap<PipelineKey, PipelineFn>,
     cov_map: HashMap<PipelineKey, PipelineCovFn>,
     box_map: HashMap<PipelineKey, PipelineBoxFn>,
+    span_map: HashMap<PipelineKey, PipelineSpanFn>,
+    span_cov_map: HashMap<PipelineKey, PipelineSpanCovFn>,
 }
 
 impl PipelineCache {
@@ -95,5 +116,21 @@ impl PipelineCache {
 
     pub fn insert_box(&mut self, key: PipelineKey, func: PipelineBoxFn) {
         self.box_map.insert(key, func);
+    }
+
+    pub fn get_span(&self, key: &PipelineKey) -> Option<PipelineSpanFn> {
+        self.span_map.get(key).copied()
+    }
+
+    pub fn insert_span(&mut self, key: PipelineKey, func: PipelineSpanFn) {
+        self.span_map.insert(key, func);
+    }
+
+    pub fn get_span_cov(&self, key: &PipelineKey) -> Option<PipelineSpanCovFn> {
+        self.span_cov_map.get(key).copied()
+    }
+
+    pub fn insert_span_cov(&mut self, key: PipelineKey, func: PipelineSpanCovFn) {
+        self.span_cov_map.insert(key, func);
     }
 }

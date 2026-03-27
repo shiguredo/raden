@@ -1,7 +1,8 @@
 use crate::api::style::{CompOp, FillRule};
 
 use super::cache::{
-    PipelineBoxFn, PipelineCache, PipelineCovFn, PipelineFn, SweepFn, TransformEdgesFn,
+    PipelineBoxFn, PipelineCache, PipelineCovFn, PipelineFn, PipelineSpanCovFn, PipelineSpanFn,
+    SweepFn, TransformEdgesFn,
 };
 use super::compiler::PipelineCompiler;
 use super::key::{FetchType, FillType, PipelineKey};
@@ -86,6 +87,42 @@ impl PipelineRuntime {
                 let f = self.compiler.compile_box(&key, comp_op);
                 self.cache.insert_box(key, f);
                 Some(f)
+            }
+        }
+    }
+
+    /// スパンパイプライン関数を取得またはコンパイルする (カバレッジなし)。
+    pub fn get_or_compile_span(
+        &mut self,
+        dst_format: PixelFormat,
+        comp_op: CompOp,
+        fetch_type: FetchType,
+    ) -> PipelineSpanFn {
+        let key = PipelineKey::new(dst_format, comp_op, FillType::BoxA, fetch_type);
+        match self.cache.get_span(&key) {
+            Some(f) => f,
+            None => {
+                let f = self.compiler.compile_span(&key, comp_op);
+                self.cache.insert_span(key, f);
+                f
+            }
+        }
+    }
+
+    /// カバレッジ付きスパンパイプライン関数を取得またはコンパイルする。
+    pub fn get_or_compile_span_cov(
+        &mut self,
+        dst_format: PixelFormat,
+        comp_op: CompOp,
+        fetch_type: FetchType,
+    ) -> PipelineSpanCovFn {
+        let key = PipelineKey::new(dst_format, comp_op, FillType::Mask, fetch_type);
+        match self.cache.get_span_cov(&key) {
+            Some(f) => f,
+            None => {
+                let f = self.compiler.compile_span_cov(&key, comp_op);
+                self.cache.insert_span_cov(key, f);
+                f
             }
         }
     }

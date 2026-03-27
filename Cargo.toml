@@ -58,6 +58,10 @@ harness = false
 name = "stroke_shape"
 harness = false
 
+[[bench]]
+name = "fill_gradient"
+harness = false
+
 [workspace]
 members = ["pbt"]
 exclude = ["fuzz"]

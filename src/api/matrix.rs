@@ -129,6 +129,23 @@ impl Matrix2D {
     pub fn reset(&mut self) {
         *self = Self::IDENTITY;
     }
+
+    /// 逆行列を計算する。行列式がゼロの場合は None を返す。
+    pub fn invert(&self) -> Option<Self> {
+        let det = self.m00 * self.m11 - self.m01 * self.m10;
+        if det.abs() < 1e-10 {
+            return None;
+        }
+        let inv_det = 1.0 / det;
+        Some(Self {
+            m00: self.m11 * inv_det,
+            m01: -self.m01 * inv_det,
+            m10: -self.m10 * inv_det,
+            m11: self.m00 * inv_det,
+            m20: (self.m10 * self.m21 - self.m11 * self.m20) * inv_det,
+            m21: (self.m01 * self.m20 - self.m00 * self.m21) * inv_det,
+        })
+    }
 }
 
 /// リファレンス実装: エッジ座標を行列で変換する。PBT で JIT 版との比較に使用。
