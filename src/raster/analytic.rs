@@ -168,7 +168,7 @@ fn sort_edges_by_y_min(edges: &mut [(f64, f64, f64, f64)]) {
         let b_y_min = b.1.min(b.3);
         debug_assert!(!a_y_min.is_nan(), "エッジの Y 座標が NaN");
         debug_assert!(!b_y_min.is_nan(), "エッジの Y 座標が NaN");
-        a_y_min.partial_cmp(&b_y_min).unwrap()
+        a_y_min.total_cmp(&b_y_min)
     });
 }
 
@@ -274,19 +274,14 @@ fn add_edge(cells: &mut [i32], x0: f64, y0: f64, x1: f64, y1: f64, ctx: &mut Sca
     let clipped_top = ey0.max(ctx.top);
     let clipped_bottom = ey1.min(ctx.bottom);
 
-    // クリップ後の X 座標を計算
+    // クリップ後の X 座標を計算する。
+    // y0 != y1 は上で確認済みなので dy_total は非ゼロ。
+    // 2 回の除算を 1 回の除算 + 2 回の乗算に置換する。
     let dy_total = y1 - y0;
     let dx_total = x1 - x0;
-    let t_top = if dy_total.abs() > 1e-12 {
-        (clipped_top - y0) / dy_total
-    } else {
-        0.0
-    };
-    let t_bot = if dy_total.abs() > 1e-12 {
-        (clipped_bottom - y0) / dy_total
-    } else {
-        1.0
-    };
+    let inv_dy_total = 1.0 / dy_total;
+    let t_top = (clipped_top - y0) * inv_dy_total;
+    let t_bot = (clipped_bottom - y0) * inv_dy_total;
     let x_at_top = x0 + t_top * dx_total;
     let x_at_bot = x0 + t_bot * dx_total;
 
