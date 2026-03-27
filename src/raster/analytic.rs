@@ -229,7 +229,7 @@ fn emit_cell(
     x_end: f64,
     y_start: f64,
     y_end: f64,
-    direction: f64,
+    direction_sign: i32,
     ctx: &mut ScanlineCtx,
 ) {
     let fx_start = x_start - cell_x as f64;
@@ -241,9 +241,8 @@ fn emit_cell(
     // 複数セルにまたがるエッジの cover 合計が正確な値より小さくなる。
     // y_start, y_end を個別に量子化してその差を取ることで、
     // セル分割した cover の合計が常にエッジ全体の cover と一致する。
-    let direction_sign = if direction > 0.0 { 1i32 } else { -1i32 };
     let cover = ((y_end * 256.0) as i32 - (y_start * 256.0) as i32) * direction_sign;
-    let area = ((fx_start + fx_end) * dy * 65536.0 * direction) as i32;
+    let area = ((fx_start + fx_end) * dy * 65536.0) as i32 * direction_sign;
 
     let delta = cover * 512 - area;
     let idx = (cell_x - ctx.clip_x0) as isize;
@@ -268,7 +267,7 @@ fn add_edge(cells: &mut [i32], x0: f64, y0: f64, x1: f64, y1: f64, ctx: &mut Sca
     }
 
     // 方向: 下向き (y0 < y1) = +1, 上向き (y0 > y1) = -1
-    let direction: f64 = if y0 < y1 { 1.0 } else { -1.0 };
+    let direction_sign: i32 = if y0 < y1 { 1 } else { -1 };
 
     // このスキャンラインでクリップされた Y 範囲
     let clipped_top = ey0.max(ctx.top);
@@ -298,7 +297,7 @@ fn add_edge(cells: &mut [i32], x0: f64, y0: f64, x1: f64, y1: f64, ctx: &mut Sca
             x_at_bot,
             clipped_top,
             clipped_bottom,
-            direction,
+            direction_sign,
             ctx,
         );
         return;
@@ -322,7 +321,16 @@ fn add_edge(cells: &mut [i32], x0: f64, y0: f64, x1: f64, y1: f64, ctx: &mut Sca
             };
             let y_next = clipped_top + (x_next - x_at_top) * slope_y_per_x;
 
-            emit_cell(cells, cell_x, x_cur, x_next, y_cur, y_next, direction, ctx);
+            emit_cell(
+                cells,
+                cell_x,
+                x_cur,
+                x_next,
+                y_cur,
+                y_next,
+                direction_sign,
+                ctx,
+            );
 
             x_cur = x_next;
             y_cur = y_next;
@@ -337,7 +345,16 @@ fn add_edge(cells: &mut [i32], x0: f64, y0: f64, x1: f64, y1: f64, ctx: &mut Sca
             };
             let y_next = clipped_top + (x_next - x_at_top) * slope_y_per_x;
 
-            emit_cell(cells, cell_x, x_cur, x_next, y_cur, y_next, direction, ctx);
+            emit_cell(
+                cells,
+                cell_x,
+                x_cur,
+                x_next,
+                y_cur,
+                y_next,
+                direction_sign,
+                ctx,
+            );
 
             x_cur = x_next;
             y_cur = y_next;

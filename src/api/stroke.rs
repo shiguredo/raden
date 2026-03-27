@@ -270,6 +270,7 @@ fn mid(a: Point, b: Point) -> Point {
 }
 
 /// 線分の単位法線を計算する。ゼロ長の場合は (0, 0) を返す。
+/// 2 回の除算を 1 回の除算 + 2 回の乗算に置換する。
 fn unit_normal(p0: Point, p1: Point) -> (f64, f64) {
     let dx = p1.x - p0.x;
     let dy = p1.y - p0.y;
@@ -277,7 +278,8 @@ fn unit_normal(p0: Point, p1: Point) -> (f64, f64) {
     if len < 1e-12 {
         return (0.0, 0.0);
     }
-    (-dy / len, dx / len)
+    let inv_len = 1.0 / len;
+    (-dy * inv_len, dx * inv_len)
 }
 
 /// サブパスをストローク輪郭に変換して output に書き込む。
