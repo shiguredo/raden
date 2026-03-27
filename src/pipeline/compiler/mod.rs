@@ -72,6 +72,7 @@ mod transform;
 use cranelift_codegen::ir::instructions::BlockArg;
 use cranelift_codegen::ir::types;
 use cranelift_codegen::ir::{AbiParam, Endianness, InstBuilder, MemFlags, Value};
+use cranelift_codegen::isa::OwnedTargetIsa;
 use cranelift_codegen::settings;
 use cranelift_codegen::settings::Configurable;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
@@ -89,6 +90,65 @@ use porter_duff::*;
 use sweep::build_sweep;
 use transform::build_transform_edges;
 
+/// ホスト CPU の ISA 設定を構築する。
+///
+/// CPUID によるホスト CPU 機能検出と Cranelift フラグの構成を行う。
+/// Cranelift の `JITModule` は ISA を所有権で要求するため、ISA 自体の共有はできない。
+/// そのため `settings::Flags` を返し、モジュール作成時に毎回 ISA を構築する。
+/// CPU 機能検出 (`cranelift_native::builder()`) はフラグ構築と比較して軽量なため、
+/// フラグの事前構築だけでもボイラープレートの削減効果がある。
+fn build_flags() -> settings::Flags {
+    let mut flag_builder = settings::builder();
+    // JIT コードはプロセス内で直接呼び出すため、PIC (Position Independent Code) は不要。
+    // これにより GOT/PLT 経由の間接呼び出しが排除される。
+    flag_builder.set("use_colocated_libcalls", "false").unwrap();
+    flag_builder.set("is_pic", "false").unwrap();
+    // Cranelift の最適化パスを有効化する。
+    // opt_level=speed により以下の最適化が適用される:
+    // - 命令結合 (iadd + imul → lea 等)
+    // - 不要な mov 除去
+    // - SIMD 命令の最適選択
+    // - ループ内定数の巻き上げ
+    flag_builder.set("opt_level", "speed").unwrap();
+    settings::Flags::new(flag_builder)
+}
+
+/// ISA を構築する。
+fn build_isa(flags: &settings::Flags) -> OwnedTargetIsa {
+    let isa_builder = cranelift_native::builder().expect("host machine is not supported");
+    isa_builder.finish(flags.clone()).unwrap()
+}
+
+/// JITModule を新規作成する。
+fn new_module(flags: &settings::Flags) -> JITModule {
+    let isa = build_isa(flags);
+    JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()))
+}
+
+/// 関数を定義してネイティブコードを確定する。
+///
+/// `RADEN_DUMP_PIPELINE` 環境変数が設定されている場合、
+/// 生成されたアセンブリを標準エラーにダンプする。
+fn finalize_function(
+    module: &mut JITModule,
+    func_id: cranelift_module::FuncId,
+    ctx: &mut cranelift_codegen::Context,
+    func_name: &str,
+) {
+    if std::env::var("RADEN_DUMP_PIPELINE").is_ok() {
+        ctx.set_disasm(true);
+    }
+
+    module.define_function(func_id, ctx).unwrap();
+
+    if let Some(disasm) = ctx.compiled_code().unwrap().vcode.as_ref() {
+        eprintln!("=== {} ===\n{}", func_name, disasm);
+    }
+
+    module.clear_context(ctx);
+    module.finalize_definitions().unwrap();
+}
+
 /// Cranelift JIT を使用してパイプライン関数を生成するコンパイラ。
 ///
 /// ## 設計方針
@@ -104,14 +164,20 @@ use transform::build_transform_edges;
 /// - 初回コンパイル: ~1-5ms (Cranelift の IR 構築 + 最適化 + コード生成)
 /// - 2 回目以降: PipelineCache 経由で O(1) ルックアップ
 /// - 生成されるコードのサイズ: ~200-800 bytes/パイプライン
-#[derive(Default)]
 pub struct PipelineCompiler {
     modules: Vec<JITModule>,
+    /// 全パイプラインで共有する Cranelift フラグ。
+    /// ISA は JITModule が所有権を要求するため共有できないが、
+    /// フラグは事前構築して再利用する。
+    flags: settings::Flags,
 }
 
 impl PipelineCompiler {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            modules: Vec::new(),
+            flags: build_flags(),
+        }
     }
 
     /// カバレッジなしパイプライン関数を JIT コンパイルする。
@@ -129,24 +195,7 @@ impl PipelineCompiler {
     /// fill_rect() から呼ばれ、矩形領域の各スキャンラインに対して実行される。
     /// カバレッジ処理が不要なため、最もシンプルで高速。
     pub fn compile(&mut self, key: &PipelineKey, comp_op: CompOp) -> PipelineFn {
-        let mut flag_builder = settings::builder();
-        // JIT コードはプロセス内で直接呼び出すため、PIC (Position Independent Code) は不要。
-        // これにより GOT/PLT 経由の間接呼び出しが排除される。
-        flag_builder.set("use_colocated_libcalls", "false").unwrap();
-        flag_builder.set("is_pic", "false").unwrap();
-        // Cranelift の最適化パスを有効化する。
-        // opt_level=speed により以下の最適化が適用される:
-        // - 命令結合 (iadd + imul → lea 等)
-        // - 不要な mov 除去
-        // - SIMD 命令の最適選択
-        // - ループ内定数の巻き上げ
-        flag_builder.set("opt_level", "speed").unwrap();
-        let isa_builder = cranelift_native::builder().expect("host machine is not supported");
-        let isa = isa_builder
-            .finish(settings::Flags::new(flag_builder))
-            .unwrap();
-        let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
-
+        let mut module = new_module(&self.flags);
         let ptr_type = module.target_config().pointer_type();
 
         let mut sig = module.make_signature();
@@ -198,18 +247,7 @@ impl PipelineCompiler {
             }
         }
 
-        if std::env::var("RADEN_DUMP_PIPELINE").is_ok() {
-            ctx.set_disasm(true);
-        }
-
-        module.define_function(func_id, &mut ctx).unwrap();
-
-        if let Some(disasm) = ctx.compiled_code().unwrap().vcode.as_ref() {
-            eprintln!("=== {} ===\n{}", func_name, disasm);
-        }
-
-        module.clear_context(&mut ctx);
-        module.finalize_definitions().unwrap();
+        finalize_function(&mut module, func_id, &mut ctx, &func_name);
 
         let code = module.get_finalized_function(func_id);
         let func: PipelineFn = unsafe { std::mem::transmute(code) };
@@ -234,16 +272,7 @@ impl PipelineCompiler {
     /// fill_circle() / fill_path() のアンチエイリアスレンダリングで使用。
     /// AnalyticRasterizer が生成するカバレッジマスクと組み合わせて動作する。
     pub fn compile_cov(&mut self, key: &PipelineKey, comp_op: CompOp) -> PipelineCovFn {
-        let mut flag_builder = settings::builder();
-        flag_builder.set("use_colocated_libcalls", "false").unwrap();
-        flag_builder.set("is_pic", "false").unwrap();
-        flag_builder.set("opt_level", "speed").unwrap();
-        let isa_builder = cranelift_native::builder().expect("host machine is not supported");
-        let isa = isa_builder
-            .finish(settings::Flags::new(flag_builder))
-            .unwrap();
-        let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
-
+        let mut module = new_module(&self.flags);
         let ptr_type = module.target_config().pointer_type();
 
         let mut sig = module.make_signature();
@@ -296,9 +325,7 @@ impl PipelineCompiler {
             }
         }
 
-        module.define_function(func_id, &mut ctx).unwrap();
-        module.clear_context(&mut ctx);
-        module.finalize_definitions().unwrap();
+        finalize_function(&mut module, func_id, &mut ctx, &func_name);
 
         let code = module.get_finalized_function(func_id);
         let func: PipelineCovFn = unsafe { std::mem::transmute(code) };
@@ -320,16 +347,7 @@ impl PipelineCompiler {
     /// - splat 済みベクタ等のループ不変値を全スキャンラインで再利用
     /// - 4x SIMD アンロール (16px/反復) で内部ループのオーバーヘッドを最小化
     pub fn compile_box(&mut self, key: &PipelineKey, comp_op: CompOp) -> PipelineBoxFn {
-        let mut flag_builder = settings::builder();
-        flag_builder.set("use_colocated_libcalls", "false").unwrap();
-        flag_builder.set("is_pic", "false").unwrap();
-        flag_builder.set("opt_level", "speed").unwrap();
-        let isa_builder = cranelift_native::builder().expect("host machine is not supported");
-        let isa = isa_builder
-            .finish(settings::Flags::new(flag_builder))
-            .unwrap();
-        let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
-
+        let mut module = new_module(&self.flags);
         let ptr_type = module.target_config().pointer_type();
 
         let mut sig = module.make_signature();
@@ -357,18 +375,7 @@ impl PipelineCompiler {
             }
         }
 
-        if std::env::var("RADEN_DUMP_PIPELINE").is_ok() {
-            ctx.set_disasm(true);
-        }
-
-        module.define_function(func_id, &mut ctx).unwrap();
-
-        if let Some(disasm) = ctx.compiled_code().unwrap().vcode.as_ref() {
-            eprintln!("=== {} ===\n{}", func_name, disasm);
-        }
-
-        module.clear_context(&mut ctx);
-        module.finalize_definitions().unwrap();
+        finalize_function(&mut module, func_id, &mut ctx, &func_name);
 
         let code = module.get_finalized_function(func_id);
         let func: PipelineBoxFn = unsafe { std::mem::transmute(code) };
@@ -388,16 +395,7 @@ impl PipelineCompiler {
     /// prefix sum + abs + clamp(255) を計算し、結果を cov_buf に書き込む。
     /// 4 要素アンロールで 4 バイトを 1 つの i32 ストアに統合する。
     pub fn compile_sweep(&mut self, fill_rule: FillRule) -> SweepFn {
-        let mut flag_builder = settings::builder();
-        flag_builder.set("use_colocated_libcalls", "false").unwrap();
-        flag_builder.set("is_pic", "false").unwrap();
-        flag_builder.set("opt_level", "speed").unwrap();
-        let isa_builder = cranelift_native::builder().expect("host machine is not supported");
-        let isa = isa_builder
-            .finish(settings::Flags::new(flag_builder))
-            .unwrap();
-        let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
-
+        let mut module = new_module(&self.flags);
         let ptr_type = module.target_config().pointer_type();
 
         let mut sig = module.make_signature();
@@ -420,9 +418,7 @@ impl PipelineCompiler {
             build_sweep(bcx, ptr_type, fill_rule);
         }
 
-        module.define_function(func_id, &mut ctx).unwrap();
-        module.clear_context(&mut ctx);
-        module.finalize_definitions().unwrap();
+        finalize_function(&mut module, func_id, &mut ctx, name);
 
         let code = module.get_finalized_function(func_id);
         let func: SweepFn = unsafe { std::mem::transmute(code) };
@@ -442,16 +438,7 @@ impl PipelineCompiler {
     ///
     /// F64X2 SIMD で各エッジの 2 点 (x0,y0), (x1,y1) を一括変換する。
     pub fn compile_transform_edges(&mut self) -> super::cache::TransformEdgesFn {
-        let mut flag_builder = settings::builder();
-        flag_builder.set("use_colocated_libcalls", "false").unwrap();
-        flag_builder.set("is_pic", "false").unwrap();
-        flag_builder.set("opt_level", "speed").unwrap();
-        let isa_builder = cranelift_native::builder().expect("host machine is not supported");
-        let isa = isa_builder
-            .finish(settings::Flags::new(flag_builder))
-            .unwrap();
-        let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
-
+        let mut module = new_module(&self.flags);
         let ptr_type = module.target_config().pointer_type();
 
         let mut sig = module.make_signature();
@@ -464,9 +451,8 @@ impl PipelineCompiler {
         sig.params.push(AbiParam::new(types::F64)); // m20
         sig.params.push(AbiParam::new(types::F64)); // m21
 
-        let func_id = module
-            .declare_function("jit_transform_edges", Linkage::Local, &sig)
-            .unwrap();
+        let name = "jit_transform_edges";
+        let func_id = module.declare_function(name, Linkage::Local, &sig).unwrap();
 
         let mut ctx = module.make_context();
         let mut func_ctx = FunctionBuilderContext::new();
@@ -477,15 +463,19 @@ impl PipelineCompiler {
             build_transform_edges(bcx, ptr_type);
         }
 
-        module.define_function(func_id, &mut ctx).unwrap();
-        module.clear_context(&mut ctx);
-        module.finalize_definitions().unwrap();
+        finalize_function(&mut module, func_id, &mut ctx, name);
 
         let code = module.get_finalized_function(func_id);
         let func: super::cache::TransformEdgesFn = unsafe { std::mem::transmute(code) };
 
         self.modules.push(module);
         func
+    }
+}
+
+impl Default for PipelineCompiler {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
