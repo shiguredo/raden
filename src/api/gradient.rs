@@ -210,10 +210,13 @@ impl Gradient {
             },
         };
 
+        let lut_opaque = lut.iter().all(|&c| (c >> 24) == 0xFF);
+
         PreparedGradient {
             lut,
             extend_mode: self.extend_mode,
             kind,
+            lut_opaque,
         }
     }
 }
@@ -234,6 +237,9 @@ pub(crate) struct PreparedGradient {
     lut: Vec<u32>,
     extend_mode: ExtendMode,
     kind: PreparedGradientKind,
+    /// LUT の全エントリが完全不透明 (alpha=255) かどうか。
+    /// true の場合、SrcOver 合成を省略して直接ストアできる。
+    lut_opaque: bool,
 }
 
 #[derive(Clone)]
@@ -360,8 +366,133 @@ impl PreparedGradient {
         // 最初の行、最初のピクセル中心での t (固定小数点)
         let t_row0 =
             ((dt_dx * (x0 as f64 + 0.5) + dt_dy * (y0 as f64 + 0.5) + t_origin) * scale) as i64;
-        let mut t_row_start = t_row0;
+        let t_row_start = t_row0;
 
+        // LUT が全不透明の場合、SrcOver 合成を省略して直接ストアする。
+        // 4 ピクセルアンロールで書き込みスループットを向上させる。
+        if self.lut_opaque {
+            self.fill_rect_linear_opaque(
+                dst,
+                stride,
+                width,
+                height,
+                t_row_start,
+                dt_dx_fixed,
+                dt_dy_fixed,
+            );
+        } else {
+            self.fill_rect_linear_blend(
+                dst,
+                stride,
+                width,
+                height,
+                t_row_start,
+                dt_dx_fixed,
+                dt_dy_fixed,
+            );
+        }
+    }
+
+    /// LUT が全不透明の場合の高速パス。SrcOver 合成を省略して直接ストアする。
+    fn fill_rect_linear_opaque(
+        &self,
+        dst: *mut u8,
+        stride: usize,
+        width: usize,
+        height: usize,
+        mut t_row_start: i64,
+        dt_dx_fixed: i64,
+        dt_dy_fixed: i64,
+    ) {
+        let lut = &self.lut;
+        let dt_dx4 = dt_dx_fixed * 4;
+
+        for row in 0..height {
+            let dst_row = unsafe { (dst.add(row * stride)) as *mut u32 };
+
+            match self.extend_mode {
+                ExtendMode::Pad => {
+                    let max_fixed = (LUT_SIZE as i64 - 1) << FRAC_BITS;
+                    let simd_width = width / 4;
+                    let remainder = width - simd_width * 4;
+
+                    // 4 ピクセルアンロール
+                    let mut t0 = t_row_start;
+                    let mut t1 = t_row_start + dt_dx_fixed;
+                    let mut t2 = t_row_start + dt_dx_fixed * 2;
+                    let mut t3 = t_row_start + dt_dx_fixed * 3;
+
+                    for chunk in 0..simd_width {
+                        let x = chunk * 4;
+                        let i0 = (t0.clamp(0, max_fixed) >> FRAC_BITS) as usize;
+                        let i1 = (t1.clamp(0, max_fixed) >> FRAC_BITS) as usize;
+                        let i2 = (t2.clamp(0, max_fixed) >> FRAC_BITS) as usize;
+                        let i3 = (t3.clamp(0, max_fixed) >> FRAC_BITS) as usize;
+
+                        unsafe {
+                            *dst_row.add(x) = lut[i0];
+                            *dst_row.add(x + 1) = lut[i1];
+                            *dst_row.add(x + 2) = lut[i2];
+                            *dst_row.add(x + 3) = lut[i3];
+                        }
+
+                        t0 += dt_dx4;
+                        t1 += dt_dx4;
+                        t2 += dt_dx4;
+                        t3 += dt_dx4;
+                    }
+
+                    // 余りピクセル
+                    let mut t = t0;
+                    for x in (width - remainder)..width {
+                        let idx = (t.clamp(0, max_fixed) >> FRAC_BITS) as usize;
+                        unsafe {
+                            *dst_row.add(x) = lut[idx];
+                        }
+                        t += dt_dx_fixed;
+                    }
+                }
+                ExtendMode::Repeat => {
+                    let cycle_mask = ((LUT_SIZE as u64) << FRAC_BITS) - 1;
+                    let mut t = t_row_start;
+                    for x in 0..width {
+                        let idx = (((t as u64) & cycle_mask) >> FRAC_BITS) as usize;
+                        unsafe {
+                            *dst_row.add(x) = lut[idx];
+                        }
+                        t += dt_dx_fixed;
+                    }
+                }
+                ExtendMode::Reflect => {
+                    let cycle_mask = ((LUT_SIZE as u64 * 2) << FRAC_BITS) - 1;
+                    let mut t = t_row_start;
+                    for x in 0..width {
+                        let t_abs = t.unsigned_abs();
+                        let t_mod = ((t_abs & cycle_mask) >> FRAC_BITS) as usize;
+                        let idx = if t_mod > 255 { 511 - t_mod } else { t_mod };
+                        unsafe {
+                            *dst_row.add(x) = lut[idx];
+                        }
+                        t += dt_dx_fixed;
+                    }
+                }
+            }
+
+            t_row_start += dt_dy_fixed;
+        }
+    }
+
+    /// 半透明を含む LUT の場合の通常パス。SrcOver 合成を行う。
+    fn fill_rect_linear_blend(
+        &self,
+        dst: *mut u8,
+        stride: usize,
+        width: usize,
+        height: usize,
+        mut t_row_start: i64,
+        dt_dx_fixed: i64,
+        dt_dy_fixed: i64,
+    ) {
         let lut = &self.lut;
 
         for row in 0..height {
@@ -370,16 +501,14 @@ impl PreparedGradient {
 
             match self.extend_mode {
                 ExtendMode::Pad => {
-                    let max_fixed = (max_idx as i64) << FRAC_BITS;
+                    let max_fixed = (LUT_SIZE as i64 - 1) << FRAC_BITS;
                     for x in 0..width {
-                        // clamp + shift で LUT インデックスを取得
                         let idx = (t.clamp(0, max_fixed) >> FRAC_BITS) as usize;
                         blend_pixel_src_over(dst_row, x, lut[idx]);
                         t += dt_dx_fixed;
                     }
                 }
                 ExtendMode::Repeat => {
-                    // LUT_SIZE=256 なので周期は 2^24。ビットマスクで剰余を計算。
                     let cycle_mask = ((LUT_SIZE as u64) << FRAC_BITS) - 1;
                     for x in 0..width {
                         let idx = (((t as u64) & cycle_mask) >> FRAC_BITS) as usize;
@@ -388,7 +517,6 @@ impl PreparedGradient {
                     }
                 }
                 ExtendMode::Reflect => {
-                    // 周期 512 (= 2 * LUT_SIZE)。512 は 2 のべき乗なのでマスク可能。
                     let cycle_mask = ((LUT_SIZE as u64 * 2) << FRAC_BITS) - 1;
                     for x in 0..width {
                         let t_abs = t.unsigned_abs();
