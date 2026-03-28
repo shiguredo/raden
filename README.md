@@ -194,6 +194,8 @@ Porter-Duff 基本セット + Clear + Plus の 13 種類と、ブレンドモー
 cargo run --example basic_drawing
 ```
 
+[![Image from Gyazo](https://i.gyazo.com/a3a5eb75c5e8450ecbdf2aa291ea2ae1.png)](https://gyazo.com/a3a5eb75c5e8450ecbdf2aa291ea2ae1)
+
 ### animation
 
 円を大量に描画するアニメーション。SDL3 ウィンドウで表示する。
@@ -218,6 +220,8 @@ cargo run --example animation --release -- --width 1920 --height 1080 --fps 120 
 cargo run --example gradient_drawing
 ```
 
+[![Image from Gyazo](https://i.gyazo.com/bdf92cfbbea23d857d32628cb32c6838.jpg)](https://gyazo.com/bdf92cfbbea23d857d32628cb32c6838)
+
 ### stroke_drawing
 
 ストローク描画のサンプル。キャップ、ジョイン、パスストローク、半透明ストロークを描画する。
@@ -225,6 +229,8 @@ cargo run --example gradient_drawing
 ```bash
 cargo run --example stroke_drawing
 ```
+
+[![Image from Gyazo](https://i.gyazo.com/8f2c7ae6e5fa641c8881e15a13563195.png)](https://gyazo.com/8f2c7ae6e5fa641c8881e15a13563195)
 
 ### raden_player
 
