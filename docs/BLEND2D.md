@@ -108,8 +108,8 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 
 | Blend2D | raden | 状態 |
 |---------|-------|------|
-| `clip_to_rect(BLRectI)` / `clip_to_rect(BLRect)` / `clip_to_rect(x, y, w, h)` | なし | 未実装 |
-| `restore_clipping()` | なし | 未実装 |
+| `clip_to_rect(BLRectI)` / `clip_to_rect(BLRect)` / `clip_to_rect(x, y, w, h)` | `clip_to_rect(&Rect)` | 実装済み |
+| `restore_clipping()` | `restore_clipping()` | 実装済み |
 
 ### クリア操作
 
@@ -514,8 +514,8 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 3. ~~**ダッシュ線 (`dash_array` / `dash_offset`) が未実装**~~ → **実装済み**
    - SVG 準拠のダッシュパターン分断アルゴリズム
 
-4. **クリッピングが未実装**
-   - `clip_to_rect()` / `restore_clipping()` がない
+4. ~~**クリッピングが未実装**~~ → **実装済み**
+   - `clip_to_rect()` / `restore_clipping()` を実装済み
 
 5. **画像転送 (`blit_image`) が未実装**
    - 画像の直接転送やスケーリング転送がない

@@ -282,7 +282,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - `PixelFormat` は現在 `Prgb32` のみ
 - グラデーション/パターンはフィルスタイルのみ対応 (ストロークスタイルは単色のみ)
 - フォントは TrueType アウトライン (glyf/loca) のみ対応 (CFF, OpenType Layout 未対応)
-- クリッピングは未対応
+- クリッピングは矩形のみ対応 (パスクリッピングは未対応)
 
 ## ライセンス
 

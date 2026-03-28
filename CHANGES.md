@@ -11,4 +11,7 @@
 
 ## develop
 
+- [ADD] Context に矩形クリッピング API (`clip_to_rect` / `restore_clipping`) を追加する
+  - @voluntas
+
 ### misc

@@ -157,3 +157,4 @@ cargo llvm-cov report
 - GitHub Actions での CI 利用を想定しており GPU は利用できない
 - Windows (x86_64) / macOS (arm64) / Ubuntu (x86_64 / arm64) で動作させること
 - Blend2D の API にできるだけ準拠すること
+- 実装はまず動くものを作り、ベンチマークを取りながら JIT/SIMD で最適化すること

@@ -85,6 +85,7 @@ impl Arc {
 }
 
 /// 整数の矩形 (クリッピング済み)。
+#[derive(Debug, Clone, Copy)]
 struct BoxI {
     x0: i32,
     y0: i32,
@@ -109,6 +110,8 @@ struct ContextState {
     stroke_dash_array: Vec<f64>,
     stroke_dash_offset: f64,
     matrix: Matrix2D,
+    /// ユーザー指定のクリップ領域
+    clip_box: BoxI,
 }
 
 pub struct Context<'a> {
@@ -128,6 +131,10 @@ pub struct Context<'a> {
     stroke_dash_array: Vec<f64>,
     stroke_dash_offset: f64,
     matrix: Matrix2D,
+    /// メタクリップ (画像境界)。restore_clipping で戻る先。
+    meta_clip_box: BoxI,
+    /// 現在のクリップ領域。clip_to_rect で縮小される。
+    clip_box: BoxI,
     state_stack: Vec<ContextState>,
     tmp_path: Path,
     stroke_path_buf: Path,
@@ -140,6 +147,12 @@ pub struct Context<'a> {
 
 impl<'a> Context<'a> {
     pub fn new(image: &'a mut Image, runtime: &'a mut PipelineRuntime) -> Self {
+        let meta_clip_box = BoxI {
+            x0: 0,
+            y0: 0,
+            x1: image.width() as i32,
+            y1: image.height() as i32,
+        };
         Self {
             image,
             runtime,
@@ -157,6 +170,8 @@ impl<'a> Context<'a> {
             stroke_dash_array: Vec::new(),
             stroke_dash_offset: 0.0,
             matrix: Matrix2D::IDENTITY,
+            meta_clip_box,
+            clip_box: meta_clip_box,
             state_stack: Vec::new(),
             tmp_path: Path::new(),
             stroke_path_buf: Path::new(),
@@ -184,6 +199,7 @@ impl<'a> Context<'a> {
             stroke_dash_array: self.stroke_dash_array.clone(),
             stroke_dash_offset: self.stroke_dash_offset,
             matrix: self.matrix,
+            clip_box: self.clip_box,
         });
     }
 
@@ -204,6 +220,7 @@ impl<'a> Context<'a> {
             self.stroke_dash_array = state.stroke_dash_array;
             self.stroke_dash_offset = state.stroke_dash_offset;
             self.matrix = state.matrix;
+            self.clip_box = state.clip_box;
         }
     }
 
@@ -262,6 +279,27 @@ impl<'a> Context<'a> {
     /// 変換行列を単位行列にリセットする。
     pub fn reset_matrix(&mut self) {
         self.matrix.reset();
+    }
+
+    /// クリップ領域を指定矩形との積集合に縮小する。
+    ///
+    /// 複数回呼び出すとクリップ領域は縮小のみされる (拡大はできない)。
+    /// `save()` / `restore()` でクリップ状態も保存・復元される。
+    pub fn clip_to_rect(&mut self, rect: &Rect) {
+        let x0 = rect.x.floor() as i32;
+        let y0 = rect.y.floor() as i32;
+        let x1 = (rect.x + rect.w).ceil() as i32;
+        let y1 = (rect.y + rect.h).ceil() as i32;
+
+        self.clip_box.x0 = self.clip_box.x0.max(x0);
+        self.clip_box.y0 = self.clip_box.y0.max(y0);
+        self.clip_box.x1 = self.clip_box.x1.min(x1);
+        self.clip_box.y1 = self.clip_box.y1.min(y1);
+    }
+
+    /// クリップ領域をメタクリップ (画像境界) にリセットする。
+    pub fn restore_clipping(&mut self) {
+        self.clip_box = self.meta_clip_box;
     }
 
     /// 現在の変換を meta matrix に確定しリセットする (Blend2D 互換)。
@@ -441,13 +479,11 @@ impl<'a> Context<'a> {
             }
         }
 
-        // 画像境界でクリップ
-        let img_w = self.image.width() as i32;
-        let img_h = self.image.height() as i32;
-        let clip_x0 = (min_x.floor() as i32).max(0);
-        let clip_y0 = (min_y.floor() as i32).max(0);
-        let clip_x1 = (max_x.ceil() as i32 + 1).min(img_w);
-        let clip_y1 = (max_y.ceil() as i32 + 1).min(img_h);
+        // クリップ領域でクリップ
+        let clip_x0 = (min_x.floor() as i32).max(self.clip_box.x0);
+        let clip_y0 = (min_y.floor() as i32).max(self.clip_box.y0);
+        let clip_x1 = (max_x.ceil() as i32 + 1).min(self.clip_box.x1);
+        let clip_y1 = (max_y.ceil() as i32 + 1).min(self.clip_box.y1);
 
         if clip_x0 >= clip_x1 || clip_y0 >= clip_y1 {
             return;
@@ -784,21 +820,18 @@ impl<'a> Context<'a> {
     /// 描画を終了する。現在は何もしないが、将来のバッファフラッシュ用。
     pub fn end(&mut self) {}
 
-    /// Rect(f64) を画像境界でクリップした BoxI(i32) に変換する。
-    /// 完全に画像外の場合は None を返す。
+    /// Rect(f64) を現在のクリップ領域でクリップした BoxI(i32) に変換する。
+    /// 完全にクリップ外の場合は None を返す。
     fn clip_rect(&self, rect: &Rect) -> Option<BoxI> {
         let x0 = rect.x.floor() as i32;
         let y0 = rect.y.floor() as i32;
         let x1 = (rect.x + rect.w).ceil() as i32;
         let y1 = (rect.y + rect.h).ceil() as i32;
 
-        let img_w = self.image.width() as i32;
-        let img_h = self.image.height() as i32;
-
-        let x0 = x0.max(0);
-        let y0 = y0.max(0);
-        let x1 = x1.min(img_w);
-        let y1 = y1.min(img_h);
+        let x0 = x0.max(self.clip_box.x0);
+        let y0 = y0.max(self.clip_box.y0);
+        let x1 = x1.min(self.clip_box.x1);
+        let y1 = y1.min(self.clip_box.y1);
 
         if x0 >= x1 || y0 >= y1 {
             return None;
