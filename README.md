@@ -210,6 +210,14 @@ cargo run --example animation --release -- --duration 5
 cargo run --example animation --release -- --width 1920 --height 1080 --fps 120 --duration 5
 ```
 
+### gradient_drawing
+
+グラデーション描画のサンプル。Linear (Pad / Repeat / Reflect)、Radial、Conic の 5 パターンを 1 枚に並べて描画する。
+
+```bash
+cargo run --example gradient_drawing
+```
+
 ### stroke_drawing
 
 ストローク描画のサンプル。キャップ、ジョイン、パスストローク、半透明ストロークを描画する。
