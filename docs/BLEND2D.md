@@ -77,8 +77,8 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | Blend2D | raden | 状態 |
 |---------|-------|------|
 | `set_fill_style(rgba32)` | `set_fill_style(Rgba32)` | 一致 |
-| `set_fill_style(gradient)` | なし | 未実装: Linear/Radial/Conic グラデーション |
-| `set_fill_style(pattern)` | なし | 未実装: 画像パターン塗りつぶし |
+| `set_fill_style(gradient)` | `set_fill_style_gradient(&Gradient)` | 実装済み: Linear/Radial/Conic グラデーション |
+| `set_fill_style(pattern)` | `set_fill_style_pattern(&Pattern)` | 実装済み: 画像パターン塗りつぶし |
 | `set_fill_style(style, transform_mode)` | なし | 未実装: 変換モード付きスタイル設定 |
 | `fill_style_type()` / `get_fill_style()` / `get_transformed_fill_style()` | なし | 未実装: 現在のスタイルの取得 |
 | `disable_fill_style()` | なし | 未実装 |
@@ -90,7 +90,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | Blend2D | raden | 状態 |
 |---------|-------|------|
 | `set_stroke_style(rgba32)` | `set_stroke_style(Rgba32)` | 一致 |
-| `set_stroke_style(gradient/pattern)` | なし | 未実装 |
+| `set_stroke_style(gradient/pattern)` | なし | 未実装: ストロークのグラデーション/パターンスタイル |
 | `stroke_style_type()` / `get_stroke_style()` / `get_transformed_stroke_style()` | なし | 未実装: 現在のスタイルの取得 |
 | `disable_stroke_style()` | なし | 未実装 |
 | `stroke_alpha()` / `set_stroke_alpha()` | なし | 未実装: ストローク個別のアルファ値 |
@@ -100,8 +100,8 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `stroke_start_cap()` / `stroke_end_cap()` | なし | 未実装: getter |
 | `set_stroke_cap(position, cap)` / `set_stroke_start_cap()` / `set_stroke_end_cap()` / `set_stroke_caps()` | `set_stroke_cap()` / `set_stroke_start_cap()` / `set_stroke_end_cap()` | 一致: 一括/個別どちらでも設定可能 |
 | `stroke_transform_order()` / `set_stroke_transform_order()` | なし | 未実装: 現在は stroke-before-transform 動作のみ |
-| `stroke_dash_offset()` / `set_stroke_dash_offset()` | なし | 未実装 |
-| `stroke_dash_array()` / `set_stroke_dash_array()` | なし | 未実装: 点線/破線パターン |
+| `stroke_dash_offset()` / `set_stroke_dash_offset()` | `set_stroke_dash_offset(f64)` | 実装済み: getter なし |
+| `stroke_dash_array()` / `set_stroke_dash_array()` | `set_stroke_dash_array(&[f64])` | 実装済み: getter なし。SVG 準拠で奇数パターンは 2 回繰り返す |
 | `stroke_options()` / `set_stroke_options()` | なし | 未実装: 一括取得/設定 |
 
 ### クリッピング
@@ -300,7 +300,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `post_translate(...)` / `post_scale(...)` / `post_skew(...)` / `post_rotate(...)` / `post_transform(...)` | なし | 未実装: 行列右掛け |
 | `reset()` | `reset()` | 一致 |
 | `multiply()` (Blend2D は演算子オーバーロード) | `multiply(&Matrix2D)` | 一致 |
-| `invert()` | なし | 未実装: 逆行列計算 |
+| `invert()` | `invert()` -> `Option<Self>` | 実装済み: 行列式がゼロの場合は None |
 | `type()` -> `BLTransformType` | なし | 未実装: 行列種別判定 |
 | `determinant()` | なし | 未実装: 行列式 |
 | `map_point(double, double)` / `map_point(BLPoint)` | `map_point(f64, f64)` | 一致 |
@@ -316,9 +316,9 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `BLRgba64` | なし | 未実装: 16-bit/チャネル色 |
 | `BLRgba` (float r, g, b, a) | なし | 未実装: 128-bit 浮動小数点色 |
 | `BLCompOp` (29 種類) | `CompOp` (29 種類) | 一致: 値 0-28 が完全一致 |
-| `BLGradient` (Linear/Radial/Conic) | なし | 未実装: グラデーション塗りつぶし |
-| `BLPattern` | なし | 未実装: 画像パターン塗りつぶし |
-| `BLExtendMode` | なし | 未実装: グラデーション/パターンの繰り返しモード (Pad, Repeat, Reflect) |
+| `BLGradient` (Linear/Radial/Conic) | `Gradient` | 実装済み: Linear/Radial/Conic。LUT ベースの色補間、固定小数点 fetch、JIT F32X4 SIMD (Radial) |
+| `BLPattern` | `Pattern` | 実装済み: Nearest 補間、並進のみ。Bilinear / Affine は未実装 |
+| `BLExtendMode` | `ExtendMode` | 実装済み: Pad, Repeat, Reflect。X/Y 独立モードは未実装 |
 
 ### Rgba32 メソッド
 
@@ -495,19 +495,24 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 |-----|------|
 | `PipelineRuntime` | JIT コンパイル済みパイプラインのキャッシュ。Blend2D は内部で管理するが raden は外部から注入する設計 |
 | `stroke_to_fill()` / `stroke_to_fill_with_workspace()` | パスのストローク輪郭を別の Path に変換する公開ユーティリティ |
-| `StrokeOptions` / `StrokeWorkspace` | ストローク変換のオプションとワークスペース |
+| `StrokeOptions` / `StrokeWorkspace` | ストローク変換のオプションとワークスペース。dash_array / dash_offset を含む |
 | `premultiply_rgba(r, g, b, a)` -> `u32` | RGBA から premultiplied ARGB への変換関数 |
+| `Gradient` / `GradientStop` / `GradientValues` | グラデーション定義。Linear/Radial/Conic の 3 種別 |
+| `LinearGradientValues` / `RadialGradientValues` / `ConicGradientValues` | 各グラデーション種別のパラメータ |
+| `ExtendMode` | グラデーション/パターンの拡張モード (Pad, Repeat, Reflect) |
+| `Pattern` | 画像パターン。ソース画像、原点オフセット、拡張モードを保持 |
 
 ## 課題一覧
 
-1. **グラデーション / パターンが未実装**
-   - Blend2D の大きな特徴であるグラデーション (Linear, Radial, Conic) とパターンがない
+1. ~~**グラデーション / パターンが未実装**~~ → **実装済み**
+   - Linear/Radial/Conic グラデーション (LUT ベース、固定小数点、JIT F32X4 SIMD)
+   - 画像パターン (Nearest、並進のみ。Bilinear / Affine は未実装)
 
 2. **`PixelFormat` が `Prgb32` のみ**
    - Blend2D は `Xrgb32` と `A8` もサポートしている
 
-3. **ダッシュ線 (`dash_array` / `dash_offset`) が未実装**
-   - ストロークの点線/破線パターンが使えない
+3. ~~**ダッシュ線 (`dash_array` / `dash_offset`) が未実装**~~ → **実装済み**
+   - SVG 準拠のダッシュパターン分断アルゴリズム
 
 4. **クリッピングが未実装**
    - `clip_to_rect()` / `restore_clipping()` がない
@@ -543,3 +548,9 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 
 13. **BLFontFace の詳細 API がほぼ未実装**
     - フォント名取得、機能フラグ問い合わせ、feature/script/variation タグ取得等
+
+14. **パターンの Bilinear 補間 / Affine 変換が未実装**
+    - 現在は Nearest 補間 + 並進のみ
+
+15. **ストロークのグラデーション/パターンスタイルが未実装**
+    - `set_stroke_style` は Rgba32 のみ。グラデーション/パターンは fill のみ対応
