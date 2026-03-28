@@ -7,12 +7,13 @@
 
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::types;
-use cranelift_codegen::ir::{InstBuilder, MemFlags, Type};
+use cranelift_codegen::ir::{InstBuilder, MemFlags, Type, Value};
 use cranelift_frontend::FunctionBuilder;
 
-use cranelift_codegen::ir::Value;
-
-use super::block_args;
+use super::{
+    block_args, emit_expand_packed_coverage_i32x4, emit_extract_channels_simd,
+    emit_pack_channels_simd,
+};
 
 /// LUT からスカラーインデックスで 1 ピクセルをロードする。
 #[inline(always)]
@@ -266,4 +267,322 @@ pub(super) fn build_radial_row_opaque(mut bcx: FunctionBuilder, ptr_type: Type) 
 
     bcx.seal_all_blocks();
     bcx.finalize();
+}
+
+/// Linear グラデーション + カバレッジ融合パイプラインを構築する (Pad モード、不透明 LUT)。
+///
+/// ## シグネチャ
+///
+/// ```text
+/// fn linear_gradient_cov(
+///     dst: *mut u8,          // 出力ピクセルポインタ
+///     lut: *const u32,       // LUT ポインタ (256 エントリ)
+///     count: usize,          // ピクセル数
+///     coverage: *const u8,   // カバレッジ配列
+///     t_start: i64,          // 固定小数点 t (16.48 format)
+///     dt_dx: i64,            // 固定小数点 dt/dx
+/// )
+/// ```
+///
+/// fetch (固定小数点 t → LUT) + coverage + SrcOver blend を 1 パスで処理し、
+/// 中間バッファへのキャッシュ汚染を排除する。
+pub(super) fn build_linear_gradient_cov_opaque(mut bcx: FunctionBuilder, ptr_type: Type) {
+    let entry = bcx.create_block();
+    let simd_loop = bcx.create_block();
+    let simd_fast = bcx.create_block();
+    let simd_slow = bcx.create_block();
+    let simd_next = bcx.create_block();
+    let scalar_check = bcx.create_block();
+    let scalar_loop = bcx.create_block();
+    let exit = bcx.create_block();
+
+    // === entry ブロック ===
+    bcx.switch_to_block(entry);
+    bcx.append_block_params_for_function_params(entry);
+
+    let dst = bcx.block_params(entry)[0]; // ptr
+    let lut = bcx.block_params(entry)[1]; // ptr
+    let count = bcx.block_params(entry)[2]; // usize
+    let coverage = bcx.block_params(entry)[3]; // ptr
+    let t_start = bcx.block_params(entry)[4]; // i64
+    let dt_dx = bcx.block_params(entry)[5]; // i64
+
+    // ループ不変定数
+    let c257_scalar = bcx.ins().iconst(types::I32, 257);
+    let c257_vec = bcx.ins().splat(types::I32X4, c257_scalar);
+    let c256_scalar = bcx.ins().iconst(types::I32, 256);
+    let c256_vec = bcx.ins().splat(types::I32X4, c256_scalar);
+    let mask_0xff = bcx.ins().iconst(types::I32, 0xFF);
+    let mask_0xff_vec = bcx.ins().splat(types::I32X4, mask_0xff);
+    let all_ff = bcx.ins().iconst(types::I32, -1);
+
+    // 固定小数点定数
+    let max_fixed = bcx.ins().iconst(types::I64, 255 << 16);
+    let zero_i64 = bcx.ins().iconst(types::I64, 0);
+    let frac_bits = bcx.ins().iconst(types::I32, 16);
+
+    let simd_count = bcx.ins().ushr_imm(count, 2);
+    let remainder = bcx.ins().band_imm(count, 3);
+    let zero = bcx.ins().iconst(ptr_type, 0);
+    let has_simd = bcx.ins().icmp(IntCC::NotEqual, simd_count, zero);
+
+    let args_simd = block_args(&[dst, coverage, zero, t_start]);
+    let args_scalar = block_args(&[dst, coverage, t_start]);
+    bcx.ins()
+        .brif(has_simd, simd_loop, &args_simd, scalar_check, &args_scalar);
+
+    // === simd_loop ブロック ===
+    // 4 ピクセル: LUT lookup (スカラー) → I32X4 パック → cov チェック → blend
+    bcx.append_block_param(simd_loop, ptr_type); // current_dst
+    bcx.append_block_param(simd_loop, ptr_type); // current_cov
+    bcx.append_block_param(simd_loop, ptr_type); // simd_i
+    bcx.append_block_param(simd_loop, types::I64); // t
+    bcx.switch_to_block(simd_loop);
+
+    let current_dst = bcx.block_params(simd_loop)[0];
+    let current_cov = bcx.block_params(simd_loop)[1];
+    let simd_i = bcx.block_params(simd_loop)[2];
+    let t = bcx.block_params(simd_loop)[3];
+
+    // 4 ピクセル分の LUT lookup (固定小数点 → インデックス → スカラーロード)
+    let four_lut = bcx.ins().iconst(ptr_type, 4);
+    let t1 = bcx.ins().iadd(t, dt_dx);
+    let t2 = bcx.ins().iadd(t1, dt_dx);
+    let t3 = bcx.ins().iadd(t2, dt_dx);
+
+    let idx0 = emit_fixed_to_index(&mut bcx, t, zero_i64, max_fixed, frac_bits);
+    let idx1 = emit_fixed_to_index(&mut bcx, t1, zero_i64, max_fixed, frac_bits);
+    let idx2 = emit_fixed_to_index(&mut bcx, t2, zero_i64, max_fixed, frac_bits);
+    let idx3 = emit_fixed_to_index(&mut bcx, t3, zero_i64, max_fixed, frac_bits);
+
+    let p0 = emit_lut_lookup(&mut bcx, lut, idx0, four_lut, ptr_type);
+    let p1 = emit_lut_lookup(&mut bcx, lut, idx1, four_lut, ptr_type);
+    let p2 = emit_lut_lookup(&mut bcx, lut, idx2, four_lut, ptr_type);
+    let p3 = emit_lut_lookup(&mut bcx, lut, idx3, four_lut, ptr_type);
+
+    // I32X4 にパック
+    let src_pixels = bcx.ins().scalar_to_vector(types::I32X4, p0);
+    let src_pixels = bcx.ins().insertlane(src_pixels, p1, 1);
+    let src_pixels = bcx.ins().insertlane(src_pixels, p2, 2);
+    let src_pixels = bcx.ins().insertlane(src_pixels, p3, 3);
+
+    // カバレッジ判定: 全 0xFF なら高速パス
+    let packed_cov = bcx.ins().load(types::I32, MemFlags::new(), current_cov, 0);
+    let is_all_ff = bcx.ins().icmp(IntCC::Equal, packed_cov, all_ff);
+    bcx.ins().brif(is_all_ff, simd_fast, &[], simd_slow, &[]);
+
+    // === simd_fast ブロック (cov=0xFF) ===
+    // 不透明 LUT + 全カバレッジ → SrcOver 合成
+    bcx.switch_to_block(simd_fast);
+    let (src_a, src_r, src_g, src_b) =
+        emit_extract_channels_simd(&mut bcx, src_pixels, mask_0xff_vec);
+    let inv_alpha = bcx.ins().isub(c256_vec, src_a);
+
+    let dst_pixels = bcx
+        .ins()
+        .load(types::I32X4, MemFlags::new(), current_dst, 0);
+    let (dst_a, dst_r, dst_g, dst_b) =
+        emit_extract_channels_simd(&mut bcx, dst_pixels, mask_0xff_vec);
+
+    let tmp = bcx.ins().imul(dst_a, inv_alpha);
+    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let oa = bcx.ins().iadd(src_a, tmp);
+    let tmp = bcx.ins().imul(dst_r, inv_alpha);
+    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let or = bcx.ins().iadd(src_r, tmp);
+    let tmp = bcx.ins().imul(dst_g, inv_alpha);
+    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let og = bcx.ins().iadd(src_g, tmp);
+    let tmp = bcx.ins().imul(dst_b, inv_alpha);
+    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let ob = bcx.ins().iadd(src_b, tmp);
+
+    let result = emit_pack_channels_simd(&mut bcx, oa, or, og, ob);
+    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().jump(simd_next, &[]);
+
+    // === simd_slow ブロック (通常カバレッジ) ===
+    bcx.switch_to_block(simd_slow);
+    let cov_vec = emit_expand_packed_coverage_i32x4(&mut bcx, packed_cov);
+    let (src_a, src_r, src_g, src_b) =
+        emit_extract_channels_simd(&mut bcx, src_pixels, mask_0xff_vec);
+
+    // cov_src_c = div255(src_c * cov)
+    let cov_src_a = emit_div255_simd(&mut bcx, src_a, cov_vec, c257_vec);
+    let cov_src_r = emit_div255_simd(&mut bcx, src_r, cov_vec, c257_vec);
+    let cov_src_g = emit_div255_simd(&mut bcx, src_g, cov_vec, c257_vec);
+    let cov_src_b = emit_div255_simd(&mut bcx, src_b, cov_vec, c257_vec);
+
+    let inv_alpha_v = bcx.ins().isub(c256_vec, cov_src_a);
+    let dst_pixels = bcx
+        .ins()
+        .load(types::I32X4, MemFlags::new(), current_dst, 0);
+    let (dst_a, dst_r, dst_g, dst_b) =
+        emit_extract_channels_simd(&mut bcx, dst_pixels, mask_0xff_vec);
+
+    let tmp = bcx.ins().imul(dst_a, inv_alpha_v);
+    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let oa = bcx.ins().iadd(cov_src_a, tmp);
+    let tmp = bcx.ins().imul(dst_r, inv_alpha_v);
+    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let or = bcx.ins().iadd(cov_src_r, tmp);
+    let tmp = bcx.ins().imul(dst_g, inv_alpha_v);
+    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let og = bcx.ins().iadd(cov_src_g, tmp);
+    let tmp = bcx.ins().imul(dst_b, inv_alpha_v);
+    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let ob = bcx.ins().iadd(cov_src_b, tmp);
+
+    let result = emit_pack_channels_simd(&mut bcx, oa, or, og, ob);
+    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().jump(simd_next, &[]);
+
+    // === simd_next ブロック ===
+    bcx.switch_to_block(simd_next);
+    let sixteen = bcx.ins().iconst(ptr_type, 16);
+    let next_dst = bcx.ins().iadd(current_dst, sixteen);
+    let four_ptr = bcx.ins().iconst(ptr_type, 4);
+    let next_cov = bcx.ins().iadd(current_cov, four_ptr);
+    let one = bcx.ins().iconst(ptr_type, 1);
+    let next_si = bcx.ins().iadd(simd_i, one);
+    let next_t = bcx.ins().iadd(t3, dt_dx); // t + 4*dt
+
+    let cont = bcx.ins().icmp(IntCC::UnsignedLessThan, next_si, simd_count);
+    let args_loop = block_args(&[next_dst, next_cov, next_si, next_t]);
+    let args_check = block_args(&[next_dst, next_cov, next_t]);
+    bcx.ins()
+        .brif(cont, simd_loop, &args_loop, scalar_check, &args_check);
+
+    // === scalar_check ブロック ===
+    bcx.append_block_param(scalar_check, ptr_type); // current_dst
+    bcx.append_block_param(scalar_check, ptr_type); // current_cov
+    bcx.append_block_param(scalar_check, types::I64); // t
+    bcx.switch_to_block(scalar_check);
+    let current_dst = bcx.block_params(scalar_check)[0];
+    let current_cov = bcx.block_params(scalar_check)[1];
+    let t = bcx.block_params(scalar_check)[2];
+
+    let has_remainder = bcx.ins().icmp(IntCC::NotEqual, remainder, zero);
+    let args_scalar = block_args(&[current_dst, current_cov, zero, t]);
+    bcx.ins()
+        .brif(has_remainder, scalar_loop, &args_scalar, exit, &[]);
+
+    // === scalar_loop ブロック ===
+    bcx.append_block_param(scalar_loop, ptr_type); // current_dst
+    bcx.append_block_param(scalar_loop, ptr_type); // current_cov
+    bcx.append_block_param(scalar_loop, ptr_type); // scalar_i
+    bcx.append_block_param(scalar_loop, types::I64); // t
+    bcx.switch_to_block(scalar_loop);
+    let current_dst = bcx.block_params(scalar_loop)[0];
+    let current_cov = bcx.block_params(scalar_loop)[1];
+    let scalar_i = bcx.block_params(scalar_loop)[2];
+    let t = bcx.block_params(scalar_loop)[3];
+
+    // 固定小数点 → LUT
+    let four_s = bcx.ins().iconst(ptr_type, 4);
+    let idx = emit_fixed_to_index(&mut bcx, t, zero_i64, max_fixed, frac_bits);
+    let src = emit_lut_lookup(&mut bcx, lut, idx, four_s, ptr_type);
+
+    // カバレッジ
+    let cov_u8 = bcx.ins().load(types::I8, MemFlags::new(), current_cov, 0);
+    let cov = bcx.ins().uextend(types::I32, cov_u8);
+
+    // src チャネル分解
+    let tmp = bcx.ins().ushr_imm(src, 24);
+    let src_a = bcx.ins().band_imm(tmp, 0xFF);
+    let tmp = bcx.ins().ushr_imm(src, 16);
+    let src_r = bcx.ins().band_imm(tmp, 0xFF);
+    let tmp = bcx.ins().ushr_imm(src, 8);
+    let src_g = bcx.ins().band_imm(tmp, 0xFF);
+    let src_b = bcx.ins().band_imm(src, 0xFF);
+
+    // cov_src = div255(src * cov)
+    let csa = emit_div255_scalar(&mut bcx, src_a, cov, c257_scalar);
+    let csr = emit_div255_scalar(&mut bcx, src_r, cov, c257_scalar);
+    let csg = emit_div255_scalar(&mut bcx, src_g, cov, c257_scalar);
+    let csb = emit_div255_scalar(&mut bcx, src_b, cov, c257_scalar);
+
+    // SrcOver blend
+    let inv_a = bcx.ins().isub(c256_scalar, csa);
+    let dst_pixel = bcx.ins().load(types::I32, MemFlags::new(), current_dst, 0);
+    let tmp = bcx.ins().ushr_imm(dst_pixel, 24);
+    let da = bcx.ins().band_imm(tmp, 0xFF);
+    let tmp = bcx.ins().ushr_imm(dst_pixel, 16);
+    let dr = bcx.ins().band_imm(tmp, 0xFF);
+    let tmp = bcx.ins().ushr_imm(dst_pixel, 8);
+    let dg = bcx.ins().band_imm(tmp, 0xFF);
+    let db = bcx.ins().band_imm(dst_pixel, 0xFF);
+
+    let tmp = bcx.ins().imul(da, inv_a);
+    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let oa = bcx.ins().iadd(csa, tmp);
+    let tmp = bcx.ins().imul(dr, inv_a);
+    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let or = bcx.ins().iadd(csr, tmp);
+    let tmp = bcx.ins().imul(dg, inv_a);
+    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let og = bcx.ins().iadd(csg, tmp);
+    let tmp = bcx.ins().imul(db, inv_a);
+    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let ob = bcx.ins().iadd(csb, tmp);
+
+    let result = bcx.ins().ishl_imm(oa, 24);
+    let tmp = bcx.ins().ishl_imm(or, 16);
+    let result = bcx.ins().bor(result, tmp);
+    let tmp = bcx.ins().ishl_imm(og, 8);
+    let result = bcx.ins().bor(result, tmp);
+    let result = bcx.ins().bor(result, ob);
+    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+
+    // ポインタ更新
+    let four_bytes = bcx.ins().iconst(ptr_type, 4);
+    let next_dst = bcx.ins().iadd(current_dst, four_bytes);
+    let one_ptr = bcx.ins().iconst(ptr_type, 1);
+    let next_cov = bcx.ins().iadd(current_cov, one_ptr);
+    let next_si = bcx.ins().iadd(scalar_i, one_ptr);
+    let next_t = bcx.ins().iadd(t, dt_dx);
+    let cont = bcx.ins().icmp(IntCC::UnsignedLessThan, next_si, remainder);
+    let args_loop = block_args(&[next_dst, next_cov, next_si, next_t]);
+    bcx.ins().brif(cont, scalar_loop, &args_loop, exit, &[]);
+
+    // === exit ===
+    bcx.switch_to_block(exit);
+    bcx.ins().return_(&[]);
+
+    bcx.seal_all_blocks();
+    bcx.finalize();
+}
+
+/// 固定小数点 t → クランプ済み LUT インデックス (I32)。
+#[inline(always)]
+fn emit_fixed_to_index(
+    bcx: &mut FunctionBuilder,
+    t: Value,
+    zero: Value,
+    max_fixed: Value,
+    frac_bits: Value,
+) -> Value {
+    // Pad: clamp(t, 0, max_fixed) >> FRAC_BITS
+    let clamped = bcx.ins().smax(t, zero);
+    let clamped = bcx.ins().smin(clamped, max_fixed);
+    let shifted = bcx.ins().sshr(clamped, frac_bits);
+    bcx.ins().ireduce(types::I32, shifted)
+}
+
+/// div255 の SIMD 版: (src * cov * 257 + 257) >> 16
+#[inline(always)]
+fn emit_div255_simd(bcx: &mut FunctionBuilder, src: Value, cov: Value, c257: Value) -> Value {
+    let tmp = bcx.ins().imul(src, cov);
+    let tmp = bcx.ins().imul(tmp, c257);
+    let tmp = bcx.ins().iadd(tmp, c257);
+    bcx.ins().ushr_imm(tmp, 16)
+}
+
+/// div255 のスカラー版: (src * cov * 257 + 257) >> 16
+#[inline(always)]
+fn emit_div255_scalar(bcx: &mut FunctionBuilder, src: Value, cov: Value, c257: Value) -> Value {
+    let tmp = bcx.ins().imul(src, cov);
+    let tmp = bcx.ins().imul(tmp, c257);
+    let tmp = bcx.ins().iadd(tmp, c257);
+    bcx.ins().ushr_imm(tmp, 16)
 }

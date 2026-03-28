@@ -531,6 +531,26 @@ impl<'a> Context<'a> {
         let prepared_gradient = self.fill_gradient.as_ref().map(|g| g.prepare(&self.matrix));
 
         if let Some(ref gradient) = prepared_gradient {
+            // Linear + 不透明 LUT + Pad モードの場合は融合 JIT パスを使用する
+            if gradient.is_linear_pad() && gradient.is_opaque() {
+                let linear_cov_fn = self.runtime.get_or_compile_linear_gradient_cov();
+                gradient.fill_path_linear_jit(
+                    &mut self.rasterizer,
+                    &edge_buf,
+                    clip_x0,
+                    clip_y0,
+                    clip_x1,
+                    clip_y1,
+                    sweep_fn,
+                    stride,
+                    base,
+                    linear_cov_fn,
+                );
+                self.edge_buf = edge_buf;
+                return;
+            }
+
+            // その他のグラデーション: スパンバッファ経由
             let span_cov_fn = self.runtime.get_or_compile_span_cov(
                 self.image.format(),
                 self.comp_op,

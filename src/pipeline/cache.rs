@@ -96,6 +96,18 @@ pub type RadialGradientRowFn = unsafe extern "C" fn(
     duy_dx: f32,
 );
 
+/// Linear グラデーション + カバレッジ融合 JIT 関数のシグネチャ。
+///
+/// 固定小数点 t → LUT lookup → coverage → SrcOver blend を 1 パスで処理する。
+pub type LinearGradientCovFn = unsafe extern "C" fn(
+    dst: *mut u8,
+    lut: *const u32,
+    count: usize,
+    coverage: *const u8,
+    t_start: i64,
+    dt_dx: i64,
+);
+
 /// コンパイル済みパイプライン関数のキャッシュ。
 #[derive(Default)]
 pub struct PipelineCache {

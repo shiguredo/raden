@@ -403,6 +403,12 @@ impl PreparedGradient {
         self.lut_opaque
     }
 
+    /// Linear + Pad モードかどうか。
+    pub(crate) fn is_linear_pad(&self) -> bool {
+        matches!(self.kind, PreparedGradientKind::Linear { .. })
+            && self.extend_mode == ExtendMode::Pad
+    }
+
     pub(crate) fn fill_rect(
         &self,
         dst: *mut u8,
@@ -943,6 +949,65 @@ impl PreparedGradient {
     }
 
     /// Radial グラデーションを JIT F32X4 SIMD で矩形に描画する (不透明 LUT 専用)。
+    /// Linear グラデーション fill_path を融合 JIT で描画する。
+    ///
+    /// ラスタライザのコールバック内で固定小数点 fetch + coverage + blend を
+    /// 1 つの JIT 関数で処理し、中間バッファを排除する。
+    pub(crate) fn fill_path_linear_jit(
+        &self,
+        rasterizer: &mut crate::raster::analytic::AnalyticRasterizer,
+        edge_buf: &[(f64, f64, f64, f64)],
+        clip_x0: i32,
+        clip_y0: i32,
+        clip_x1: i32,
+        clip_y1: i32,
+        sweep_fn: crate::pipeline::cache::SweepFn,
+        stride: usize,
+        base: *mut u8,
+        linear_cov_fn: crate::pipeline::cache::LinearGradientCovFn,
+    ) {
+        let PreparedGradientKind::Linear {
+            dt_dx,
+            dt_dy,
+            t_origin,
+        } = &self.kind
+        else {
+            return;
+        };
+
+        let max_idx = (LUT_SIZE - 1) as f64;
+        let scale = max_idx * ((1u64 << FRAC_BITS) as f64);
+        let dt_dx_fixed = (dt_dx * scale) as i64;
+        let lut_ptr = self.lut.as_ptr();
+
+        rasterizer.rasterize(
+            edge_buf,
+            clip_x0,
+            clip_y0,
+            clip_x1,
+            clip_y1,
+            sweep_fn,
+            |y, x_start, coverage| {
+                let t_start = ((dt_dx * (x_start as f64 + 0.5)
+                    + dt_dy * (y as f64 + 0.5)
+                    + t_origin)
+                    * scale) as i64;
+                let offset = y as usize * stride + x_start as usize * 4;
+                let dst_row = unsafe { base.add(offset) };
+                unsafe {
+                    linear_cov_fn(
+                        dst_row,
+                        lut_ptr,
+                        coverage.len(),
+                        coverage.as_ptr(),
+                        t_start,
+                        dt_dx_fixed,
+                    );
+                }
+            },
+        );
+    }
+
     pub(crate) fn fill_rect_radial_jit(
         &self,
         dst: *mut u8,

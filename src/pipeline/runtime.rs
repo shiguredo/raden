@@ -1,8 +1,8 @@
 use crate::api::style::{CompOp, FillRule};
 
 use super::cache::{
-    PipelineBoxFn, PipelineCache, PipelineCovFn, PipelineFn, PipelineSpanCovFn, PipelineSpanFn,
-    RadialGradientRowFn, SweepFn, TransformEdgesFn,
+    LinearGradientCovFn, PipelineBoxFn, PipelineCache, PipelineCovFn, PipelineFn,
+    PipelineSpanCovFn, PipelineSpanFn, RadialGradientRowFn, SweepFn, TransformEdgesFn,
 };
 use super::compiler::PipelineCompiler;
 use super::key::{FetchType, FillType, PipelineKey};
@@ -18,6 +18,7 @@ pub struct PipelineRuntime {
     sweep_even_odd: Option<SweepFn>,
     transform_edges_fn: Option<TransformEdgesFn>,
     radial_row_fn: Option<RadialGradientRowFn>,
+    linear_cov_fn: Option<LinearGradientCovFn>,
 }
 
 impl PipelineRuntime {
@@ -29,6 +30,7 @@ impl PipelineRuntime {
             sweep_even_odd: None,
             transform_edges_fn: None,
             radial_row_fn: None,
+            linear_cov_fn: None,
         }
     }
 
@@ -143,10 +145,19 @@ impl PipelineRuntime {
         }
     }
 
-    /// JIT sweep 関数を取得またはコンパイルする。
-    ///
-    /// FillRule ごとに別関数をキャッシュする。
-    /// Radial グラデ���ション行描画の JIT 関数を取��またはコンパイルする。
+    /// Linear グラデーション + カバレッジ融合 JIT 関数を取得またはコンパイルする。
+    pub fn get_or_compile_linear_gradient_cov(&mut self) -> LinearGradientCovFn {
+        match self.linear_cov_fn {
+            Some(f) => f,
+            None => {
+                let f = self.compiler.compile_linear_gradient_cov();
+                self.linear_cov_fn = Some(f);
+                f
+            }
+        }
+    }
+
+    /// Radial グラデーション行描画の JIT 関数を取得またはコンパイルする。
     pub fn get_or_compile_radial_row(&mut self) -> RadialGradientRowFn {
         match self.radial_row_fn {
             Some(f) => f,

@@ -82,8 +82,8 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
 
 use super::cache::{
-    PipelineBoxFn, PipelineCovFn, PipelineFn, PipelineSpanCovFn, PipelineSpanFn,
-    RadialGradientRowFn, SweepFn,
+    LinearGradientCovFn, PipelineBoxFn, PipelineCovFn, PipelineFn, PipelineSpanCovFn,
+    PipelineSpanFn, RadialGradientRowFn, SweepFn,
 };
 use super::key::PipelineKey;
 use crate::api::style::{CompOp, FillRule};
@@ -531,6 +531,44 @@ impl PipelineCompiler {
     ///     m00: f64, m01: f64, m10: f64, m11: f64, m20: f64, m21: f64)
     /// ```
     ///
+    /// Linear グラデーション + カバレッジ融合パイプラインを JIT コンパイルする。
+    ///
+    /// 固定小数点 fetch + coverage + SrcOver blend を 1 パスで処理する。
+    pub fn compile_linear_gradient_cov(&mut self) -> LinearGradientCovFn {
+        let mut module = new_module(&self.flags);
+        let ptr_type = module.target_config().pointer_type();
+
+        let mut sig = module.make_signature();
+        sig.params.push(AbiParam::new(ptr_type)); // dst
+        sig.params.push(AbiParam::new(ptr_type)); // lut
+        sig.params.push(AbiParam::new(ptr_type)); // count
+        sig.params.push(AbiParam::new(ptr_type)); // coverage
+        sig.params.push(AbiParam::new(types::I64)); // t_start
+        sig.params.push(AbiParam::new(types::I64)); // dt_dx
+
+        let func_name = "linear_gradient_cov";
+        let func_id = module
+            .declare_function(func_name, Linkage::Local, &sig)
+            .unwrap();
+
+        let mut ctx = module.make_context();
+        let mut func_ctx = FunctionBuilderContext::new();
+        ctx.func.signature = sig;
+
+        {
+            let bcx = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
+            build_linear_gradient_cov_opaque(bcx, ptr_type);
+        }
+
+        finalize_function(&mut module, func_id, &mut ctx, func_name);
+
+        let code = module.get_finalized_function(func_id);
+        let func: LinearGradientCovFn = unsafe { std::mem::transmute(code) };
+
+        self.modules.push(module);
+        func
+    }
+
     /// Radial グラデーション行描画を F32X4 SIMD で JIT コンパイルする。
     ///
     /// 4 ピクセル分の sqrt を並列実行し、LUT lookup はスカラーで行う。
