@@ -232,6 +232,16 @@ cargo run --example stroke_drawing
 
 [![Image from Gyazo](https://i.gyazo.com/8f2c7ae6e5fa641c8881e15a13563195.png)](https://gyazo.com/8f2c7ae6e5fa641c8881e15a13563195)
 
+### tiger
+
+AmanithVG 由来の tiger ベクターグラフィックスを描画するサンプル。240 以上のパスによるフィル・ストロークの組み合わせを実演する。
+
+```bash
+cargo run --example tiger --release
+```
+
+[![Image from Gyazo](https://i.gyazo.com/8220dfa48f64e0239fd67c5d78439216.png)](https://gyazo.com/8220dfa48f64e0239fd67c5d78439216)
+
 ### raden_player
 
 [raw-player](https://github.com/shiguredo/raw-player) の `blend2d_player.py` と同等のアニメーションを

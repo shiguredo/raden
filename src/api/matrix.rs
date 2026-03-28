@@ -112,17 +112,88 @@ impl Matrix2D {
 
     /// 平行移動を後乗算で適用する。
     pub fn translate(&mut self, tx: f64, ty: f64) {
-        *self = self.multiply(&Self::translation(tx, ty));
+        self.m20 += tx;
+        self.m21 += ty;
     }
 
     /// スケーリングを後乗算で適用する。
     pub fn scale(&mut self, sx: f64, sy: f64) {
-        *self = self.multiply(&Self::scaling(sx, sy));
+        self.m00 *= sx;
+        self.m01 *= sy;
+        self.m10 *= sx;
+        self.m11 *= sy;
+        self.m20 *= sx;
+        self.m21 *= sy;
     }
 
     /// 回転を後乗算で適用する。角度はラジアン。
     pub fn rotate(&mut self, angle: f64) {
-        *self = self.multiply(&Self::rotation(angle));
+        let (sin, cos) = angle.sin_cos();
+        let m00 = self.m00 * cos - self.m01 * sin;
+        let m01 = self.m00 * sin + self.m01 * cos;
+        let m10 = self.m10 * cos - self.m11 * sin;
+        let m11 = self.m10 * sin + self.m11 * cos;
+        let m20 = self.m20 * cos - self.m21 * sin;
+        let m21 = self.m20 * sin + self.m21 * cos;
+        self.m00 = m00;
+        self.m01 = m01;
+        self.m10 = m10;
+        self.m11 = m11;
+        self.m20 = m20;
+        self.m21 = m21;
+    }
+
+    /// 指定した中心点まわりの回転を後乗算で適用する。角度はラジアン。
+    /// Blend2D の `rotate(angle, cx, cy)` に相当する。
+    /// `self = self * T(-cx,-cy) * R(angle) * T(cx,cy)` と等価。
+    pub fn rotate_around(&mut self, angle: f64, cx: f64, cy: f64) {
+        let (sin, cos) = angle.sin_cos();
+        let tx = cx * (1.0 - cos) + cy * sin;
+        let ty = cy * (1.0 - cos) - cx * sin;
+        let m00 = self.m00 * cos - self.m01 * sin;
+        let m01 = self.m00 * sin + self.m01 * cos;
+        let m10 = self.m10 * cos - self.m11 * sin;
+        let m11 = self.m10 * sin + self.m11 * cos;
+        let m20 = self.m20 * cos - self.m21 * sin + tx;
+        let m21 = self.m20 * sin + self.m21 * cos + ty;
+        self.m00 = m00;
+        self.m01 = m01;
+        self.m10 = m10;
+        self.m11 = m11;
+        self.m20 = m20;
+        self.m21 = m21;
+    }
+
+    /// 平行移動を前乗算で適用する。
+    /// Blend2D の `postTranslate(tx, ty)` に相当する。
+    /// `self = T(tx,ty) * self` と等価。
+    pub fn post_translate(&mut self, tx: f64, ty: f64) {
+        self.m20 += tx * self.m00 + ty * self.m10;
+        self.m21 += tx * self.m01 + ty * self.m11;
+    }
+
+    /// スケーリングを前乗算で適用する。
+    /// Blend2D の `postScale(sx, sy)` に相当する。
+    /// `self = S(sx,sy) * self` と等価。
+    pub fn post_scale(&mut self, sx: f64, sy: f64) {
+        self.m00 *= sx;
+        self.m01 *= sx;
+        self.m10 *= sy;
+        self.m11 *= sy;
+    }
+
+    /// 回転を前乗算で適用する。角度はラジアン。
+    /// Blend2D の `postRotate(angle)` に相当する。
+    /// `self = R(angle) * self` と等価。
+    pub fn post_rotate(&mut self, angle: f64) {
+        *self = Self::rotation(angle).multiply(self);
+    }
+
+    /// 任意の行列を前乗算で適用する。
+    /// Blend2D の `postTransform(m)` に相当する。
+    /// `self = m * self` と等価。
+    pub fn post_transform(&mut self, m: &Self) {
+        *self = m.multiply(self);
     }
 
     /// 単位行列にリセットする。

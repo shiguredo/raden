@@ -176,6 +176,142 @@ proptest! {
         prop_assert!(approx_eq(yp, y, eps_y), "y: {} != {} (eps={})", yp, y, eps_y);
     }
 
+    /// post_translate は T(tx,ty) * self と等価。
+    #[test]
+    fn post_translate_is_premultiply(
+        m in arb_matrix(),
+        tx in -100.0f64..100.0,
+        ty in -100.0f64..100.0,
+    ) {
+        let mut actual = m;
+        actual.post_translate(tx, ty);
+        let expected = Matrix2D::translation(tx, ty).multiply(&m);
+        prop_assert!(
+            matrix_approx_eq(&actual, &expected, EPS),
+            "post_translate != T * M:\n  actual: {:?}\n  expected: {:?}", actual, expected
+        );
+    }
+
+    /// post_scale は S(sx,sy) * self と等価。
+    #[test]
+    fn post_scale_is_premultiply(
+        m in arb_matrix(),
+        sx in -10.0f64..10.0,
+        sy in -10.0f64..10.0,
+    ) {
+        let mut actual = m;
+        actual.post_scale(sx, sy);
+        let expected = Matrix2D::scaling(sx, sy).multiply(&m);
+        prop_assert!(
+            matrix_approx_eq(&actual, &expected, 1e-8),
+            "post_scale != S * M:\n  actual: {:?}\n  expected: {:?}", actual, expected
+        );
+    }
+
+    /// post_rotate は R(angle) * self と等価。
+    #[test]
+    fn post_rotate_is_premultiply(
+        m in arb_matrix(),
+        angle in -std::f64::consts::TAU..std::f64::consts::TAU,
+    ) {
+        let mut actual = m;
+        actual.post_rotate(angle);
+        let expected = Matrix2D::rotation(angle).multiply(&m);
+        prop_assert!(
+            matrix_approx_eq(&actual, &expected, 1e-8),
+            "post_rotate != R * M:\n  actual: {:?}\n  expected: {:?}", actual, expected
+        );
+    }
+
+    /// post_transform は m * self と等価。
+    #[test]
+    fn post_transform_is_premultiply(
+        a in arb_matrix(),
+        b in arb_matrix(),
+    ) {
+        let mut actual = a;
+        actual.post_transform(&b);
+        let expected = b.multiply(&a);
+        prop_assert!(
+            matrix_approx_eq(&actual, &expected, 1e-8),
+            "post_transform != B * A:\n  actual: {:?}\n  expected: {:?}", actual, expected
+        );
+    }
+
+    /// rotate_around は translate → rotate → translate の合成と等価。
+    #[test]
+    fn rotate_around_matches_manual(
+        m in arb_matrix(),
+        angle in -std::f64::consts::TAU..std::f64::consts::TAU,
+        cx in -100.0f64..100.0,
+        cy in -100.0f64..100.0,
+    ) {
+        let mut actual = m;
+        actual.rotate_around(angle, cx, cy);
+
+        let mut expected = m;
+        expected.translate(-cx, -cy);
+        expected.rotate(angle);
+        expected.translate(cx, cy);
+
+        prop_assert!(
+            matrix_approx_eq(&actual, &expected, 1e-8),
+            "rotate_around != manual:\n  actual: {:?}\n  expected: {:?}", actual, expected
+        );
+    }
+
+    /// rotate_around で中心点が不動点になる。
+    #[test]
+    fn rotate_around_fixed_point(
+        angle in -std::f64::consts::TAU..std::f64::consts::TAU,
+        cx in -100.0f64..100.0,
+        cy in -100.0f64..100.0,
+    ) {
+        let mut m = Matrix2D::IDENTITY;
+        m.rotate_around(angle, cx, cy);
+        let (xp, yp) = m.map_point(cx, cy);
+        let eps = cx.abs().max(cy.abs()) * 1e-10 + 1e-10;
+        prop_assert!(approx_eq(xp, cx, eps), "cx: {} != {} (eps={})", xp, cx, eps);
+        prop_assert!(approx_eq(yp, cy, eps), "cy: {} != {} (eps={})", yp, cy, eps);
+    }
+
+    /// rotate_around で中心点からの距離が保存される。
+    #[test]
+    fn rotate_around_preserves_distance(
+        x in arb_coord(),
+        y in arb_coord(),
+        angle in -std::f64::consts::TAU..std::f64::consts::TAU,
+        cx in -100.0f64..100.0,
+        cy in -100.0f64..100.0,
+    ) {
+        let mut m = Matrix2D::IDENTITY;
+        m.rotate_around(angle, cx, cy);
+        let (xp, yp) = m.map_point(x, y);
+        let dist_before = ((x - cx).powi(2) + (y - cy).powi(2)).sqrt();
+        let dist_after = ((xp - cx).powi(2) + (yp - cy).powi(2)).sqrt();
+        let eps = dist_before * 1e-10 + 1e-10;
+        prop_assert!(
+            approx_eq(dist_before, dist_after, eps),
+            "distance: {} != {} (eps={})", dist_before, dist_after, eps
+        );
+    }
+
+    /// post_translate(tx,ty) → post_translate(-tx,-ty) で元に戻る。
+    #[test]
+    fn round_trip_post_translate(
+        m in arb_matrix(),
+        tx in -100.0f64..100.0,
+        ty in -100.0f64..100.0,
+    ) {
+        let mut actual = m;
+        actual.post_translate(tx, ty);
+        actual.post_translate(-tx, -ty);
+        prop_assert!(
+            matrix_approx_eq(&actual, &m, EPS),
+            "round trip failed:\n  actual: {:?}\n  expected: {:?}", actual, m
+        );
+    }
+
     /// JIT 版とリファレンス版の結果が一致する。
     #[test]
     fn jit_matches_reference(

@@ -65,6 +65,10 @@ harness = false
 name = "fill_gradient"
 harness = false
 
+[[bench]]
+name = "matrix"
+harness = false
+
 [workspace]
 members = ["pbt"]
 exclude = ["fuzz"]
