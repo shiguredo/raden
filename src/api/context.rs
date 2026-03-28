@@ -315,6 +315,18 @@ impl<'a> Context<'a> {
             let dst = unsafe { base.add(offset) };
             let height = (boxi.y1 - boxi.y0) as usize;
 
+            // Radial 不透明の場合は JIT F32X4 SIMD パスを使用する
+            if matches!(
+                gradient.values(),
+                crate::api::gradient::GradientValues::Radial(_)
+            ) && prepared.is_opaque()
+            {
+                let radial_fn = self.runtime.get_or_compile_radial_row();
+                prepared
+                    .fill_rect_radial_jit(dst, stride, boxi.x0, boxi.y0, width, height, radial_fn);
+                return;
+            }
+
             // 融合パス: fetch + blend を 1 ループで処理し中間バッファを排除する
             prepared.fill_rect(dst, stride, boxi.x0, boxi.y0, width, height);
             return;

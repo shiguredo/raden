@@ -2,7 +2,7 @@ use crate::api::style::{CompOp, FillRule};
 
 use super::cache::{
     PipelineBoxFn, PipelineCache, PipelineCovFn, PipelineFn, PipelineSpanCovFn, PipelineSpanFn,
-    SweepFn, TransformEdgesFn,
+    RadialGradientRowFn, SweepFn, TransformEdgesFn,
 };
 use super::compiler::PipelineCompiler;
 use super::key::{FetchType, FillType, PipelineKey};
@@ -17,6 +17,7 @@ pub struct PipelineRuntime {
     sweep_non_zero: Option<SweepFn>,
     sweep_even_odd: Option<SweepFn>,
     transform_edges_fn: Option<TransformEdgesFn>,
+    radial_row_fn: Option<RadialGradientRowFn>,
 }
 
 impl PipelineRuntime {
@@ -27,6 +28,7 @@ impl PipelineRuntime {
             sweep_non_zero: None,
             sweep_even_odd: None,
             transform_edges_fn: None,
+            radial_row_fn: None,
         }
     }
 
@@ -144,6 +146,18 @@ impl PipelineRuntime {
     /// JIT sweep 関数を取得またはコンパイルする。
     ///
     /// FillRule ごとに別関数をキャッシュする。
+    /// Radial グラデ���ション行描画の JIT 関数を取��またはコンパイルする。
+    pub fn get_or_compile_radial_row(&mut self) -> RadialGradientRowFn {
+        match self.radial_row_fn {
+            Some(f) => f,
+            None => {
+                let f = self.compiler.compile_radial_row();
+                self.radial_row_fn = Some(f);
+                f
+            }
+        }
+    }
+
     pub fn get_or_compile_sweep(&mut self, fill_rule: FillRule) -> SweepFn {
         let slot = match fill_rule {
             FillRule::NonZero => &mut self.sweep_non_zero,

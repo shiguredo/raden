@@ -398,6 +398,11 @@ impl PreparedGradient {
     /// グラデーションを矩形に直接描画する (融合 fetch + blend)。
     ///
     /// 種別に応じた最適化パスにディスパッチする。
+    /// LUT が全不透明かどうか。
+    pub(crate) fn is_opaque(&self) -> bool {
+        self.lut_opaque
+    }
+
     pub(crate) fn fill_rect(
         &self,
         dst: *mut u8,
@@ -933,6 +938,67 @@ impl PreparedGradient {
                 }
                 ux0 += dux_dx_f;
                 uy0 += duy_dx_f;
+            }
+        }
+    }
+
+    /// Radial グラデーションを JIT F32X4 SIMD で矩形に描画する (不透明 LUT 専用)。
+    pub(crate) fn fill_rect_radial_jit(
+        &self,
+        dst: *mut u8,
+        stride: usize,
+        x0: i32,
+        y0: i32,
+        width: usize,
+        height: usize,
+        row_fn: crate::pipeline::cache::RadialGradientRowFn,
+    ) {
+        let PreparedGradientKind::Radial {
+            cx,
+            cy,
+            r0,
+            inv_r_diff,
+            dux_dx,
+            duy_dx,
+            dux_dy,
+            duy_dy,
+            ux_origin,
+            uy_origin,
+        } = &self.kind
+        else {
+            return;
+        };
+
+        let cx_f = *cx as f32;
+        let cy_f = *cy as f32;
+        let r0_f = *r0 as f32;
+        let inv_r_diff_max_f = (*inv_r_diff * (LUT_SIZE - 1) as f64) as f32;
+        let dux_dx_f = *dux_dx as f32;
+        let duy_dx_f = *duy_dx as f32;
+        let lut_ptr = self.lut.as_ptr();
+        let px0 = x0 as f64 + 0.5;
+
+        for row in 0..height {
+            let y = y0 + row as i32;
+            let py = y as f64 + 0.5;
+            let ux_start = (dux_dx * px0 + dux_dy * py + ux_origin) as f32;
+            let uy_start = (duy_dx * px0 + duy_dy * py + uy_origin) as f32;
+            let dst_row = unsafe { (dst.add(row * stride)) as *mut u32 };
+
+            unsafe {
+                row_fn(
+                    dst_row,
+                    lut_ptr,
+                    width,
+                    ux_start,
+                    uy_start,
+                    cx_f,
+                    cy_f,
+                    r0_f,
+                    inv_r_diff_max_f,
+                    dux_dx_f,
+                    duy_dx_f,
+                );
             }
         }
     }

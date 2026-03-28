@@ -65,6 +65,7 @@ mod blend_build;
 mod blend_modes;
 mod box_pipelines;
 mod core_pipelines;
+mod gradient_pipelines;
 mod porter_duff;
 mod span_pipelines;
 mod sweep;
@@ -81,7 +82,8 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
 
 use super::cache::{
-    PipelineBoxFn, PipelineCovFn, PipelineFn, PipelineSpanCovFn, PipelineSpanFn, SweepFn,
+    PipelineBoxFn, PipelineCovFn, PipelineFn, PipelineSpanCovFn, PipelineSpanFn,
+    RadialGradientRowFn, SweepFn,
 };
 use super::key::PipelineKey;
 use crate::api::style::{CompOp, FillRule};
@@ -89,6 +91,7 @@ use crate::api::style::{CompOp, FillRule};
 use blend_build::*;
 use box_pipelines::*;
 use core_pipelines::*;
+use gradient_pipelines::*;
 use porter_duff::*;
 use span_pipelines::*;
 use sweep::build_sweep;
@@ -528,6 +531,49 @@ impl PipelineCompiler {
     ///     m00: f64, m01: f64, m10: f64, m11: f64, m20: f64, m21: f64)
     /// ```
     ///
+    /// Radial グラデーション行描画を F32X4 SIMD で JIT コンパイルする。
+    ///
+    /// 4 ピクセル分の sqrt を並列実行し、LUT lookup はスカラーで行う。
+    pub fn compile_radial_row(&mut self) -> RadialGradientRowFn {
+        let mut module = new_module(&self.flags);
+        let ptr_type = module.target_config().pointer_type();
+
+        let mut sig = module.make_signature();
+        sig.params.push(AbiParam::new(ptr_type)); // dst_row: *mut u32
+        sig.params.push(AbiParam::new(ptr_type)); // lut: *const u32
+        sig.params.push(AbiParam::new(ptr_type)); // width: usize
+        sig.params.push(AbiParam::new(types::F32)); // ux_start
+        sig.params.push(AbiParam::new(types::F32)); // uy_start
+        sig.params.push(AbiParam::new(types::F32)); // cx
+        sig.params.push(AbiParam::new(types::F32)); // cy
+        sig.params.push(AbiParam::new(types::F32)); // r0
+        sig.params.push(AbiParam::new(types::F32)); // inv_r_diff_max
+        sig.params.push(AbiParam::new(types::F32)); // dux_dx
+        sig.params.push(AbiParam::new(types::F32)); // duy_dx
+
+        let func_name = "radial_gradient_row";
+        let func_id = module
+            .declare_function(func_name, Linkage::Local, &sig)
+            .unwrap();
+
+        let mut ctx = module.make_context();
+        let mut func_ctx = FunctionBuilderContext::new();
+        ctx.func.signature = sig;
+
+        {
+            let bcx = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
+            build_radial_row_opaque(bcx, ptr_type);
+        }
+
+        finalize_function(&mut module, func_id, &mut ctx, func_name);
+
+        let code = module.get_finalized_function(func_id);
+        let func: RadialGradientRowFn = unsafe { std::mem::transmute(code) };
+
+        self.modules.push(module);
+        func
+    }
+
     /// F64X2 SIMD で各エッジの 2 点 (x0,y0), (x1,y1) を一括変換する。
     pub fn compile_transform_edges(&mut self) -> super::cache::TransformEdgesFn {
         let mut module = new_module(&self.flags);

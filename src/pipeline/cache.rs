@@ -79,6 +79,23 @@ pub type PipelineSpanFn = unsafe extern "C" fn(dst: *mut u8, src_span: *const u3
 pub type PipelineSpanCovFn =
     unsafe extern "C" fn(dst: *mut u8, src_span: *const u32, count: usize, coverage: *const u8);
 
+/// Radial グラデーション行描画 JIT 関数のシグネチャ。
+///
+/// F32X4 SIMD で 4 ピクセル分の sqrt を並列実行する。
+pub type RadialGradientRowFn = unsafe extern "C" fn(
+    dst_row: *mut u32,
+    lut: *const u32,
+    width: usize,
+    ux_start: f32,
+    uy_start: f32,
+    cx: f32,
+    cy: f32,
+    r0: f32,
+    inv_r_diff_max: f32,
+    dux_dx: f32,
+    duy_dx: f32,
+);
+
 /// コンパイル済みパイプライン関数のキャッシュ。
 #[derive(Default)]
 pub struct PipelineCache {
