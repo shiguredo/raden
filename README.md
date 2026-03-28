@@ -21,7 +21,7 @@ Please read <https://github.com/shiguredo/oss> before use.
 
 Raden は [Cranelift](https://cranelift.dev/) を利用した 2D ベクターグラフィックスライブラリです。CPU のみで利用できます。
 
-API は [Blend2D](https://blend2d.com/) にできるだけ寄せており、Blend2D の利用経験があればそのまま使い始められるのライブラリを目指しています。
+API は [Blend2D](https://blend2d.com/) にできるだけ寄せており、Blend2D の利用経験があればそのまま使い始められるライブラリを目指しています。
 
 <https://github.com/user-attachments/assets/23145334-3847-4317-ae81-81b51dda689b>
 
@@ -29,7 +29,7 @@ raden と [raw-player-rs](https://github.com/shiguredo/raw-player-rs) を組み�
 
 ## 目的
 
-GPU を利用できない CI 環境において、 CPU のみを利用して 1080p / 120fps 以上の複雑なダミー映像を高速に生成するためのライブラリとして開発しています。
+GPU を利用できない CI 環境において、CPU のみを利用して 1080p / 120fps 以上の複雑なダミー映像を高速に生成するためのライブラリとして開発しています。
 
 ## 現在の機能
 
@@ -37,7 +37,7 @@ GPU を利用できない CI 環境において、 CPU のみを利用して 108
 
 | メソッド | 説明 |
 |---|---|
-| `fill_all()` | 画像全体を現在の塗りつぶし色で塗りつぶす |
+| `fill_all()` | 画像全体をフィルスタイルで塗りつぶす |
 | `fill_rect(&Rect)` | 矩形塗りつぶし。クリッピング付き |
 | `fill_path(&Path)` | 任意パス塗りつぶし。ベジェ平坦化 + ラスタライズ |
 | `fill_circle(&Circle)` | 円塗りつぶし。内部で Path に変換 |
@@ -50,8 +50,36 @@ GPU を利用できない CI 環境において、 CPU のみを利用して 108
 | `translate(tx, ty)` | 平行移動を現在の変換行列に適用する |
 | `scale(sx, sy)` | スケーリングを現在の変換行列に適用する |
 | `rotate(angle)` | 回転を現在の変換行列に適用する (ラジアン) |
+| `apply_matrix(&Matrix2D)` | 任意の変換行列を現在の変換行列に適用する |
+| `reset_matrix()` | 変換行列を単位行列にリセットする |
+| `user_to_meta()` | ユーザー変換をメタ変換に統合する |
 | `save()` | 現在の描画状態をスタックに保存する |
 | `restore()` | スタックから描画状態を復元する |
+
+### フィルスタイル
+
+| 種類 | 説明 |
+|---|---|
+| `set_fill_style(Rgba32)` | 単色塗りつぶし |
+| `set_fill_style_gradient(&Gradient)` | グラデーション塗りつぶし (Linear / Radial / Conic) |
+| `set_fill_style_pattern(&Pattern)` | 画像パターン塗りつぶし |
+| `set_stroke_style(Rgba32)` | ストローク色を設定する |
+| `set_fill_rule(FillRule)` | 塗りつぶし規則を設定する (`NonZero` / `EvenOdd`) |
+| `set_comp_op(CompOp)` | 合成モードを設定する |
+
+### グラデーション (`Gradient`)
+
+| 種類 | 説明 |
+|---|---|
+| Linear | 2 点間の線形グラデーション |
+| Radial | 中心・焦点・半径による放射グラデーション |
+| Conic | 中心と角度による円錐グラデーション |
+
+範囲外処理モード (`ExtendMode`): `Pad` (デフォルト) / `Repeat` / `Reflect`
+
+### パターン (`Pattern`)
+
+画像をタイルとして繰り返す塗りつぶし。並進オフセット対応。`ExtendMode` は `Pad` / `Repeat` をサポート。
 
 ### 合成モード (`CompOp`)
 
@@ -103,22 +131,18 @@ Porter-Duff 基本セット + Clear + Plus の 13 種類と、ブレンドモー
 | `NonZero` | ワインディングナンバーが非ゼロなら内側 (デフォルト) |
 | `EvenOdd` | ワインディングナンバーが奇数なら内側 |
 
-### フィルスタイル / ストロークスタイル
-
-| 種類 | 説明 |
-|---|---|
-| `set_fill_rule(FillRule)` | 塗りつぶし規則を設定する (`NonZero` / `EvenOdd`) |
-| `set_fill_style(Rgba32)` | 塗りつぶし色を設定する |
-| `set_stroke_style(Rgba32)` | ストローク色を設定する。fill と独立 |
-
 ### ストロークパラメータ
 
 | メソッド | 説明 |
 |---|---|
 | `set_stroke_width(f64)` | ストローク幅を設定する |
-| `set_stroke_cap(StrokeCap)` | 線端の形状 (`Butt`, `Square`, `Round`) |
-| `set_stroke_join(StrokeJoin)` | 接合部の形状 (`Bevel`, `MiterBevel`, `Round`) |
-| `set_stroke_miter_limit(f64)` | マイター限界値を設定する |
+| `set_stroke_cap(StrokeCap)` | 線端の形状を一括設定 (`Butt`, `Square`, `Round`) |
+| `set_stroke_start_cap(StrokeCap)` | 始端の形状を個別設定 |
+| `set_stroke_end_cap(StrokeCap)` | 終端の形状を個別設定 |
+| `set_stroke_join(StrokeJoin)` | 接合部の形状 (`MiterClip`, `MiterBevel`, `MiterRound`, `Bevel`, `Round`) |
+| `set_stroke_miter_limit(f64)` | マイター限界値を設定する (デフォルト 4.0) |
+| `set_stroke_dash_array(&[f64])` | ダッシュパターンを設定する (SVG 準拠、奇数パターンは 2 回繰り返す) |
+| `set_stroke_dash_offset(f64)` | ダッシュパターンの開始オフセットを設定する |
 
 ### フォント
 
@@ -146,6 +170,19 @@ Porter-Duff 基本セット + Clear + Plus の 13 種類と、ブレンドモー
 | `Image` | 画像バッファ管理。`new(width, height, format)` で生成、`data()` でバイト列参照 |
 | `PixelFormat::Prgb32` | 32-bit premultiplied ARGB。現在唯一のフォーマット |
 | BMP 出力 | `Image::write_to_file()` で BI_BITFIELDS 形式の top-down BMP を出力する |
+
+## JIT パイプライン
+
+描画パイプラインは Cranelift JIT コンパイラでネイティブコードを生成する。
+
+- 29 種類の合成モード全てに対して完全カバレッジ版 + カバレッジ付き版のパイプラインを JIT 生成
+- I32X4 (128-bit 整数 SIMD) による 4 ピクセル並列合成 (x86_64: SSE2, AArch64: NEON)
+- F32X4 (128-bit 浮動小数点 SIMD) による Radial グラデーションの 4 並列 sqrt
+- Linear グラデーションの固定小数点最適化 (内部ループで浮動小数点演算ゼロ)
+- Linear fill_path の fetch + coverage + blend 融合パイプライン (中間バッファ排除)
+- sweep 関数 (prefix sum + FillRule 変換) の JIT 生成
+- エッジ座標変換の F64X2 SIMD JIT
+- パイプラインキャッシュにより同一パラメータの関数は再コンパイルしない
 
 ## サンプル
 
@@ -219,9 +256,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## 制約
 
 - `PixelFormat` は現在 `Prgb32` のみ
-- フィルスタイルは単色のみ (グラデーション、画像パターン未対応)
+- グラデーション/パターンはフィルスタイルのみ対応 (ストロークスタイルは単色のみ)
 - フォントは TrueType アウトライン (glyf/loca) のみ対応 (CFF, OpenType Layout 未対応)
-- ダッシュ線 (dash_array / dash_offset) は未対応
+- クリッピングは未対応
 
 ## ライセンス
 
