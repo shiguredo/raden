@@ -334,21 +334,28 @@ impl PreparedGradient {
                 ux_origin,
                 uy_origin,
             } => {
-                // 行頭のユーザー座標を事前計算し、X 方向は増分で更新する
+                // f32 に変換して内部ループを高速化する
+                let cx_f = *cx as f32;
+                let cy_f = *cy as f32;
+                let r0_f = *r0 as f32;
+                let inv_r_diff_f = *inv_r_diff as f32;
+                let dux_dx_f = *dux_dx as f32;
+                let duy_dx_f = *duy_dx as f32;
+                let max_idx_f = (LUT_SIZE - 1) as f32;
                 let px0 = x_start as f64 + 0.5;
                 let py = y as f64 + 0.5;
-                let mut ux = dux_dx * px0 + dux_dy * py + ux_origin;
-                let mut uy = duy_dx * px0 + duy_dy * py + uy_origin;
+                let mut ux = (dux_dx * px0 + dux_dy * py + ux_origin) as f32;
+                let mut uy = (duy_dx * px0 + duy_dy * py + uy_origin) as f32;
 
                 for pixel in span.iter_mut() {
-                    let dx = ux - cx;
-                    let dy = uy - cy;
+                    let dx = ux - cx_f;
+                    let dy = uy - cy_f;
                     let dist = (dx * dx + dy * dy).sqrt();
-                    let t = (dist - r0) * inv_r_diff;
-                    let idx = self.t_to_index(t);
+                    let idx =
+                        ((dist - r0_f) * inv_r_diff_f * max_idx_f).clamp(0.0, max_idx_f) as usize;
                     *pixel = self.lut[idx];
-                    ux += dux_dx;
-                    uy += duy_dx;
+                    ux += dux_dx_f;
+                    uy += duy_dx_f;
                 }
             }
             PreparedGradientKind::Conic {
@@ -362,23 +369,27 @@ impl PreparedGradient {
                 ux_origin,
                 uy_origin,
             } => {
+                let cx_f = *cx as f32;
+                let cy_f = *cy as f32;
+                let angle_off_f = *angle_offset as f32;
+                let dux_dx_f = *dux_dx as f32;
+                let duy_dx_f = *duy_dx as f32;
+                let inv_2pi_f: f32 = 1.0 / (2.0 * std::f32::consts::PI);
+                let max_idx_f = (LUT_SIZE - 1) as f32;
                 let px0 = x_start as f64 + 0.5;
                 let py = y as f64 + 0.5;
-                let mut ux = dux_dx * px0 + dux_dy * py + ux_origin;
-                let mut uy = duy_dx * px0 + duy_dy * py + uy_origin;
-                let inv_2pi = 1.0 / (2.0 * std::f64::consts::PI);
+                let mut ux = (dux_dx * px0 + dux_dy * py + ux_origin) as f32;
+                let mut uy = (duy_dx * px0 + duy_dy * py + uy_origin) as f32;
 
                 for pixel in span.iter_mut() {
-                    let dx = ux - cx;
-                    let dy = uy - cy;
-                    let angle = fast_atan2(dy, dx) - angle_offset;
-                    // [0, 1) に正規化
-                    let t = angle * inv_2pi;
-                    let t = t - t.floor();
-                    let idx = self.t_to_index(t);
-                    *pixel = self.lut[idx];
-                    ux += dux_dx;
-                    uy += duy_dx;
+                    let dx = ux - cx_f;
+                    let dy = uy - cy_f;
+                    let angle = fast_atan2_f32(dy, dx) - angle_off_f;
+                    let t = angle * inv_2pi_f;
+                    let idx = ((t - t.floor()) * max_idx_f) as usize;
+                    *pixel = self.lut[idx.min(LUT_SIZE - 1)];
+                    ux += dux_dx_f;
+                    uy += duy_dx_f;
                 }
             }
         }
@@ -608,6 +619,9 @@ impl PreparedGradient {
 
     /// Linear グラデーションのスパンを固定小数点で計算し、JIT span_cov 用のバッファに書き込む。
     /// Radial グラデーションを矩形に直接描画する。
+    ///
+    /// f32 演算 + 4 ピクセルアンロールで sqrt スループットを向上させる。
+    /// LUT が 256 エントリなので f32 精度で十分。
     fn fill_rect_radial(
         &self,
         dst: *mut u8,
@@ -635,35 +649,173 @@ impl PreparedGradient {
 
         let lut = &self.lut;
         let opaque = self.lut_opaque;
+
+        // f32 に変換 (LUT 256 エントリに対して十分な精度)
+        let cx_f = *cx as f32;
+        let cy_f = *cy as f32;
+        let r0_f = *r0 as f32;
+        let inv_r_diff_f = *inv_r_diff as f32;
+        let dux_dx_f = *dux_dx as f32;
+        let duy_dx_f = *duy_dx as f32;
+        let max_idx_f = (LUT_SIZE - 1) as f32;
+
         let px0 = x0 as f64 + 0.5;
 
         for row in 0..height {
             let y = y0 + row as i32;
             let py = y as f64 + 0.5;
-            let mut ux = dux_dx * px0 + dux_dy * py + ux_origin;
-            let mut uy = duy_dx * px0 + duy_dy * py + uy_origin;
+            let ux_start = (dux_dx * px0 + dux_dy * py + ux_origin) as f32;
+            let uy_start = (duy_dx * px0 + duy_dy * py + uy_origin) as f32;
             let dst_row = unsafe { (dst.add(row * stride)) as *mut u32 };
 
-            for x in 0..width {
-                let dx = ux - cx;
-                let dy = uy - cy;
-                let dist = (dx * dx + dy * dy).sqrt();
-                let t = (dist - r0) * inv_r_diff;
-                let idx = self.t_to_index(t);
-                if opaque {
-                    unsafe {
-                        *dst_row.add(x) = lut[idx];
-                    }
-                } else {
-                    blend_pixel_src_over(dst_row, x, lut[idx]);
-                }
-                ux += dux_dx;
-                uy += duy_dx;
+            if opaque {
+                self.fill_radial_row_opaque(
+                    dst_row,
+                    lut,
+                    width,
+                    ux_start,
+                    uy_start,
+                    cx_f,
+                    cy_f,
+                    r0_f,
+                    inv_r_diff_f,
+                    dux_dx_f,
+                    duy_dx_f,
+                    max_idx_f,
+                );
+            } else {
+                self.fill_radial_row_blend(
+                    dst_row,
+                    lut,
+                    width,
+                    ux_start,
+                    uy_start,
+                    cx_f,
+                    cy_f,
+                    r0_f,
+                    inv_r_diff_f,
+                    dux_dx_f,
+                    duy_dx_f,
+                    max_idx_f,
+                );
             }
         }
     }
 
+    /// Radial 不透明行: f32 4px アンロール + 直接ストア。
+    #[inline(always)]
+    fn fill_radial_row_opaque(
+        &self,
+        dst_row: *mut u32,
+        lut: &[u32],
+        width: usize,
+        mut ux0: f32,
+        mut uy0: f32,
+        cx: f32,
+        cy: f32,
+        r0: f32,
+        inv_r_diff: f32,
+        dux_dx: f32,
+        duy_dx: f32,
+        max_idx: f32,
+    ) {
+        let dux4 = dux_dx * 4.0;
+        let duy4 = duy_dx * 4.0;
+        let mut ux1 = ux0 + dux_dx;
+        let mut ux2 = ux0 + dux_dx * 2.0;
+        let mut ux3 = ux0 + dux_dx * 3.0;
+        let mut uy1 = uy0 + duy_dx;
+        let mut uy2 = uy0 + duy_dx * 2.0;
+        let mut uy3 = uy0 + duy_dx * 3.0;
+
+        let simd_width = width / 4;
+        let remainder = width - simd_width * 4;
+
+        for chunk in 0..simd_width {
+            let x = chunk * 4;
+
+            let dx0 = ux0 - cx;
+            let dy0 = uy0 - cy;
+            let dx1 = ux1 - cx;
+            let dy1 = uy1 - cy;
+            let dx2 = ux2 - cx;
+            let dy2 = uy2 - cy;
+            let dx3 = ux3 - cx;
+            let dy3 = uy3 - cy;
+
+            let d0 = (dx0 * dx0 + dy0 * dy0).sqrt();
+            let d1 = (dx1 * dx1 + dy1 * dy1).sqrt();
+            let d2 = (dx2 * dx2 + dy2 * dy2).sqrt();
+            let d3 = (dx3 * dx3 + dy3 * dy3).sqrt();
+
+            let i0 = ((d0 - r0) * inv_r_diff * max_idx).clamp(0.0, max_idx) as usize;
+            let i1 = ((d1 - r0) * inv_r_diff * max_idx).clamp(0.0, max_idx) as usize;
+            let i2 = ((d2 - r0) * inv_r_diff * max_idx).clamp(0.0, max_idx) as usize;
+            let i3 = ((d3 - r0) * inv_r_diff * max_idx).clamp(0.0, max_idx) as usize;
+
+            unsafe {
+                *dst_row.add(x) = lut[i0];
+                *dst_row.add(x + 1) = lut[i1];
+                *dst_row.add(x + 2) = lut[i2];
+                *dst_row.add(x + 3) = lut[i3];
+            }
+
+            ux0 += dux4;
+            ux1 += dux4;
+            ux2 += dux4;
+            ux3 += dux4;
+            uy0 += duy4;
+            uy1 += duy4;
+            uy2 += duy4;
+            uy3 += duy4;
+        }
+
+        // 余りピクセル
+        for i in 0..remainder {
+            let x = width - remainder + i;
+            let dx = ux0 - cx;
+            let dy = uy0 - cy;
+            let dist = (dx * dx + dy * dy).sqrt();
+            let idx = ((dist - r0) * inv_r_diff * max_idx).clamp(0.0, max_idx) as usize;
+            unsafe {
+                *dst_row.add(x) = lut[idx];
+            }
+            ux0 += dux_dx;
+            uy0 += duy_dx;
+        }
+    }
+
+    /// Radial 半透明行: SrcOver 合成。
+    #[inline(always)]
+    fn fill_radial_row_blend(
+        &self,
+        dst_row: *mut u32,
+        lut: &[u32],
+        width: usize,
+        mut ux: f32,
+        mut uy: f32,
+        cx: f32,
+        cy: f32,
+        r0: f32,
+        inv_r_diff: f32,
+        dux_dx: f32,
+        duy_dx: f32,
+        max_idx: f32,
+    ) {
+        for x in 0..width {
+            let dx = ux - cx;
+            let dy = uy - cy;
+            let dist = (dx * dx + dy * dy).sqrt();
+            let idx = ((dist - r0) * inv_r_diff * max_idx).clamp(0.0, max_idx) as usize;
+            blend_pixel_src_over(dst_row, x, lut[idx]);
+            ux += dux_dx;
+            uy += duy_dx;
+        }
+    }
+
     /// Conic グラデーションを矩形に直接描画する。
+    ///
+    /// f32 演算 + 4 ピクセルアンロールで fast_atan2 のスループットを向上させる。
     fn fill_rect_conic(
         &self,
         dst: *mut u8,
@@ -690,32 +842,97 @@ impl PreparedGradient {
 
         let lut = &self.lut;
         let opaque = self.lut_opaque;
+
+        let cx_f = *cx as f32;
+        let cy_f = *cy as f32;
+        let angle_off_f = *angle_offset as f32;
+        let dux_dx_f = *dux_dx as f32;
+        let duy_dx_f = *duy_dx as f32;
+        let inv_2pi_f: f32 = 1.0 / (2.0 * std::f32::consts::PI);
+        let max_idx_f = (LUT_SIZE - 1) as f32;
+
         let px0 = x0 as f64 + 0.5;
-        let inv_2pi = 1.0 / (2.0 * std::f64::consts::PI);
+        let dux4 = dux_dx_f * 4.0;
+        let duy4 = duy_dx_f * 4.0;
 
         for row in 0..height {
             let y = y0 + row as i32;
             let py = y as f64 + 0.5;
-            let mut ux = dux_dx * px0 + dux_dy * py + ux_origin;
-            let mut uy = duy_dx * px0 + duy_dy * py + uy_origin;
+            let ux_start = (dux_dx * px0 + dux_dy * py + ux_origin) as f32;
+            let uy_start = (duy_dx * px0 + duy_dy * py + uy_origin) as f32;
             let dst_row = unsafe { (dst.add(row * stride)) as *mut u32 };
 
-            for x in 0..width {
-                let dx = ux - cx;
-                let dy = uy - cy;
-                let angle = fast_atan2(dy, dx) - angle_offset;
-                let t = angle * inv_2pi;
-                let t = t - t.floor();
-                let idx = self.t_to_index(t);
+            let simd_width = width / 4;
+            let remainder = width - simd_width * 4;
+
+            let mut ux0 = ux_start;
+            let mut ux1 = ux_start + dux_dx_f;
+            let mut ux2 = ux_start + dux_dx_f * 2.0;
+            let mut ux3 = ux_start + dux_dx_f * 3.0;
+            let mut uy0 = uy_start;
+            let mut uy1 = uy_start + duy_dx_f;
+            let mut uy2 = uy_start + duy_dx_f * 2.0;
+            let mut uy3 = uy_start + duy_dx_f * 3.0;
+
+            for chunk in 0..simd_width {
+                let x = chunk * 4;
+
+                let a0 = fast_atan2_f32(uy0 - cy_f, ux0 - cx_f) - angle_off_f;
+                let a1 = fast_atan2_f32(uy1 - cy_f, ux1 - cx_f) - angle_off_f;
+                let a2 = fast_atan2_f32(uy2 - cy_f, ux2 - cx_f) - angle_off_f;
+                let a3 = fast_atan2_f32(uy3 - cy_f, ux3 - cx_f) - angle_off_f;
+
+                let t0 = a0 * inv_2pi_f;
+                let t1 = a1 * inv_2pi_f;
+                let t2 = a2 * inv_2pi_f;
+                let t3 = a3 * inv_2pi_f;
+
+                let i0 = ((t0 - t0.floor()) * max_idx_f) as usize;
+                let i1 = ((t1 - t1.floor()) * max_idx_f) as usize;
+                let i2 = ((t2 - t2.floor()) * max_idx_f) as usize;
+                let i3 = ((t3 - t3.floor()) * max_idx_f) as usize;
+
                 if opaque {
                     unsafe {
-                        *dst_row.add(x) = lut[idx];
+                        *dst_row.add(x) = lut[i0.min(255)];
+                        *dst_row.add(x + 1) = lut[i1.min(255)];
+                        *dst_row.add(x + 2) = lut[i2.min(255)];
+                        *dst_row.add(x + 3) = lut[i3.min(255)];
                     }
                 } else {
-                    blend_pixel_src_over(dst_row, x, lut[idx]);
+                    blend_pixel_src_over(dst_row, x, lut[i0.min(255)]);
+                    blend_pixel_src_over(dst_row, x + 1, lut[i1.min(255)]);
+                    blend_pixel_src_over(dst_row, x + 2, lut[i2.min(255)]);
+                    blend_pixel_src_over(dst_row, x + 3, lut[i3.min(255)]);
                 }
-                ux += dux_dx;
-                uy += duy_dx;
+
+                ux0 += dux4;
+                ux1 += dux4;
+                ux2 += dux4;
+                ux3 += dux4;
+                uy0 += duy4;
+                uy1 += duy4;
+                uy2 += duy4;
+                uy3 += duy4;
+            }
+
+            // 余りピクセル
+            for i in 0..remainder {
+                let x = width - remainder + i;
+                let dx = ux0 - cx_f;
+                let dy = uy0 - cy_f;
+                let angle = fast_atan2_f32(dy, dx) - angle_off_f;
+                let t = angle * inv_2pi_f;
+                let idx = ((t - t.floor()) * max_idx_f) as usize;
+                if opaque {
+                    unsafe {
+                        *dst_row.add(x) = lut[idx.min(255)];
+                    }
+                } else {
+                    blend_pixel_src_over(dst_row, x, lut[idx.min(255)]);
+                }
+                ux0 += dux_dx_f;
+                uy0 += duy_dx_f;
             }
         }
     }
@@ -873,40 +1090,32 @@ fn blend_pixel_src_over(dst_row: *mut u32, x: usize, src: u32) {
 
 /// atan2 の多項式近似。標準ライブラリの atan2 (~50-100 サイクル) の代わりに使用する。
 ///
-/// Conic グラデーションの内部ループで使用。最大誤差 ~0.01 ラジアン (0.6 度)。
-/// グラデーションの LUT が 256 エントリなので、角度分解能 (2pi/256 ≈ 0.025 rad)
-/// より十分小さい誤差。
-///
-/// アルゴリズム: |y/x| <= 1 の場合は minimax 多項式で atan を近似し、
-/// |y/x| > 1 の場合は pi/2 - atan(x/y) で回避。象限は符号で復元。
+/// 高速 atan2 近似 (f32)。
 #[inline(always)]
-fn fast_atan2(y: f64, x: f64) -> f64 {
+fn fast_atan2_f32(y: f32, x: f32) -> f32 {
     let ax = x.abs();
     let ay = y.abs();
 
-    // atan(z) の 7 次 minimax 多項式 (|z| <= 1)
-    // 係数は Blend2D の pipeline/jit/fetchgradientpart.cpp を参考にした
+    if ax < 1e-7 && ay < 1e-7 {
+        return 0.0;
+    }
+
     let (z, base) = if ax >= ay {
-        if ax < 1e-10 {
-            return 0.0;
-        }
-        (ay / ax, 0.0)
+        (ay / ax, 0.0f32)
     } else {
-        (ax / ay, std::f64::consts::FRAC_PI_2)
+        (ax / ay, std::f32::consts::FRAC_PI_2)
     };
 
     let z2 = z * z;
-    // atan(z) ≈ z - z³/3 + z⁵/5 - z⁷/7 の Horner 形式最適化
-    let p = -0.0464964749;
-    let p = p * z2 + 0.15931422;
-    let p = p * z2 - 0.327622764;
+    // atan(z) の minimax 多項式
+    let p = -0.046_496_475_f32;
+    let p = p * z2 + 0.159_314_22;
+    let p = p * z2 - 0.327_622_76;
     let result = (p * z2 + 1.0) * z;
 
     let result = if ax >= ay { result } else { base - result };
-
-    // 象限の復元
     let result = if x < 0.0 {
-        std::f64::consts::PI - result
+        std::f32::consts::PI - result
     } else {
         result
     };
