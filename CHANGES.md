@@ -30,6 +30,8 @@
 
 ### misc
 
+- [UPDATE] CI / Release の Slack 通知を `shiguredo/github-actions` の `slack-notify`（Composite Action）に切り替える
+  - @voluntas
 - `EdgeBuilder::flatten` にコニック重み列と `PathCmd::ConicTo` 件数の `debug_assert` を追加し、`README` / `docs/BLEND2D.md` に `fill_rect` と `comp_op` の関係を記載する
   - @voluntas
 - パターンの `fill_rect` で `CompOp`（`SrcOver` / `SrcCopy`）を反映し、`blit` の退化矩形を早期リターンし、ストロークのコニック重みに `debug_assert` を追加する
