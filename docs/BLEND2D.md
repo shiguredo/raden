@@ -123,7 +123,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | Blend2D | raden | 状態 |
 |---------|-------|------|
 | `fill_all()` | `fill_all()` | 一致 |
-| `fill_rect(BLRectI/BLRect/x,y,w,h)` | `fill_rect(&Rect)` | 一致 |
+| `fill_rect(BLRectI/BLRect/x,y,w,h)` | `fill_rect(&Rect)` | 差異あり: パターン塗りは `SrcOver`/`SrcCopy` のみ。グラデ矩形は `comp_op` 非参照（内部融合は SrcOver 相当） |
 | `fill_box(BLBoxI/BLBox/x0,y0,x1,y1)` | なし | 未実装: 2 点指定の矩形塗りつぶし |
 | `fill_round_rect(BLRoundRect/...)` | なし | 未実装: 角丸矩形 |
 | `fill_circle(BLCircle/cx,cy,r)` | `fill_circle(&Circle)` | 一致 |
@@ -178,10 +178,10 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 
 | Blend2D | raden | 状態 |
 |---------|-------|------|
-| `blit_image(BLPointI/BLPoint, BLImage)` | なし | 未実装: 画像の直接転送 |
-| `blit_image(BLPointI/BLPoint, BLImage, BLRectI)` | なし | 未実装: 領域指定付き転送 |
-| `blit_image(BLRectI/BLRect, BLImage)` | なし | 未実装: スケーリング転送 |
-| `blit_image(BLRectI/BLRect, BLImage, BLRectI)` | なし | 未実装: 領域指定+スケーリング転送 |
+| `blit_image(BLPointI/BLPoint, BLImage)` | `blit_image_at(x, y, &Image)` | 差異あり: `CompOp` は `SrcOver` / `SrcCopy` のみ。Nearest のみ |
+| `blit_image(BLPointI/BLPoint, BLImage, BLRectI)` | `blit_image_rect` で `src_rect` 指定 | 同上 |
+| `blit_image(BLRectI/BLRect, BLImage)` | `blit_image_rect(&Rect, &Image, None)` | 同上 |
+| `blit_image(BLRectI/BLRect, BLImage, BLRectI)` | `blit_image_rect(&Rect, &Image, Some(Rect))` | 同上 |
 
 ## Path API
 
@@ -193,11 +193,11 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `line_to(double, double)` / `line_to(BLPoint)` | `line_to(f64, f64)` | 一致 |
 | `poly_to(const BLPoint*, size_t)` | なし | 未実装: 複数点への連続 line_to |
 | `quad_to(...)` | `quad_to(cpx, cpy, x, y)` | 一致 |
-| `smooth_quad_to(...)` | なし | 未実装: 前の二次ベジェの制御点を反射した smooth curve |
+| `smooth_quad_to(...)` | `smooth_quad_to(x, y)` | 実装済み |
 | `cubic_to(...)` | `cubic_to(cp1x, cp1y, cp2x, cp2y, x, y)` | 一致 |
-| `smooth_cubic_to(...)` | なし | 未実装: 前の三次ベジェの制御点を反射した smooth curve |
-| `conic_to(cx, cy, ex, ey, w)` | なし | 未実装: 円錐曲線 (PathCmd 値 3 は欠番で確保済み) |
-| `arc_to(cx, cy, rx, ry, start, sweep, force_move_to)` | なし | 未実装: 円弧 |
+| `smooth_cubic_to(...)` | `smooth_cubic_to(cp2x, cp2y, x, y)` | 実装済み |
+| `conic_to(cx, cy, ex, ey, w)` | `conic_to(cx, cy, ex, ey, w)` | 実装済み: `PathCmd::ConicTo`、重みは `conic_weights()` |
+| `arc_to(cx, cy, rx, ry, start, sweep, force_move_to)` | `arc_to(...)` | 実装済み: `force_move_to` 相当は未実装 |
 | `arc_quadrant_to(x1, y1, x2, y2)` | なし | 未実装: 象限単位の円弧 (90 度以下) |
 | `elliptic_arc_to(rx, ry, x_rotation, large_arc, sweep_flag, x1, y1)` | なし | 未実装: 楕円弧 (SVG arc コマンド相当) |
 | `close()` | `close()` | 一致 |
@@ -317,7 +317,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `BLRgba` (float r, g, b, a) | なし | 未実装: 128-bit 浮動小数点色 |
 | `BLCompOp` (29 種類) | `CompOp` (29 種類) | 一致: 値 0-28 が完全一致 |
 | `BLGradient` (Linear/Radial/Conic) | `Gradient` | 実装済み: Linear/Radial/Conic。LUT ベースの色補間、固定小数点 fetch、JIT F32X4 SIMD (Radial) |
-| `BLPattern` | `Pattern` | 実装済み: Nearest 補間、並進のみ。Bilinear / Affine は未実装 |
+| `BLPattern` | `Pattern` / `PatternFilter` | 実装済み: `set_filter`（Nearest / Bilinear）、`set_origin` / `set_transform`（アフィン）、`prepare` は `Context` の行列と合成 |
 | `BLExtendMode` | `ExtendMode` | 実装済み: Pad, Repeat, Reflect。X/Y 独立モードは未実装 |
 
 ### Rgba32 メソッド
@@ -474,7 +474,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `write_to_file(path, BLImageCodec)` | `write_to_file(path)` | 差異あり: raden は BMP 形式のみ。コーデック指定なし |
 | `write_to_data(BLArray<uint8_t>&, BLImageCodec)` | なし | 未実装: メモリバッファへの画像書き込み |
 | `BLPixelConverter` | なし | 未実装: ピクセルフォーマット間の変換 |
-| `BLFormat` (Prgb32, Xrgb32, A8) | `PixelFormat` (Prgb32 のみ) | 不足: `Xrgb32` (アルファなし) と `A8` (アルファのみ) が未対応 |
+| `BLFormat` (Prgb32, Xrgb32, A8) | `PixelFormat` (Prgb32, Xrgb32, A8) | 一致: `A8` はパターン・グラデ塗りは未対応 (`fill_path` も未対応) |
 | なし | `Image::stride()` | raden 独自: 行バイト数取得 |
 
 ## PathCmd の定義
@@ -484,7 +484,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `BL_PATH_CMD_MOVE` | `PathCmd::MoveTo` | 0 | 一致 |
 | `BL_PATH_CMD_ON` | `PathCmd::LineTo` | 1 | 名前が異なる: Blend2D は「制御点上 (on-curve)」の意味、raden は用途を明示 |
 | `BL_PATH_CMD_QUAD` | `PathCmd::QuadTo` | 2 | 一致 |
-| `BL_PATH_CMD_CONIC` | なし | 3 | 未実装: 円錐曲線。値 3 は欠番として確保済み |
+| `BL_PATH_CMD_CONIC` | `PathCmd::ConicTo` | 3 | 実装済み: 重みは `conic_weights` 列で保持 |
 | `BL_PATH_CMD_CUBIC` | `PathCmd::CubicTo` | 4 | 一致 |
 | `BL_PATH_CMD_CLOSE` | `PathCmd::Close` | 5 | 一致 |
 | `BL_PATH_CMD_WEIGHT` | なし | 6 | 未実装: コニック曲線の重み値 (x 成分のみ使用) |
@@ -500,16 +500,15 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `Gradient` / `GradientStop` / `GradientValues` | グラデーション定義。Linear/Radial/Conic の 3 種別 |
 | `LinearGradientValues` / `RadialGradientValues` / `ConicGradientValues` | 各グラデーション種別のパラメータ |
 | `ExtendMode` | グラデーション/パターンの拡張モード (Pad, Repeat, Reflect) |
-| `Pattern` | 画像パターン。ソース画像、原点オフセット、拡張モードを保持 |
+| `Pattern` / `PatternFilter` | 画像パターンと補間モード。行列は `set_transform`、原点は `set_origin` |
 
 ## 課題一覧
 
 1. ~~**グラデーション / パターンが未実装**~~ → **実装済み**
    - Linear/Radial/Conic グラデーション (LUT ベース、固定小数点、JIT F32X4 SIMD)
-   - 画像パターン (Nearest、並進のみ。Bilinear / Affine は未実装)
+   - 画像パターン (Nearest / Bilinear、`set_origin` / `set_transform`、コンテキスト行列と `prepare` で合成)
 
-2. **`PixelFormat` が `Prgb32` のみ**
-   - Blend2D は `Xrgb32` と `A8` もサポートしている
+2. ~~**`PixelFormat` が `Prgb32` のみ**~~ → **`Xrgb32` / `A8` を追加済み**（`A8` 宛てはパターン・グラデ・`fill_path` 制限あり）
 
 3. ~~**ダッシュ線 (`dash_array` / `dash_offset`) が未実装**~~ → **実装済み**
    - SVG 準拠のダッシュパターン分断アルゴリズム
@@ -517,8 +516,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 4. ~~**クリッピングが未実装**~~ → **実装済み**
    - `clip_to_rect()` / `restore_clipping()` を実装済み
 
-5. **画像転送 (`blit_image`) が未実装**
-   - 画像の直接転送やスケーリング転送がない
+5. ~~**画像転送 (`blit_image`) が未実装**~~ → **`blit_image_rect` / `blit_image_at` を実装済み**（合成モード・フォーマットに制限あり）
 
 6. **OpenType シェーピングが未実装**
    - `shape()` / `applyKerning()` / `applyGSub()` / `applyGPos()` がない

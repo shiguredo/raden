@@ -77,9 +77,13 @@ GPU を利用できない CI 環境において、CPU のみを利用して 1080
 
 範囲外処理モード (`ExtendMode`): `Pad` (デフォルト) / `Repeat` / `Reflect`
 
+`fill_rect` でグラデーションを塗る場合、現状は `set_comp_op` の値を参照せず、内部で SrcOver 相当の融合のみを行う。
+
 ### パターン (`Pattern`)
 
-画像をタイルとして繰り返す塗りつぶし。並進オフセット対応。`ExtendMode` は `Pad` / `Repeat` をサポート。
+画像をタイルとして繰り返す塗りつぶし。`set_origin` / `set_transform`、`PatternFilter`（Nearest / Bilinear）、`ExtendMode`（`Pad` / `Repeat` / `Reflect`）に対応する。
+
+`fill_rect` でパターンを塗るときは `set_comp_op` が `SrcOver` または `SrcCopy` のみ対応（それ以外はパニック）。`fill_path` では `CompOp` をパイプライン経由で適用できる。
 
 ### 合成モード (`CompOp`)
 

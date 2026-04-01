@@ -59,7 +59,7 @@ Gradient::prepare(&matrix) → PreparedGradient
 ## パターン描画
 
 ```text
-Pattern::prepare() → PreparedPattern
+Pattern::prepare(&matrix) → PreparedPattern（`pattern * inv(matrix)` でデバイス→テクスチャ）
 
 [fill_rect]  融合パス: 座標マッピング + LUT + blend (中間バッファなし)
   ↓   不透明ソース: 直接ストア
