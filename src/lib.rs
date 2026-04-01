@@ -15,7 +15,7 @@ pub use api::gradient::{
 pub use api::image::Image;
 pub use api::matrix::Matrix2D;
 pub use api::path::{Path, PathCmd, Point};
-pub use api::pattern::Pattern;
+pub use api::pattern::{Pattern, PatternFilter};
 pub use api::style::{CompOp, FillRule, Rgba32, StrokeCap, StrokeJoin};
 pub use font::{Font, FontData, FontError, FontFace};
 pub use pipeline::runtime::PipelineRuntime;

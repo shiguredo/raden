@@ -1,4 +1,5 @@
 pub mod context;
+pub mod blit;
 pub mod gradient;
 pub mod image;
 pub mod matrix;

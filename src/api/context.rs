@@ -5,7 +5,9 @@ use crate::api::path::Path;
 use crate::api::pattern::Pattern;
 use crate::api::stroke::{StrokeOptions, StrokeWorkspace, stroke_to_fill_with_workspace};
 use crate::api::style::{CompOp, FillRule, Rgba32, StrokeCap, StrokeJoin};
+use crate::api::blit;
 use crate::font::Font;
+use crate::pixel::PixelFormat;
 use crate::pipeline::key::{FetchType, FillType};
 use crate::pipeline::runtime::PipelineRuntime;
 use crate::raster::analytic::AnalyticRasterizer;
@@ -416,16 +418,24 @@ impl<'a> Context<'a> {
             return;
         }
 
+        if self.image.format() == PixelFormat::A8
+            && (self.fill_pattern.is_some() || self.fill_gradient.is_some())
+        {
+            panic!("pattern and gradient fills are not supported for A8 destination");
+        }
+
+        let bpp = self.image.format().bytes_per_pixel();
+
         // パターンの場合はラスタライザを経由せず直接描画する
         if let Some(ref pattern) = self.fill_pattern {
             let Some(boxi) = self.clip_rect(rect) else {
                 return;
             };
-            let prepared = pattern.prepare();
+            let prepared = pattern.prepare(&self.matrix, self.comp_op);
             let stride = self.image.stride();
             let base = self.image.data_ptr_mut();
             let width = (boxi.x1 - boxi.x0) as usize;
-            let offset = boxi.y0 as usize * stride + boxi.x0 as usize * 4;
+            let offset = boxi.y0 as usize * stride + boxi.x0 as usize * bpp;
             let dst = unsafe { base.add(offset) };
             let height = (boxi.y1 - boxi.y0) as usize;
             prepared.fill_rect(dst, stride, boxi.x0, boxi.y0, width, height);
@@ -441,7 +451,7 @@ impl<'a> Context<'a> {
             let stride = self.image.stride();
             let base = self.image.data_ptr_mut();
             let width = (boxi.x1 - boxi.x0) as usize;
-            let offset = boxi.y0 as usize * stride + boxi.x0 as usize * 4;
+            let offset = boxi.y0 as usize * stride + boxi.x0 as usize * bpp;
             let dst = unsafe { base.add(offset) };
             let height = (boxi.y1 - boxi.y0) as usize;
 
@@ -485,7 +495,7 @@ impl<'a> Context<'a> {
         let base = self.image.data_ptr_mut();
         let width = (boxi.x1 - boxi.x0) as usize;
         let height = (boxi.y1 - boxi.y0) as usize;
-        let offset = boxi.y0 as usize * stride + boxi.x0 as usize * 4;
+        let offset = boxi.y0 as usize * stride + boxi.x0 as usize * bpp;
         let dst = unsafe { base.add(offset) };
 
         // Box パイプライン: y ループを JIT 内に含み間接呼び出しを排除
@@ -516,6 +526,14 @@ impl<'a> Context<'a> {
     }
 
     pub fn fill_path(&mut self, path: &Path) {
+        assert_ne!(
+            self.image.format(),
+            PixelFormat::A8,
+            "fill_path is not supported for A8 destination"
+        );
+
+        let bpp = self.image.format().bytes_per_pixel();
+
         // グラデーションの場合は透明チェックをスキップ
         if self.fill_gradient.is_none() {
             // alpha ファストパス: SrcOver で完全透明なら描画不要
@@ -616,7 +634,10 @@ impl<'a> Context<'a> {
         let base = self.image.data_ptr_mut();
 
         // パターン描画
-        let prepared_pattern = self.fill_pattern.as_ref().map(|p| p.prepare());
+        let prepared_pattern = self
+            .fill_pattern
+            .as_ref()
+            .map(|p| p.prepare(&self.matrix, self.comp_op));
         if let Some(ref pattern) = prepared_pattern {
             let span_cov_fn = self.runtime.get_or_compile_span_cov(
                 self.image.format(),
@@ -636,7 +657,7 @@ impl<'a> Context<'a> {
                     span_buf.resize(coverage.len(), 0);
                     pattern.fetch_span(x_start, y, &mut span_buf);
 
-                    let offset = y as usize * stride + x_start as usize * 4;
+                    let offset = y as usize * stride + x_start as usize * bpp;
                     let dst_row = unsafe { base.add(offset) };
                     unsafe {
                         span_cov_fn(
@@ -697,7 +718,7 @@ impl<'a> Context<'a> {
                     span_buf.resize(coverage.len(), 0);
                     gradient.fetch_span_linear_fixed(x_start, y, &mut span_buf);
 
-                    let offset = y as usize * stride + x_start as usize * 4;
+                    let offset = y as usize * stride + x_start as usize * bpp;
                     let dst_row = unsafe { base.add(offset) };
                     unsafe {
                         span_cov_fn(
@@ -728,7 +749,7 @@ impl<'a> Context<'a> {
                 clip_y1,
                 sweep_fn,
                 |y, x_start, coverage| {
-                    let offset = y as usize * stride + x_start as usize * 4;
+                    let offset = y as usize * stride + x_start as usize * bpp;
                     let dst_row = unsafe { base.add(offset) };
                     unsafe {
                         pipeline_cov_fn(dst_row, prgb32, coverage.len(), coverage.as_ptr());
@@ -907,6 +928,54 @@ impl<'a> Context<'a> {
         path.line_to(line.x1, line.y1);
         self.stroke_path(&path);
         self.tmp_path = path;
+    }
+
+    /// ソース画像を `dst` 矩形に Nearest 転送する。`src_rect` が `None` のときはソース全体。
+    ///
+    /// 現在は `CompOp::SrcOver` と `CompOp::SrcCopy` のみ。ソースは `Prgb32` / `Xrgb32`、宛ては `Prgb32` / `Xrgb32` / `A8`。
+    /// 変換行列は現在の `matrix` を用いる (ユーザ空間の `dst` をデバイスへ写像)。
+    pub fn blit_image_rect(&mut self, dst: &Rect, src: &Image, src_rect: Option<Rect>) {
+        let corners = [
+            self.matrix.map_point(dst.x, dst.y),
+            self.matrix.map_point(dst.x + dst.w, dst.y),
+            self.matrix.map_point(dst.x + dst.w, dst.y + dst.h),
+            self.matrix.map_point(dst.x, dst.y + dst.h),
+        ];
+        let mut min_x = f64::INFINITY;
+        let mut min_y = f64::INFINITY;
+        let mut max_x = f64::NEG_INFINITY;
+        let mut max_y = f64::NEG_INFINITY;
+        for (x, y) in corners {
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x);
+            max_y = max_y.max(y);
+        }
+        let ix0 = (min_x.floor() as i32).max(self.clip_box.x0);
+        let iy0 = (min_y.floor() as i32).max(self.clip_box.y0);
+        let ix1 = (max_x.ceil() as i32).min(self.clip_box.x1);
+        let iy1 = (max_y.ceil() as i32).min(self.clip_box.y1);
+        if ix0 >= ix1 || iy0 >= iy1 {
+            return;
+        }
+        blit::blit_image_rect_scoped(
+            self.image,
+            dst,
+            src,
+            src_rect,
+            &self.matrix,
+            ix0,
+            iy0,
+            ix1,
+            iy1,
+            self.comp_op,
+        );
+    }
+
+    /// ソース画像全体を (x, y) に転送する。`blit_image_rect` のショートカット。
+    pub fn blit_image_at(&mut self, x: f64, y: f64, src: &Image) {
+        let r = Rect::new(x, y, src.width() as f64, src.height() as f64);
+        self.blit_image_rect(&r, src, None);
     }
 
     /// 描画を終了する。現在は何もしないが、将来のバッファフラッシュ用。
