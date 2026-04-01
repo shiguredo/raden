@@ -3,8 +3,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use crate::api::style::CompOp;
-use crate::pixel::PixelFormat;
 use crate::pipeline::cache::{PipelineBoxFn, PipelineCovFn, PipelineFn};
+use crate::pixel::PixelFormat;
 
 /// JIT 用キーに載せる形式を正規化する。`Xrgb32` は `Prgb32` と同一 JIT を共有する。
 pub fn jit_dst_format(fmt: PixelFormat) -> PixelFormat {
@@ -57,12 +57,7 @@ unsafe extern "C" fn a8_plus_line(dst: *mut u8, src: u32, count: usize) {
     }
 }
 
-unsafe extern "C" fn a8_src_over_cov(
-    dst: *mut u8,
-    src: u32,
-    count: usize,
-    coverage: *const u8,
-) {
+unsafe extern "C" fn a8_src_over_cov(dst: *mut u8, src: u32, count: usize, coverage: *const u8) {
     let sa0 = (src >> 24) & 0xFF;
     for i in 0..count {
         let cov = *coverage.add(i) as u32;
@@ -79,12 +74,7 @@ unsafe extern "C" fn a8_src_over_cov(
     }
 }
 
-unsafe extern "C" fn a8_src_copy_cov(
-    dst: *mut u8,
-    src: u32,
-    count: usize,
-    coverage: *const u8,
-) {
+unsafe extern "C" fn a8_src_copy_cov(dst: *mut u8, src: u32, count: usize, coverage: *const u8) {
     let sa0 = (src >> 24) & 0xFF;
     for i in 0..count {
         let cov = *coverage.add(i) as u32;

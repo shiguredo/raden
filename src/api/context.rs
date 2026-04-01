@@ -1,3 +1,4 @@
+use crate::api::blit;
 use crate::api::gradient::Gradient;
 use crate::api::image::Image;
 use crate::api::matrix::Matrix2D;
@@ -5,11 +6,10 @@ use crate::api::path::Path;
 use crate::api::pattern::Pattern;
 use crate::api::stroke::{StrokeOptions, StrokeWorkspace, stroke_to_fill_with_workspace};
 use crate::api::style::{CompOp, FillRule, Rgba32, StrokeCap, StrokeJoin};
-use crate::api::blit;
 use crate::font::Font;
-use crate::pixel::PixelFormat;
 use crate::pipeline::key::{FetchType, FillType};
 use crate::pipeline::runtime::PipelineRuntime;
+use crate::pixel::PixelFormat;
 use crate::raster::analytic::AnalyticRasterizer;
 use crate::raster::edge_builder::EdgeBuilder;
 

@@ -18,10 +18,7 @@ impl EdgeBuilder {
         let cmds = path.cmds();
         let points = path.points();
         let conic_w = path.conic_weights();
-        let n_conic_cmds = cmds
-            .iter()
-            .filter(|&&c| c == PathCmd::ConicTo)
-            .count();
+        let n_conic_cmds = cmds.iter().filter(|&&c| c == PathCmd::ConicTo).count();
         debug_assert_eq!(
             n_conic_cmds,
             conic_w.len(),

@@ -177,9 +177,7 @@ impl<'a> PreparedPattern<'a> {
 
             for x in 0..width {
                 let dx = x0 + x as i32;
-                let (tx, ty) = self
-                    .to_tex
-                    .map_point(dx as f64, dy as f64);
+                let (tx, ty) = self.to_tex.map_point(dx as f64, dy as f64);
                 let pixel = self.sample_prgb32(tx, ty);
                 self.write_pixel_fill_rect(dst_row, x, pixel);
             }
@@ -219,9 +217,7 @@ impl<'a> PreparedPattern<'a> {
 
         for (i, pixel) in span.iter_mut().enumerate() {
             let dx = x_start + i as i32;
-            let (tx, ty) = self
-                .to_tex
-                .map_point(dx as f64, y as f64);
+            let (tx, ty) = self.to_tex.map_point(dx as f64, y as f64);
             *pixel = self.sample_prgb32(tx, ty);
         }
     }
@@ -286,13 +282,7 @@ impl<'a> PreparedPattern<'a> {
             ExtendMode::Repeat => {
                 let px = tx.rem_euclid(wf);
                 let py = ty.rem_euclid(hf);
-                bilinear_repeat(
-                    px,
-                    py,
-                    w,
-                    h,
-                    |ix, iy| self.read_px(ix, iy),
-                )
+                bilinear_repeat(px, py, w, h, |ix, iy| self.read_px(ix, iy))
             }
             ExtendMode::Reflect => {
                 let px = reflect_coord_float(tx, wf);
@@ -324,20 +314,10 @@ fn reflect_coord_float(coord: f64, size: f64) -> f64 {
     }
     let double = size * 2.0;
     let c = coord.rem_euclid(double);
-    if c >= size {
-        double - 1.0 - c
-    } else {
-        c
-    }
+    if c >= size { double - 1.0 - c } else { c }
 }
 
-fn bilinear_repeat(
-    px: f64,
-    py: f64,
-    w: i32,
-    h: i32,
-    mut get: impl FnMut(i32, i32) -> u32,
-) -> u32 {
+fn bilinear_repeat(px: f64, py: f64, w: i32, h: i32, mut get: impl FnMut(i32, i32) -> u32) -> u32 {
     let x0 = px.floor() as i32;
     let y0 = py.floor() as i32;
     let fx = px - x0 as f64;

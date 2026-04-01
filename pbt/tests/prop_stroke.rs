@@ -313,13 +313,7 @@ fn compute_path_area(path: &Path) -> f64 {
                 pt_idx += 2;
                 let w = conic_w[conic_idx];
                 conic_idx += 1;
-                flatten_conic_for_area(
-                    &mut polygon,
-                    cur,
-                    (cp.x, cp.y),
-                    (end.x, end.y),
-                    w,
-                );
+                flatten_conic_for_area(&mut polygon, cur, (cp.x, cp.y), (end.x, end.y), w);
                 cur = (end.x, end.y);
             }
             PathCmd::Close => {

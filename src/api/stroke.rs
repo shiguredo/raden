@@ -250,10 +250,7 @@ fn flatten_into_workspace(input: &Path, workspace: &mut StrokeWorkspace) {
     let cmds = input.cmds();
     let points = input.points();
     let conic_w = input.conic_weights();
-    let n_conic_cmds = cmds
-        .iter()
-        .filter(|&&c| c == PathCmd::ConicTo)
-        .count();
+    let n_conic_cmds = cmds.iter().filter(|&&c| c == PathCmd::ConicTo).count();
     debug_assert_eq!(
         n_conic_cmds,
         conic_w.len(),

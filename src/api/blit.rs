@@ -36,20 +36,10 @@ pub(crate) fn blit_image_rect_scoped(
         "blit supports only SrcOver and SrcCopy"
     );
 
-    let sr = src_rect.unwrap_or_else(|| {
-        Rect::new(
-            0.0,
-            0.0,
-            src.width() as f64,
-            src.height() as f64,
-        )
-    });
+    let sr =
+        src_rect.unwrap_or_else(|| Rect::new(0.0, 0.0, src.width() as f64, src.height() as f64));
 
-    if dst_rect_user.w <= 0.0
-        || dst_rect_user.h <= 0.0
-        || sr.w <= 0.0
-        || sr.h <= 0.0
-    {
+    if dst_rect_user.w <= 0.0 || dst_rect_user.h <= 0.0 || sr.w <= 0.0 || sr.h <= 0.0 {
         return;
     }
 
@@ -101,11 +91,9 @@ pub(crate) fn blit_image_rect_scoped(
                     }
                 }
                 PixelFormat::A8 => match comp_op {
-                    CompOp::SrcCopy => {
-                        unsafe {
-                            *dp = (sp >> 24) as u8;
-                        }
-                    }
+                    CompOp::SrcCopy => unsafe {
+                        *dp = (sp >> 24) as u8;
+                    },
                     CompOp::SrcOver => {
                         let sa = (sp >> 24) & 0xFF;
                         if sa == 0 {
