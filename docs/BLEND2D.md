@@ -91,7 +91,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 |---------|-------|------|
 | `set_stroke_style(rgba32)` | `set_stroke_style(Rgba32)` | 一致 |
 | `set_stroke_style(gradient/pattern)` | なし | 未実装: ストロークのグラデーション/パターンスタイル |
-| `stroke_style_type()` / `get_stroke_style()` / `get_transformed_stroke_style()` | なし | 未実装: 現在のスタイルの取得 |
+| `stroke_style_type()` / `get_stroke_style()` / `get_transformed_stroke_style()` | `stroke_color_prgb32()` | 差異あり: Rgba32 のみ取得可能。種別の統合取得や変換済みスタイルは未実装 |
 | `disable_stroke_style()` | なし | 未実装 |
 | `stroke_alpha()` / `set_stroke_alpha()` | なし | 未実装: ストローク個別のアルファ値 |
 | `stroke_width()` / `set_stroke_width()` | `stroke_width()` / `set_stroke_width()` | 一致 |
@@ -99,7 +99,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `stroke_join()` / `set_stroke_join()` | `stroke_join()` / `set_stroke_join()` | 一致 |
 | `stroke_start_cap()` / `stroke_end_cap()` | `stroke_start_cap()` / `stroke_end_cap()` | 一致 |
 | `set_stroke_cap(position, cap)` / `set_stroke_start_cap()` / `set_stroke_end_cap()` / `set_stroke_caps()` | `set_stroke_cap()` / `set_stroke_start_cap()` / `set_stroke_end_cap()` | 一致: 一括/個別どちらでも設定可能 |
-| `stroke_transform_order()` / `set_stroke_transform_order()` | なし | 未実装: 現在は stroke-before-transform 動作のみ |
+| `stroke_transform_order()` / `set_stroke_transform_order()` | なし | 未実装: `stroke_path` は `stroke_to_fill`（ユーザ空間）のあと `fill_path` で行列を適用する固定手順。Blend2D の `BLStrokeTransformOrder` 値との対応は未検証 |
 | `stroke_dash_offset()` / `set_stroke_dash_offset()` | `stroke_dash_offset()` / `set_stroke_dash_offset(f64)` | 一致 |
 | `stroke_dash_array()` / `set_stroke_dash_array()` | `stroke_dash_array()` / `set_stroke_dash_array(&[f64])` | 一致。SVG 準拠で奇数パターンは 2 回繰り返す |
 | `stroke_options()` / `set_stroke_options()` | なし | 未実装: 一括取得/設定 |
@@ -123,7 +123,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | Blend2D | raden | 状態 |
 |---------|-------|------|
 | `fill_all()` | `fill_all()` | 一致 |
-| `fill_rect(BLRectI/BLRect/x,y,w,h)` | `fill_rect(&Rect)` | 差異あり: パターン塗りは `SrcOver`/`SrcCopy` のみ。グラデ矩形は `comp_op` 非参照（内部融合は SrcOver 相当） |
+| `fill_rect(BLRectI/BLRect/x,y,w,h)` | `fill_rect(&Rect)` | 差異あり: 単色は `comp_op` を参照。パターン `fill_rect` は `SrcOver`/`SrcCopy` のみ（他は panic）。グラデーションの `fill_rect` 高速パスは `Context::comp_op` を渡さず `PreparedGradient::fill_rect` が内部融合（`gradient.rs` コメントの SrcOver 融合）。**グラデーションの `fill_path` は `comp_op` を `span_cov` に渡して参照する**（経路が異なるので注意） |
 | `fill_box(BLBoxI/BLBox/x0,y0,x1,y1)` | なし | 未実装: 2 点指定の矩形塗りつぶし |
 | `fill_round_rect(BLRoundRect/...)` | なし | 未実装: 角丸矩形 |
 | `fill_circle(BLCircle/cx,cy,r)` | `fill_circle(&Circle)` | 一致 |
@@ -197,7 +197,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `cubic_to(...)` | `cubic_to(cp1x, cp1y, cp2x, cp2y, x, y)` | 一致 |
 | `smooth_cubic_to(...)` | `smooth_cubic_to(cp2x, cp2y, x, y)` | 実装済み |
 | `conic_to(cx, cy, ex, ey, w)` | `conic_to(cx, cy, ex, ey, w)` | 実装済み: `PathCmd::ConicTo`、重みは `conic_weights()` |
-| `arc_to(cx, cy, rx, ry, start, sweep, force_move_to)` | `arc_to(...)` | 実装済み: `force_move_to` 相当は未実装 |
+| `arc_to(cx, cy, rx, ry, start, sweep, force_move_to)` | `arc_to(...)` | 一致: `force_move_to` が true のとき `move_to`、false のとき `line_to` で弧の始点へ接続 |
 | `arc_quadrant_to(x1, y1, x2, y2)` | なし | 未実装: 象限単位の円弧 (90 度以下) |
 | `elliptic_arc_to(rx, ry, x_rotation, large_arc, sweep_flag, x1, y1)` | なし | 未実装: 楕円弧 (SVG arc コマンド相当) |
 | `close()` | `close()` | 一致 |
@@ -393,7 +393,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 
 | Blend2D | raden | 値 | 状態 |
 |---------|-------|-----|------|
-| `BL_STROKE_TRANSFORM_ORDER_AFTER` | (暗黙的にこの動作) | 0 | デフォルト動作 |
+| `BL_STROKE_TRANSFORM_ORDER_AFTER` | なし | 0 | 未実装: raden は上記「ストロークスタイル / オプション」の `stroke_transform_order` 行のとおり固定実装 |
 | `BL_STROKE_TRANSFORM_ORDER_BEFORE` | なし | 1 | 未実装 |
 
 ## フォント API
@@ -530,7 +530,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
    - ヒットテスト (`hit_test`)
 
 8. ~~**Context の getter メソッドがない**~~ → **実装済み**
-   - `comp_op()` / `fill_rule()` / `stroke_*` / `fill_gradient()` / `fill_pattern()` / `matrix()` 等
+   - `comp_op()` / `fill_rule()` / `fill_color_prgb32()` / `fill_gradient()` / `fill_pattern()` / `stroke_color_prgb32()` / `stroke_width()` / `stroke_miter_limit()` / `stroke_join()` / `stroke_start_cap()` / `stroke_end_cap()` / `stroke_dash_array()` / `stroke_dash_offset()` / `matrix()`（`src/api/context.rs`）
 
 9. **フォントモジュールのテストがない**
    - テーブルパーサ、グリフアウトライン変換、cmap ルックアップの PBT / 単体テスト / fuzzing が未整備
@@ -547,8 +547,8 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 13. **BLFontFace の詳細 API がほぼ未実装**
     - フォント名取得、機能フラグ問い合わせ、feature/script/variation タグ取得等
 
-14. **パターンの Bilinear 補間 / Affine 変換が未実装**
-    - 現在は Nearest 補間 + 並進のみ
+14. ~~**パターンの Bilinear 補間 / Affine 変換が未実装**~~ → **実装済み**
+    - `PatternFilter::Nearest` / `Bilinear`、`Pattern::set_origin` / `set_transform`（アフィン）、`prepare` で `Context::matrix` と合成
 
 15. **ストロークのグラデーション/パターンスタイルが未実装**
     - `set_stroke_style` は Rgba32 のみ。グラデーション/パターンは fill のみ対応
