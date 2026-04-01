@@ -11,6 +11,10 @@ Model: Composer
 
 SVG パスや既存ベクタアセットとの互換性、および Blend2D との API 準拠。中期的には実装・テスト範囲が広がるが、表現力の中心になる。
 
+## 進捗メモ (2026-04-01)
+
+`smooth_quad_to` / `smooth_cubic_to` / `conic_to` / `arc_to`、`PathCmd::ConicTo`、ストローク・`EdgeBuilder` の平坦化は実装済み。`elliptic_arc_to` / `arc_quadrant_to` は未実装のまま。
+
 ## 大枠の作業
 
 - コマンド列・頂点列の拡張と `PathCmd` の意味の確定（欠番だった Conic の扱い）

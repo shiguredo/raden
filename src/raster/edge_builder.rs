@@ -17,7 +17,18 @@ impl EdgeBuilder {
     {
         let cmds = path.cmds();
         let points = path.points();
+        let conic_w = path.conic_weights();
+        let n_conic_cmds = cmds
+            .iter()
+            .filter(|&&c| c == PathCmd::ConicTo)
+            .count();
+        debug_assert_eq!(
+            n_conic_cmds,
+            conic_w.len(),
+            "conic_weights length must match PathCmd::ConicTo count"
+        );
         let mut pt_idx = 0usize;
+        let mut conic_idx = 0usize;
 
         // サブパス開始点 (Close で戻る先)
         let mut start = Point::new(0.0, 0.0);
@@ -53,6 +64,15 @@ impl EdgeBuilder {
                     flatten_quadratic(&mut f, cur, cp, end, 0);
                     cur = end;
                 }
+                PathCmd::ConicTo => {
+                    let cp = points[pt_idx];
+                    let end = points[pt_idx + 1];
+                    pt_idx += 2;
+                    let w = conic_w[conic_idx];
+                    conic_idx += 1;
+                    flatten_conic(&mut f, cur, cp, end, w);
+                    cur = end;
+                }
                 PathCmd::Close => {
                     if cur.x != start.x || cur.y != start.y {
                         f(cur.x, cur.y, start.x, start.y);
@@ -62,6 +82,29 @@ impl EdgeBuilder {
             }
         }
     }
+}
+
+/// 円錐曲線 (有理二次) を線分列で近似する。
+fn flatten_conic<F>(f: &mut F, p0: Point, p1: Point, p2: Point, w: f64)
+where
+    F: FnMut(f64, f64, f64, f64),
+{
+    const N: usize = 24;
+    let mut prev = eval_conic(p0, p1, p2, w, 0.0);
+    for i in 1..=N {
+        let t = i as f64 / N as f64;
+        let next = eval_conic(p0, p1, p2, w, t);
+        f(prev.x, prev.y, next.x, next.y);
+        prev = next;
+    }
+}
+
+fn eval_conic(p0: Point, p1: Point, p2: Point, w: f64, t: f64) -> Point {
+    let u = 1.0 - t;
+    let denom = u * u + 2.0 * w * u * t + t * t;
+    let x = (u * u * p0.x + 2.0 * w * u * t * p1.x + t * t * p2.x) / denom;
+    let y = (u * u * p0.y + 2.0 * w * u * t * p1.y + t * t * p2.y) / denom;
+    Point::new(x, y)
 }
 
 /// 3 次ベジェ曲線を de Casteljau で再帰的に平坦化する。

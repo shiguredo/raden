@@ -249,6 +249,17 @@ fn flatten_into_workspace(input: &Path, workspace: &mut StrokeWorkspace) {
 
     let cmds = input.cmds();
     let points = input.points();
+    let conic_w = input.conic_weights();
+    let n_conic_cmds = cmds
+        .iter()
+        .filter(|&&c| c == PathCmd::ConicTo)
+        .count();
+    debug_assert_eq!(
+        n_conic_cmds,
+        conic_w.len(),
+        "conic_weights length must match PathCmd::ConicTo count"
+    );
+    let mut conic_idx = 0usize;
     let mut subpath_start_idx: Option<usize> = None;
     let mut pt_idx = 0usize;
     let mut cur = Point::new(0.0, 0.0);
@@ -299,6 +310,17 @@ fn flatten_into_workspace(input: &Path, workspace: &mut StrokeWorkspace) {
                 pt_idx += 2;
                 if subpath_start_idx.is_some() {
                     flatten_quad_into(&mut workspace.flat_points, cur, cp, end, 0);
+                }
+                cur = end;
+            }
+            PathCmd::ConicTo => {
+                let cp = points[pt_idx];
+                let end = points[pt_idx + 1];
+                pt_idx += 2;
+                let w = conic_w[conic_idx];
+                conic_idx += 1;
+                if subpath_start_idx.is_some() {
+                    flatten_conic_into(&mut workspace.flat_points, cur, cp, end, w);
                 }
                 cur = end;
             }
@@ -376,6 +398,23 @@ fn flatten_quad_into(points: &mut Vec<Point>, p0: Point, p1: Point, p2: Point, d
 
     flatten_quad_into(points, p0, m01, m012, depth + 1);
     flatten_quad_into(points, m012, m12, p2, depth + 1);
+}
+
+/// 円錐曲線 (有理二次) を線分頂点列で近似する (EdgeBuilder と同じ分割数)。
+fn flatten_conic_into(points: &mut Vec<Point>, p0: Point, p1: Point, p2: Point, w: f64) {
+    const N: usize = 24;
+    for i in 1..=N {
+        let t = i as f64 / N as f64;
+        points.push(eval_conic_stroke(p0, p1, p2, w, t));
+    }
+}
+
+fn eval_conic_stroke(p0: Point, p1: Point, p2: Point, w: f64, t: f64) -> Point {
+    let u = 1.0 - t;
+    let denom = u * u + 2.0 * w * u * t + t * t;
+    let x = (u * u * p0.x + 2.0 * w * u * t * p1.x + t * t * p2.x) / denom;
+    let y = (u * u * p0.y + 2.0 * w * u * t * p1.y + t * t * p2.y) / denom;
+    Point::new(x, y)
 }
 
 fn is_flat_cubic(p0: Point, p1: Point, p2: Point, p3: Point) -> bool {

@@ -19,7 +19,8 @@ pub enum PathCmd {
     LineTo = 1,
     /// 2 点消費 (cp, end)。
     QuadTo = 2,
-    // ConicTo = 3 は Blend2D で定義されているが raden では未実装。
+    /// 有理二次ベジェ (円錐曲線)。2 点消費 (制御点, 終点) + `conic_weights` の対応する重み。
+    ConicTo = 3,
     /// 3 点消費 (cp1, cp2, end)。
     CubicTo = 4,
     Close = 5,
@@ -29,6 +30,16 @@ pub enum PathCmd {
 pub struct Path {
     cmds: Vec<PathCmd>,
     points: Vec<Point>,
+    /// `PathCmd::ConicTo` ごとの重み w (>= 0)。
+    conic_weights: Vec<f64>,
+    /// 現在点 (最後の `move_to` / `line_to` 等の終点)。
+    cur: Point,
+    /// 現在のサブパスの開始点。
+    sub_start: Point,
+    /// `smooth_quad_to` 用: 直前の二次ベジェの制御点。
+    last_quad_cp: Option<Point>,
+    /// `smooth_cubic_to` 用: 直前の三次ベジェの第 2 制御点。
+    last_cubic_cp2: Option<Point>,
 }
 
 /// Blend2D と同一の KAPPA 定数。円を 4 本の cubic Bezier で近似する係数。
@@ -39,12 +50,25 @@ impl Path {
         Self {
             cmds: Vec::new(),
             points: Vec::new(),
+            conic_weights: Vec::new(),
+            cur: Point::new(0.0, 0.0),
+            sub_start: Point::new(0.0, 0.0),
+            last_quad_cp: None,
+            last_cubic_cp2: None,
         }
+    }
+
+    /// `PathCmd::ConicTo` に対応する重み列 (読み取り専用)。
+    pub fn conic_weights(&self) -> &[f64] {
+        &self.conic_weights
     }
 
     pub fn clear(&mut self) {
         self.cmds.clear();
         self.points.clear();
+        self.conic_weights.clear();
+        self.last_quad_cp = None;
+        self.last_cubic_cp2 = None;
     }
 
     pub fn is_empty(&self) -> bool {
@@ -67,11 +91,20 @@ impl Path {
     pub fn move_to(&mut self, x: f64, y: f64) {
         self.cmds.push(PathCmd::MoveTo);
         self.points.push(Point::new(x, y));
+        let p = Point::new(x, y);
+        self.cur = p;
+        self.sub_start = p;
+        self.last_quad_cp = None;
+        self.last_cubic_cp2 = None;
     }
 
     pub fn line_to(&mut self, x: f64, y: f64) {
         self.cmds.push(PathCmd::LineTo);
-        self.points.push(Point::new(x, y));
+        let p = Point::new(x, y);
+        self.points.push(p);
+        self.cur = p;
+        self.last_quad_cp = None;
+        self.last_cubic_cp2 = None;
     }
 
     /// 3 次ベジェ曲線を追加する。cp1, cp2 は制御点、x/y は終点。
@@ -79,18 +112,88 @@ impl Path {
         self.cmds.push(PathCmd::CubicTo);
         self.points.push(Point::new(cp1x, cp1y));
         self.points.push(Point::new(cp2x, cp2y));
-        self.points.push(Point::new(x, y));
+        let end = Point::new(x, y);
+        self.points.push(end);
+        self.last_cubic_cp2 = Some(Point::new(cp2x, cp2y));
+        self.last_quad_cp = None;
+        self.cur = end;
     }
 
     /// 2 次ベジェ曲線を追加する。cp は制御点、x/y は終点。
     pub fn quad_to(&mut self, cpx: f64, cpy: f64, x: f64, y: f64) {
         self.cmds.push(PathCmd::QuadTo);
-        self.points.push(Point::new(cpx, cpy));
-        self.points.push(Point::new(x, y));
+        let cp = Point::new(cpx, cpy);
+        self.points.push(cp);
+        let end = Point::new(x, y);
+        self.points.push(end);
+        self.last_quad_cp = Some(cp);
+        self.last_cubic_cp2 = None;
+        self.cur = end;
+    }
+
+    /// 前の二次ベジェの制御点を反射したスムーズ二次ベジェ。直前が `quad_to` でない場合はパニックする。
+    pub fn smooth_quad_to(&mut self, x: f64, y: f64) {
+        let cp = self
+            .last_quad_cp
+            .expect("smooth_quad_to requires a preceding quad_to");
+        let cpx = 2.0 * self.cur.x - cp.x;
+        let cpy = 2.0 * self.cur.y - cp.y;
+        self.quad_to(cpx, cpy, x, y);
+    }
+
+    /// 前の三次ベジェの第 2 制御点を反射したスムーズ三次ベジェ。直前が `cubic_to` でない場合はパニックする。
+    pub fn smooth_cubic_to(&mut self, cp2x: f64, cp2y: f64, x: f64, y: f64) {
+        let cp2_prev = self
+            .last_cubic_cp2
+            .expect("smooth_cubic_to requires a preceding cubic_to");
+        let cp1x = 2.0 * self.cur.x - cp2_prev.x;
+        let cp1y = 2.0 * self.cur.y - cp2_prev.y;
+        self.cubic_to(cp1x, cp1y, cp2x, cp2y, x, y);
+    }
+
+    /// 円錐曲線 (有理二次ベジェ)。重み w > 0。
+    pub fn conic_to(&mut self, cx: f64, cy: f64, ex: f64, ey: f64, w: f64) {
+        assert!(w > 0.0, "conic weight must be positive");
+        self.cmds.push(PathCmd::ConicTo);
+        self.points.push(Point::new(cx, cy));
+        let end = Point::new(ex, ey);
+        self.points.push(end);
+        self.conic_weights.push(w);
+        self.last_quad_cp = None;
+        self.last_cubic_cp2 = None;
+        self.cur = end;
+    }
+
+    /// 中心 (cx, cy)、半径 rx, ry、開始角・掃引角 (ラジアン) の楕円弧を現在点から接続する。
+    /// `force_move_to` が true のとき弧の始点へ `move_to`、false のとき `line_to` で接続する。
+    pub fn arc_to(
+        &mut self,
+        cx: f64,
+        cy: f64,
+        rx: f64,
+        ry: f64,
+        start: f64,
+        sweep: f64,
+        force_move_to: bool,
+    ) {
+        if rx <= 0.0 || ry <= 0.0 || sweep == 0.0 {
+            return;
+        }
+        let sx = cx + rx * start.cos();
+        let sy = cy + ry * start.sin();
+        if force_move_to {
+            self.move_to(sx, sy);
+        } else {
+            self.line_to(sx, sy);
+        }
+        add_arc_segments(self, cx, cy, rx, ry, start, sweep);
     }
 
     pub fn close(&mut self) {
         self.cmds.push(PathCmd::Close);
+        self.cur = self.sub_start;
+        self.last_quad_cp = None;
+        self.last_cubic_cp2 = None;
     }
 
     /// 扇形 (pie) を追加する。中心→弧→中心の閉じたパス。

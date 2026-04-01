@@ -258,6 +258,8 @@ fn compute_path_area(path: &Path) -> f64 {
 
     let cmds = path.cmds();
     let points = path.points();
+    let conic_w = path.conic_weights();
+    let mut conic_idx = 0usize;
     let mut total_area = 0.0;
     let mut pt_idx = 0usize;
     let mut polygon: Vec<(f64, f64)> = Vec::new();
@@ -303,6 +305,21 @@ fn compute_path_area(path: &Path) -> f64 {
                 let end = points[pt_idx + 1];
                 pt_idx += 2;
                 flatten_quad_for_area(&mut polygon, cur, (cp.x, cp.y), (end.x, end.y), 0);
+                cur = (end.x, end.y);
+            }
+            PathCmd::ConicTo => {
+                let cp = points[pt_idx];
+                let end = points[pt_idx + 1];
+                pt_idx += 2;
+                let w = conic_w[conic_idx];
+                conic_idx += 1;
+                flatten_conic_for_area(
+                    &mut polygon,
+                    cur,
+                    (cp.x, cp.y),
+                    (end.x, end.y),
+                    w,
+                );
                 cur = (end.x, end.y);
             }
             PathCmd::Close => {
@@ -374,4 +391,22 @@ fn flatten_quad_for_area(
 
     flatten_quad_for_area(polygon, p0, m01, m012, depth + 1);
     flatten_quad_for_area(polygon, m012, m12, p2, depth + 1);
+}
+
+fn flatten_conic_for_area(
+    polygon: &mut Vec<(f64, f64)>,
+    p0: (f64, f64),
+    p1: (f64, f64),
+    p2: (f64, f64),
+    w: f64,
+) {
+    const N: usize = 24;
+    for i in 1..=N {
+        let t = i as f64 / N as f64;
+        let u = 1.0 - t;
+        let denom = u * u + 2.0 * w * u * t + t * t;
+        let x = (u * u * p0.0 + 2.0 * w * u * t * p1.0 + t * t * p2.0) / denom;
+        let y = (u * u * p0.1 + 2.0 * w * u * t * p1.1 + t * t * p2.1) / denom;
+        polygon.push((x, y));
+    }
 }
