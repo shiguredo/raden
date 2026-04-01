@@ -94,7 +94,6 @@ struct BoxI {
 }
 
 /// save() / restore() で保存・復元される描画状態。
-#[allow(dead_code)]
 struct ContextState {
     comp_op: CompOp,
     fill_rule: FillRule,
@@ -228,9 +227,66 @@ impl<'a> Context<'a> {
         self.comp_op = op;
     }
 
+    pub fn comp_op(&self) -> CompOp {
+        self.comp_op
+    }
+
     /// 塗りつぶし規則を設定する。
     pub fn set_fill_rule(&mut self, rule: FillRule) {
         self.fill_rule = rule;
+    }
+
+    pub fn fill_rule(&self) -> FillRule {
+        self.fill_rule
+    }
+
+    /// 単色塗りつぶしの premultiplied ARGB32 (`set_fill_style` が設定した値)。
+    pub fn fill_color_prgb32(&self) -> u32 {
+        self.fill_color_prgb32
+    }
+
+    pub fn fill_gradient(&self) -> Option<&Gradient> {
+        self.fill_gradient.as_ref()
+    }
+
+    pub fn fill_pattern(&self) -> Option<&Pattern> {
+        self.fill_pattern.as_ref()
+    }
+
+    pub fn stroke_color_prgb32(&self) -> u32 {
+        self.stroke_color_prgb32
+    }
+
+    pub fn stroke_width(&self) -> f64 {
+        self.stroke_width
+    }
+
+    pub fn stroke_miter_limit(&self) -> f64 {
+        self.stroke_miter_limit
+    }
+
+    pub fn stroke_join(&self) -> StrokeJoin {
+        self.stroke_join
+    }
+
+    pub fn stroke_start_cap(&self) -> StrokeCap {
+        self.stroke_start_cap
+    }
+
+    pub fn stroke_end_cap(&self) -> StrokeCap {
+        self.stroke_end_cap
+    }
+
+    pub fn stroke_dash_array(&self) -> &[f64] {
+        &self.stroke_dash_array
+    }
+
+    pub fn stroke_dash_offset(&self) -> f64 {
+        self.stroke_dash_offset
+    }
+
+    pub fn matrix(&self) -> &Matrix2D {
+        &self.matrix
     }
 
     pub fn set_fill_style(&mut self, color: Rgba32) {
@@ -281,6 +337,41 @@ impl<'a> Context<'a> {
         self.matrix.reset();
     }
 
+    /// 指定中心まわりの回転を現在の変換行列に後乗算で適用する。角度はラジアン。
+    pub fn rotate_around(&mut self, angle: f64, cx: f64, cy: f64) {
+        self.matrix.rotate_around(angle, cx, cy);
+    }
+
+    /// せん断を現在の変換行列に後乗算で適用する。係数は Blend2D の `skew` と同様 (接線)。
+    pub fn skew(&mut self, kx: f64, ky: f64) {
+        self.matrix.skew(kx, ky);
+    }
+
+    /// 平行移動を現在の変換行列に前乗算で適用する (`post_translate`)。
+    pub fn post_translate(&mut self, tx: f64, ty: f64) {
+        self.matrix.post_translate(tx, ty);
+    }
+
+    /// スケーリングを現在の変換行列に前乗算で適用する (`post_scale`)。
+    pub fn post_scale(&mut self, sx: f64, sy: f64) {
+        self.matrix.post_scale(sx, sy);
+    }
+
+    /// 回転を現在の変換行列に前乗算で適用する (`post_rotate`)。角度はラジアン。
+    pub fn post_rotate(&mut self, angle: f64) {
+        self.matrix.post_rotate(angle);
+    }
+
+    /// せん断を現在の変換行列に前乗算で適用する (`post_skew`)。
+    pub fn post_skew(&mut self, kx: f64, ky: f64) {
+        self.matrix.post_skew(kx, ky);
+    }
+
+    /// 任意の行列を現在の変換行列に前乗算で適用する (`post_transform`)。
+    pub fn post_transform(&mut self, m: &Matrix2D) {
+        self.matrix.post_transform(m);
+    }
+
     /// クリップ領域を指定矩形との積集合に縮小する。
     ///
     /// 複数回呼び出すとクリップ領域は縮小のみされる (拡大はできない)。
@@ -302,9 +393,10 @@ impl<'a> Context<'a> {
         self.clip_box = self.meta_clip_box;
     }
 
-    /// 現在の変換を meta matrix に確定しリセットする (Blend2D 互換)。
+    /// Blend2D の `userToMeta()` に相当する呼び出し口。
     ///
-    /// 現在は meta matrix を分離管理していないため、単に行列をリセットする。
+    /// Blend2D ではユーザ空間行列をメタ空間へ確定したうえでユーザ行列を単位に戻す。
+    /// raden はメタ行列を別保持していないため、現状は **ユーザ相当の行列 (`matrix`) のみを単位にリセットする**。
     pub fn user_to_meta(&mut self) {
         self.matrix.reset();
     }

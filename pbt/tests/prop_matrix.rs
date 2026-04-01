@@ -223,6 +223,48 @@ proptest! {
         );
     }
 
+    /// skew(kx, ky) は (0, 1) を (kx, 1) に写す。
+    #[test]
+    fn skew_maps_unit_y(
+        kx in -2.0f64..2.0,
+        ky in -2.0f64..2.0,
+    ) {
+        let mut m = Matrix2D::IDENTITY;
+        m.skew(kx, ky);
+        let (xp, yp) = m.map_point(0.0, 1.0);
+        prop_assert!(approx_eq(xp, kx, EPS), "x: {} != {}", xp, kx);
+        prop_assert!(approx_eq(yp, 1.0, EPS), "y: {} != 1", yp);
+    }
+
+    /// skew(kx, ky) は (1, 0) を (1, ky) に写す。
+    #[test]
+    fn skew_maps_unit_x(
+        kx in -2.0f64..2.0,
+        ky in -2.0f64..2.0,
+    ) {
+        let mut m = Matrix2D::IDENTITY;
+        m.skew(kx, ky);
+        let (xp, yp) = m.map_point(1.0, 0.0);
+        prop_assert!(approx_eq(xp, 1.0, EPS), "x: {} != 1", xp);
+        prop_assert!(approx_eq(yp, ky, EPS), "y: {} != {}", yp, ky);
+    }
+
+    /// post_skew は S(kx, ky) * self と等価。
+    #[test]
+    fn post_skew_is_premultiply(
+        m in arb_matrix(),
+        kx in -2.0f64..2.0,
+        ky in -2.0f64..2.0,
+    ) {
+        let mut actual = m;
+        actual.post_skew(kx, ky);
+        let expected = Matrix2D::skewing(kx, ky).multiply(&m);
+        prop_assert!(
+            matrix_approx_eq(&actual, &expected, 1e-8),
+            "post_skew != S * M:\n  actual: {:?}\n  expected: {:?}", actual, expected
+        );
+    }
+
     /// post_transform は m * self と等価。
     #[test]
     fn post_transform_is_premultiply(

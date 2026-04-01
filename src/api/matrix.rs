@@ -80,6 +80,20 @@ impl Matrix2D {
         }
     }
 
+    /// せん断行列を生成する。Blend2D の `makeSkewing` / `skew` と同様、引数は接線の係数。
+    ///
+    /// `x' = x + kx * y`, `y' = y + ky * x`。
+    pub fn skewing(kx: f64, ky: f64) -> Self {
+        Self {
+            m00: 1.0,
+            m01: ky,
+            m10: kx,
+            m11: 1.0,
+            m20: 0.0,
+            m21: 0.0,
+        }
+    }
+
     /// 単位行列かどうか判定する。
     pub fn is_identity(&self) -> bool {
         self.m00 == 1.0
@@ -143,6 +157,11 @@ impl Matrix2D {
         self.m21 = m21;
     }
 
+    /// せん断を後乗算で適用する。`self = self * S(kx, ky)`。
+    pub fn skew(&mut self, kx: f64, ky: f64) {
+        *self = self.multiply(&Self::skewing(kx, ky));
+    }
+
     /// 指定した中心点まわりの回転を後乗算で適用する。角度はラジアン。
     /// Blend2D の `rotate(angle, cx, cy)` に相当する。
     /// `self = self * T(-cx,-cy) * R(angle) * T(cx,cy)` と等価。
@@ -187,6 +206,13 @@ impl Matrix2D {
     /// `self = R(angle) * self` と等価。
     pub fn post_rotate(&mut self, angle: f64) {
         *self = Self::rotation(angle).multiply(self);
+    }
+
+    /// せん断を前乗算で適用する。
+    /// Blend2D の `postSkew(kx, ky)` に相当する。
+    /// `self = S(kx, ky) * self` と等価。
+    pub fn post_skew(&mut self, kx: f64, ky: f64) {
+        *self = Self::skewing(kx, ky).multiply(self);
     }
 
     /// 任意の行列を前乗算で適用する。

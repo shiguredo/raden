@@ -34,13 +34,13 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `translate(BLPointI)` / `translate(BLPoint)` | なし | 未実装: Point 型オーバーロード |
 | `scale(double)` / `scale(double, double)` / `scale(BLPoint)` | `scale(f64, f64)` | 差異あり: Blend2D は単一値オーバーロードと Point 型もある |
 | `rotate(double)` | `rotate(f64)` | 一致 |
-| `rotate(double, double, double)` / `rotate(double, BLPoint)` | なし | 未実装: 指定点まわりの回転 |
-| `skew(double, double)` / `skew(BLPoint)` | なし | 未実装: せん断変換 |
+| `rotate(double, double, double)` / `rotate(double, BLPoint)` | `rotate_around(angle, cx, cy)` | 一致: `Context` は `Matrix2D::rotate_around` に委譲 |
+| `skew(double, double)` / `skew(BLPoint)` | `skew(f64, f64)` | 一致: 係数は接線 (Blend2D の `skew` と同様)。`BLPoint` オーバーロードは未実装 |
 | `apply_transform(const BLMatrix2D&)` | `apply_matrix(&Matrix2D)` | 一致 |
 | `set_transform(const BLMatrix2D&)` / `reset_transform()` | `reset_matrix()` | 差異あり: raden は `set_transform` (任意行列を直接設定) がない |
-| `user_to_meta()` | `user_to_meta()` | 一致 |
+| `user_to_meta()` | `user_to_meta()` | 差異あり: raden はメタ行列を別保持せず、ユーザ行列を単位にリセットするのみ |
 | `meta_transform()` / `user_transform()` / `final_transform()` | なし | 未実装: 変換行列の取得 |
-| `post_translate()` / `post_scale()` / `post_skew()` / `post_rotate()` / `post_transform()` | なし | 未実装: 行列右掛け (POST 系) |
+| `post_translate()` / `post_scale()` / `post_skew()` / `post_rotate()` / `post_transform()` | 同名 (`Context` / `Matrix2D`) | 実装済み: Blend2D の POST 系と同じ合成順 (`Matrix2D` に実装、`Context` は委譲) |
 
 ### レンダリングヒント / 近似オプション
 
@@ -58,7 +58,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 
 | Blend2D | raden | 状態 |
 |---------|-------|------|
-| `comp_op()` / `set_comp_op()` | `set_comp_op()` | 差異あり: raden は getter がない |
+| `comp_op()` / `set_comp_op()` | `comp_op()` / `set_comp_op()` | 一致 |
 | `global_alpha()` / `set_global_alpha()` | なし | 未実装: 全描画に適用されるグローバル透明度 |
 
 ### スタイル (汎用)
@@ -80,10 +80,10 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `set_fill_style(gradient)` | `set_fill_style_gradient(&Gradient)` | 実装済み: Linear/Radial/Conic グラデーション |
 | `set_fill_style(pattern)` | `set_fill_style_pattern(&Pattern)` | 実装済み: 画像パターン塗りつぶし |
 | `set_fill_style(style, transform_mode)` | なし | 未実装: 変換モード付きスタイル設定 |
-| `fill_style_type()` / `get_fill_style()` / `get_transformed_fill_style()` | なし | 未実装: 現在のスタイルの取得 |
+| `fill_style_type()` / `get_fill_style()` / `get_transformed_fill_style()` | `fill_color_prgb32()` / `fill_gradient()` / `fill_pattern()` | 差異あり: 種別の統合取得や変換済みスタイルは未実装 |
 | `disable_fill_style()` | なし | 未実装 |
 | `fill_alpha()` / `set_fill_alpha()` | なし | 未実装: フィル個別のアルファ値 |
-| `fill_rule()` / `set_fill_rule()` | `set_fill_rule(FillRule)` | 差異あり: raden は getter がない |
+| `fill_rule()` / `set_fill_rule()` | `fill_rule()` / `set_fill_rule(FillRule)` | 一致 |
 
 ### ストロークスタイル / オプション
 
@@ -94,14 +94,14 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `stroke_style_type()` / `get_stroke_style()` / `get_transformed_stroke_style()` | なし | 未実装: 現在のスタイルの取得 |
 | `disable_stroke_style()` | なし | 未実装 |
 | `stroke_alpha()` / `set_stroke_alpha()` | なし | 未実装: ストローク個別のアルファ値 |
-| `stroke_width()` / `set_stroke_width()` | `set_stroke_width()` | 差異あり: raden は getter がない |
-| `stroke_miter_limit()` / `set_stroke_miter_limit()` | `set_stroke_miter_limit()` | 差異あり: raden は getter がない |
-| `stroke_join()` / `set_stroke_join()` | `set_stroke_join()` | 差異あり: raden は getter がない |
-| `stroke_start_cap()` / `stroke_end_cap()` | なし | 未実装: getter |
+| `stroke_width()` / `set_stroke_width()` | `stroke_width()` / `set_stroke_width()` | 一致 |
+| `stroke_miter_limit()` / `set_stroke_miter_limit()` | `stroke_miter_limit()` / `set_stroke_miter_limit()` | 一致 |
+| `stroke_join()` / `set_stroke_join()` | `stroke_join()` / `set_stroke_join()` | 一致 |
+| `stroke_start_cap()` / `stroke_end_cap()` | `stroke_start_cap()` / `stroke_end_cap()` | 一致 |
 | `set_stroke_cap(position, cap)` / `set_stroke_start_cap()` / `set_stroke_end_cap()` / `set_stroke_caps()` | `set_stroke_cap()` / `set_stroke_start_cap()` / `set_stroke_end_cap()` | 一致: 一括/個別どちらでも設定可能 |
 | `stroke_transform_order()` / `set_stroke_transform_order()` | なし | 未実装: 現在は stroke-before-transform 動作のみ |
-| `stroke_dash_offset()` / `set_stroke_dash_offset()` | `set_stroke_dash_offset(f64)` | 実装済み: getter なし |
-| `stroke_dash_array()` / `set_stroke_dash_array()` | `set_stroke_dash_array(&[f64])` | 実装済み: getter なし。SVG 準拠で奇数パターンは 2 回繰り返す |
+| `stroke_dash_offset()` / `set_stroke_dash_offset()` | `stroke_dash_offset()` / `set_stroke_dash_offset(f64)` | 一致 |
+| `stroke_dash_array()` / `set_stroke_dash_array()` | `stroke_dash_array()` / `set_stroke_dash_array(&[f64])` | 一致。SVG 準拠で奇数パターンは 2 回繰り返す |
 | `stroke_options()` / `set_stroke_options()` | なし | 未実装: 一括取得/設定 |
 
 ### クリッピング
@@ -291,13 +291,13 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `make_identity()` / `reset_to_identity()` | `Matrix2D::IDENTITY` | 一致: raden は const で提供 |
 | `make_translation(double, double)` / `reset_to_translation(...)` | `Matrix2D::translation(f64, f64)` | 一致 |
 | `make_scaling(double)` / `make_scaling(double, double)` / `reset_to_scaling(...)` | `Matrix2D::scaling(f64, f64)` | 差異あり: raden は単一値オーバーロードがない |
-| `make_rotation(double)` / `make_rotation(double, BLPoint)` / `reset_to_rotation(...)` | `Matrix2D::rotation(f64)` | 差異あり: raden は指定点まわり回転がない |
-| `make_skewing(double, double)` / `make_skewing(BLPoint)` / `reset_to_skewing(...)` | なし | 未実装: せん断変換行列の生成 |
+| `make_rotation(double)` / `make_rotation(double, BLPoint)` / `reset_to_rotation(...)` | `Matrix2D::rotation(f64)` / `rotate_around(angle, cx, cy)` | 差異あり: ファクトリ名は `rotation` と `skewing`。指定点まわりは `rotate_around` |
+| `make_skewing(double, double)` / `make_skewing(BLPoint)` / `reset_to_skewing(...)` | `Matrix2D::skewing(kx, ky)` | 差異あり: `BLPoint` オーバーロードは未実装 |
 | `make_sin_cos(...)` / `reset_to_sin_cos(...)` | なし | 未実装: sin/cos 直接指定の回転行列 |
 | `translate(...)` / `scale(...)` / `rotate(...)` | `translate(f64, f64)` / `scale(f64, f64)` / `rotate(f64)` | 一致 |
-| `skew(double, double)` / `skew(BLPoint)` | なし | 未実装 |
-| `transform(const BLMatrix2D&)` | なし | 未実装: Blend2D は `transform` メソッドで任意行列を後乗算 |
-| `post_translate(...)` / `post_scale(...)` / `post_skew(...)` / `post_rotate(...)` / `post_transform(...)` | なし | 未実装: 行列右掛け |
+| `skew(double, double)` / `skew(BLPoint)` | `skew(kx, ky)` | 差異あり: `BLPoint` オーバーロードは未実装 |
+| `transform(const BLMatrix2D&)` | `multiply(&Matrix2D)` | 差異あり: Blend2D はメソッド名 `transform`、raden は `multiply` |
+| `post_translate(...)` / `post_scale(...)` / `post_skew(...)` / `post_rotate(...)` / `post_transform(...)` | 同名 | 実装済み |
 | `reset()` | `reset()` | 一致 |
 | `multiply()` (Blend2D は演算子オーバーロード) | `multiply(&Matrix2D)` | 一致 |
 | `invert()` | `invert()` -> `Option<Self>` | 実装済み: 行列式がゼロの場合は None |
@@ -531,8 +531,8 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
    - バウンディングボックス取得 (`get_bounding_box`)
    - ヒットテスト (`hit_test`)
 
-8. **Context の getter メソッドがない**
-   - `comp_op()`, `fill_rule()`, `stroke_width()` 等の現在値を取得する API が不足
+8. ~~**Context の getter メソッドがない**~~ → **実装済み**
+   - `comp_op()` / `fill_rule()` / `stroke_*` / `fill_gradient()` / `fill_pattern()` / `matrix()` 等
 
 9. **フォントモジュールのテストがない**
    - テーブルパーサ、グリフアウトライン変換、cmap ルックアップの PBT / 単体テスト / fuzzing が未整備
@@ -543,8 +543,8 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 11. **個別アルファ (`fill_alpha` / `stroke_alpha`) とグローバルアルファが未実装**
     - Blend2D は fill/stroke それぞれに独立したアルファ値を持つ
 
-12. **せん断変換 (`skew`) が未実装**
-    - Context と Matrix2D の両方で skew 系メソッドがない
+12. ~~**せん断変換 (`skew`) が未実装**~~ → **実装済み**
+    - `Matrix2D::skewing` / `skew` / `post_skew`、`Context::skew` / `post_skew` (係数は接線)
 
 13. **BLFontFace の詳細 API がほぼ未実装**
     - フォント名取得、機能フラグ問い合わせ、feature/script/variation タグ取得等

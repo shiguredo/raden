@@ -17,3 +17,12 @@ Blend2D の `skew` および `Matrix2D::make_skewing` 相当の、せん断（�
 - `Context::skew`（および Blend2D と揃えるなら `post_skew` の有無の設計）
 - 既存の `translate` / `rotate` / `apply_matrix` との合成順のテスト
 - `docs/BLEND2D.md` の更新
+
+Completed: 2026-04-01
+
+## 解決方法
+
+- `Matrix2D::skewing` / `skew` / `post_skew` を追加し、係数は Blend2D と同様に接線の係数とした (`x' = x + kx*y`, `y' = y + ky*x`)。
+- `Context::skew` / `post_skew` は `Matrix2D` に委譲した。
+- `pbt/tests/prop_matrix.rs` にせん断の性質と `post_skew` の等価性テストを追加した。
+- `docs/BLEND2D.md` の該当表を更新した。

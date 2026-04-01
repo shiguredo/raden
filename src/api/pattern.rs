@@ -77,6 +77,8 @@ impl Pattern {
         // ソース画像の全不透明判定
         let opaque = self.data.chunks_exact(4).all(|px| px[3] == 0xFF);
 
+        // Nearest サンプリングの整数ピクセル位相に合わせるため原点を丸める。
+        // サブピクセル並進は表現しない (Bilinear 等を追加する場合は別経路で扱う)。
         PreparedPattern {
             data: &self.data,
             width: self.width as i32,
