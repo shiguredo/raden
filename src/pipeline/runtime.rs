@@ -1,5 +1,6 @@
 use crate::api::style::{CompOp, FillRule};
 
+use super::a8;
 use super::cache::{
     LinearGradientCovFn, PipelineBoxFn, PipelineCache, PipelineCovFn, PipelineFn,
     PipelineSpanCovFn, PipelineSpanFn, RadialGradientRowFn, SweepFn, TransformEdgesFn,
@@ -42,7 +43,11 @@ impl PipelineRuntime {
         fill_type: FillType,
         fetch_type: FetchType,
     ) -> PipelineFn {
-        let key = PipelineKey::new(dst_format, comp_op, fill_type, fetch_type);
+        if dst_format == PixelFormat::A8 {
+            return a8::pipeline_fn(comp_op);
+        }
+        let key_fmt = a8::jit_dst_format(dst_format);
+        let key = PipelineKey::new(key_fmt, comp_op, fill_type, fetch_type);
         match self.cache.get(&key) {
             Some(f) => f,
             None => {
@@ -60,7 +65,11 @@ impl PipelineRuntime {
         comp_op: CompOp,
         fetch_type: FetchType,
     ) -> PipelineCovFn {
-        let key = PipelineKey::new(dst_format, comp_op, FillType::Mask, fetch_type);
+        if dst_format == PixelFormat::A8 {
+            return a8::pipeline_cov_fn(comp_op);
+        }
+        let key_fmt = a8::jit_dst_format(dst_format);
+        let key = PipelineKey::new(key_fmt, comp_op, FillType::Mask, fetch_type);
         match self.cache.get_cov(&key) {
             Some(f) => f,
             None => {
@@ -81,10 +90,14 @@ impl PipelineRuntime {
         comp_op: CompOp,
         fetch_type: FetchType,
     ) -> Option<PipelineBoxFn> {
+        if dst_format == PixelFormat::A8 {
+            return a8::pipeline_box_fn(comp_op);
+        }
         if !matches!(comp_op, CompOp::SrcOver | CompOp::SrcCopy) {
             return None;
         }
-        let key = PipelineKey::new(dst_format, comp_op, FillType::BoxA, fetch_type);
+        let key_fmt = a8::jit_dst_format(dst_format);
+        let key = PipelineKey::new(key_fmt, comp_op, FillType::BoxA, fetch_type);
         match self.cache.get_box(&key) {
             Some(f) => Some(f),
             None => {
@@ -102,7 +115,13 @@ impl PipelineRuntime {
         comp_op: CompOp,
         fetch_type: FetchType,
     ) -> PipelineSpanFn {
-        let key = PipelineKey::new(dst_format, comp_op, FillType::BoxA, fetch_type);
+        assert_ne!(
+            dst_format,
+            PixelFormat::A8,
+            "span pipeline is not supported for A8 destination"
+        );
+        let key_fmt = a8::jit_dst_format(dst_format);
+        let key = PipelineKey::new(key_fmt, comp_op, FillType::BoxA, fetch_type);
         match self.cache.get_span(&key) {
             Some(f) => f,
             None => {
@@ -120,7 +139,13 @@ impl PipelineRuntime {
         comp_op: CompOp,
         fetch_type: FetchType,
     ) -> PipelineSpanCovFn {
-        let key = PipelineKey::new(dst_format, comp_op, FillType::Mask, fetch_type);
+        assert_ne!(
+            dst_format,
+            PixelFormat::A8,
+            "span_cov pipeline is not supported for A8 destination"
+        );
+        let key_fmt = a8::jit_dst_format(dst_format);
+        let key = PipelineKey::new(key_fmt, comp_op, FillType::Mask, fetch_type);
         match self.cache.get_span_cov(&key) {
             Some(f) => f,
             None => {
