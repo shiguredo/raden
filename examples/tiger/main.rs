@@ -221,11 +221,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         while let Some(event) = poll_event() {
             match event {
                 Event::Quit | Event::WindowClose => {
-                    quit();
+                    // SAFETY: quit はメインスレッドから一度だけ呼び出す
+                    unsafe { quit() };
                     return Ok(());
                 }
                 Event::KeyDown { keycode } if keycode == KEYCODE_ESCAPE => {
-                    quit();
+                    // SAFETY: quit はメインスレッドから一度だけ呼び出す
+                    unsafe { quit() };
                     return Ok(());
                 }
                 _ => {}

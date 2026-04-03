@@ -178,6 +178,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::thread::sleep(std::time::Duration::from_millis(16));
     }
 
-    quit();
+    // SAFETY: quit はメインスレッドから一度だけ呼び出す
+    unsafe { quit() };
     Ok(())
 }
