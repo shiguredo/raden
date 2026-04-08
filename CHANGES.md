@@ -11,6 +11,8 @@
 
 ## develop
 
+- [ADD] Context に `clear_all` / `clear_rect` を追加し、現在のクリップ領域内をピクセル値 0 で直接クリアできるようにする
+  - @voluntas
 - [ADD] Context に `set_stroke_style_gradient` / `set_stroke_style_pattern` と `stroke_gradient` / `stroke_pattern` getter を追加し、ストロークでもグラデーション/パターンを使用できるようにする
   - @voluntas
 - [UPDATE] `Pattern` の `prepare` にコンテキスト行列を渡し、`PatternFilter`（Nearest / Bilinear）、`set_transform` によるアフィンと `set_origin` による原点指定をサポートする

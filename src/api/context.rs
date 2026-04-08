@@ -435,6 +435,36 @@ impl<'a> Context<'a> {
         self.matrix.reset();
     }
 
+    /// 現在のクリップ領域全体をピクセル値 0 でクリアする。
+    ///
+    /// `set_comp_op(CompOp::Clear)` + `fill_all` と等価だが、合成モードや
+    /// ストロークスタイルを汚さずに実行する。
+    pub fn clear_all(&mut self) {
+        let w = self.image.width() as f64;
+        let h = self.image.height() as f64;
+        self.clear_rect(&Rect::new(0.0, 0.0, w, h));
+    }
+
+    /// 指定矩形をピクセル値 0 でクリアする。
+    ///
+    /// 現在のクリップ領域との積集合のみを書き換える。変換行列は無視する
+    /// (Blend2D の `clear_rect` も同様にデバイス座標で動作する)。
+    pub fn clear_rect(&mut self, rect: &Rect) {
+        let Some(boxi) = self.clip_rect(rect) else {
+            return;
+        };
+        let bpp = self.image.format().bytes_per_pixel();
+        let stride = self.image.stride();
+        let base = self.image.data_ptr_mut();
+        let row_bytes = (boxi.x1 - boxi.x0) as usize * bpp;
+        for y in boxi.y0..boxi.y1 {
+            let offset = y as usize * stride + boxi.x0 as usize * bpp;
+            unsafe {
+                std::ptr::write_bytes(base.add(offset), 0, row_bytes);
+            }
+        }
+    }
+
     pub fn fill_rect(&mut self, rect: &Rect) {
         // 変換行列が identity でない場合、矩形をパスに変換して fill_path にフォールバック
         if !self.matrix.is_identity() {

@@ -116,8 +116,8 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 
 | Blend2D | raden | 状態 |
 |---------|-------|------|
-| `clear_all()` | なし | 未実装: `CompOp::Clear` + `fill_all` で代替可能 |
-| `clear_rect(BLRectI)` / `clear_rect(BLRect)` / `clear_rect(x, y, w, h)` | なし | 未実装: `CompOp::Clear` + `fill_rect` で代替可能 |
+| `clear_all()` | `clear_all()` | 一致 (現在のクリップ領域全体をピクセル値 0 で書き換え。`comp_op` は変更しない) |
+| `clear_rect(BLRectI)` / `clear_rect(BLRect)` / `clear_rect(x, y, w, h)` | `clear_rect(&Rect)` | 差異あり: raden は `&Rect` 1 種のみ。デバイス座標で動作し変換行列は無視 |
 
 ### フィル操作
 

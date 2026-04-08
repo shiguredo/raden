@@ -1,6 +1,7 @@
 # clear_all / clear_rect を追加する
 
 Created: 2026-04-09
+Completed: 2026-04-09
 Model: Opus 4.6
 
 ## 概要
@@ -20,3 +21,11 @@ Model: Opus 4.6
 - クリッピングが有効な場合の挙動 (Blend2D は clip 内のみクリア) を確認
 - 単体テスト: クリア後のピクセルが透明になっていること、clip 範囲外が保持されていること
 - `docs/BLEND2D.md` および `CHANGES.md` の更新
+
+## 解決方法
+
+- `Context::clear_all` / `Context::clear_rect(&Rect)` を追加した
+- 実装は `clip_rect` でクリップ領域と矩形の積集合を取り、各行に対して `std::ptr::write_bytes(.., 0, ..)` で直接ゼロ書き込みする (合成パイプラインを経由しないため `comp_op` / fill / stroke 状態を一切汚さない)
+- `clear_rect` はデバイス座標で動作し変換行列を無視する (Blend2D 互換)
+- `tests/test_context.rs` に `clear` モジュールを追加し、`clear_all` の全域クリア、`clear_rect` の局所クリア、クリップ領域の尊重、`comp_op` 不変を検証
+- `docs/BLEND2D.md` の該当行と `CHANGES.md` を更新
