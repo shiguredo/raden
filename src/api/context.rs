@@ -57,6 +57,23 @@ impl Ellipse {
     }
 }
 
+/// 角丸矩形。
+#[derive(Debug, Clone, Copy)]
+pub struct RoundRect {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+    pub rx: f64,
+    pub ry: f64,
+}
+
+impl RoundRect {
+    pub fn new(x: f64, y: f64, w: f64, h: f64, rx: f64, ry: f64) -> Self {
+        Self { x, y, w, h, rx, ry }
+    }
+}
+
 /// 線分。(x0, y0) から (x1, y1) への線分。
 #[derive(Debug, Clone, Copy)]
 pub struct Line {
@@ -870,6 +887,18 @@ impl<'a> Context<'a> {
         self.tmp_path = path;
     }
 
+    /// 角丸矩形を塗りつぶす。
+    pub fn fill_round_rect(&mut self, rr: &RoundRect) {
+        if rr.w <= 0.0 || rr.h <= 0.0 {
+            return;
+        }
+        let mut path = std::mem::take(&mut self.tmp_path);
+        path.clear();
+        path.add_round_rect(rr.x, rr.y, rr.w, rr.h, rr.rx, rr.ry);
+        self.fill_path(&path);
+        self.tmp_path = path;
+    }
+
     /// 楕円を塗りつぶす。
     pub fn fill_ellipse(&mut self, ellipse: &Ellipse) {
         if ellipse.rx <= 0.0 || ellipse.ry <= 0.0 {
@@ -1012,6 +1041,18 @@ impl<'a> Context<'a> {
         let mut path = std::mem::take(&mut self.tmp_path);
         path.clear();
         path.add_circle(circle.cx, circle.cy, circle.r);
+        self.stroke_path(&path);
+        self.tmp_path = path;
+    }
+
+    /// 角丸矩形をストローク描画する。
+    pub fn stroke_round_rect(&mut self, rr: &RoundRect) {
+        if rr.w <= 0.0 || rr.h <= 0.0 {
+            return;
+        }
+        let mut path = std::mem::take(&mut self.tmp_path);
+        path.clear();
+        path.add_round_rect(rr.x, rr.y, rr.w, rr.h, rr.rx, rr.ry);
         self.stroke_path(&path);
         self.tmp_path = path;
     }

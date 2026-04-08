@@ -11,6 +11,8 @@
 
 ## develop
 
+- [ADD] `RoundRect` 型と `Context::fill_round_rect` / `stroke_round_rect`、`Path::add_round_rect` を追加する
+  - @voluntas
 - [ADD] `Ellipse` 型と `Context::fill_ellipse` / `stroke_ellipse`、`Path::add_ellipse` を追加する
   - @voluntas
 - [ADD] Context に `clear_all` / `clear_rect` を追加し、現在のクリップ領域内をピクセル値 0 で直接クリアできるようにする

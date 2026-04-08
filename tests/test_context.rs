@@ -193,3 +193,76 @@ mod ellipse {
         }
     }
 }
+
+mod round_rect {
+    use raden::{
+        CompOp, Context, Image, Path, PipelineRuntime, PixelFormat, Rect, Rgba32, RoundRect,
+    };
+
+    fn render_with<F: FnOnce(&mut Context)>(f: F) -> Image {
+        let mut img = Image::new(32, 32, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+        ctx.set_comp_op(CompOp::SrcCopy);
+        ctx.set_fill_style(Rgba32::new(0xFF, 0xFF, 0xFF, 0xFF));
+        f(&mut ctx);
+        ctx.end();
+        img
+    }
+
+    fn read(img: &Image, x: u32, y: u32) -> u8 {
+        let off = y as usize * img.stride() + x as usize * 4;
+        img.data()[off + 3]
+    }
+
+    /// rx==ry==0 のとき通常の矩形と一致する。
+    #[test]
+    fn zero_radius_matches_rect() {
+        let r = render_with(|ctx| {
+            ctx.fill_rect(&Rect::new(4.0, 4.0, 24.0, 24.0));
+        });
+        let rr = render_with(|ctx| {
+            ctx.fill_round_rect(&RoundRect::new(4.0, 4.0, 24.0, 24.0, 0.0, 0.0));
+        });
+        assert_eq!(r.data(), rr.data());
+    }
+
+    /// 半径を幅/高さの半分以上に指定するとクランプされ、楕円相当 (角がすべて丸くなる) になる。
+    #[test]
+    fn radius_clamps_to_half_extent() {
+        let img = render_with(|ctx| {
+            ctx.fill_round_rect(&RoundRect::new(0.0, 0.0, 32.0, 32.0, 100.0, 100.0));
+        });
+        // 角はクリップされて透明
+        assert_eq!(read(&img, 0, 0), 0);
+        assert_eq!(read(&img, 31, 0), 0);
+        assert_eq!(read(&img, 0, 31), 0);
+        assert_eq!(read(&img, 31, 31), 0);
+        // 中央は塗りつぶし
+        assert_eq!(read(&img, 16, 16), 0xFF);
+    }
+
+    /// 角丸矩形は 4 隅とも丸まっている (端点ピクセルが透明)。
+    #[test]
+    fn corners_are_rounded() {
+        let img = render_with(|ctx| {
+            ctx.fill_round_rect(&RoundRect::new(2.0, 2.0, 28.0, 28.0, 8.0, 8.0));
+        });
+        // 4 隅は透明
+        assert_eq!(read(&img, 2, 2), 0);
+        assert_eq!(read(&img, 29, 2), 0);
+        assert_eq!(read(&img, 2, 29), 0);
+        assert_eq!(read(&img, 29, 29), 0);
+        // 辺の中点は塗りつぶし
+        assert_eq!(read(&img, 16, 2), 0xFF);
+        assert_eq!(read(&img, 2, 16), 0xFF);
+    }
+
+    /// add_round_rect(rx==0) は矩形と同じコマンド数 (move + 3 line + close)。
+    #[test]
+    fn add_round_rect_zero_radius_command_count() {
+        let mut p = Path::new();
+        p.add_round_rect(0.0, 0.0, 10.0, 10.0, 0.0, 0.0);
+        assert_eq!(p.cmds().len(), 5);
+    }
+}

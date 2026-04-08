@@ -126,7 +126,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `fill_all()` | `fill_all()` | 一致 |
 | `fill_rect(BLRectI/BLRect/x,y,w,h)` | `fill_rect(&Rect)` | 差異あり: 単色は `comp_op` を参照。パターン `fill_rect` は `SrcOver`/`SrcCopy` のみ（他は panic）。グラデーションの `fill_rect` 高速パスは `Context::comp_op` を渡さず `PreparedGradient::fill_rect` が内部融合（`gradient.rs` コメントの SrcOver 融合）。**グラデーションの `fill_path` は `comp_op` を `span_cov` に渡して参照する**（経路が異なるので注意） |
 | `fill_box(BLBoxI/BLBox/x0,y0,x1,y1)` | なし | 未実装: 2 点指定の矩形塗りつぶし |
-| `fill_round_rect(BLRoundRect/...)` | なし | 未実装: 角丸矩形 |
+| `fill_round_rect(BLRoundRect/...)` | `fill_round_rect(&RoundRect)` | 一致 |
 | `fill_circle(BLCircle/cx,cy,r)` | `fill_circle(&Circle)` | 一致 |
 | `fill_ellipse(BLEllipse/cx,cy,rx,ry)` | `fill_ellipse(&Ellipse)` | 一致 |
 | `fill_triangle(BLTriangle/x0,y0,x1,y1,x2,y2)` | なし | 未実装: 三角形 |
@@ -154,7 +154,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 |---------|-------|------|
 | `stroke_rect(BLRectI/BLRect/x,y,w,h)` | `stroke_rect(&Rect)` | 一致 |
 | `stroke_box(BLBoxI/BLBox/x0,y0,x1,y1)` | なし | 未実装 |
-| `stroke_round_rect(BLRoundRect/...)` | なし | 未実装 |
+| `stroke_round_rect(BLRoundRect/...)` | `stroke_round_rect(&RoundRect)` | 一致 |
 | `stroke_circle(BLCircle/cx,cy,r)` | `stroke_circle(&Circle)` | 一致 |
 | `stroke_ellipse(BLEllipse/cx,cy,rx,ry)` | `stroke_ellipse(&Ellipse)` | 一致 |
 | `stroke_triangle(BLTriangle/...)` | なし | 未実装 |
@@ -241,7 +241,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `add_line(BLLine, direction)` | なし | 未実装: 線分をパスに追加 |
 | `add_rect(BLRect/BLRectI/x,y,w,h, direction)` | なし | 未実装: `move_to` / `line_to` / `close` で代替可能 |
 | `add_box(BLBox/BLBoxI/x0,y0,x1,y1, direction)` | なし | 未実装 |
-| `add_round_rect(BLRoundRect, direction)` | なし | 未実装: 角丸矩形 |
+| `add_round_rect(BLRoundRect, direction)` | `add_round_rect(x, y, w, h, rx, ry)` | 差異あり: raden は direction パラメータがない。半径は幅/高さの半分でクランプ |
 | `add_circle(BLCircle, direction)` | `add_circle(cx, cy, r)` | 差異あり: raden は direction パラメータがない |
 | `add_ellipse(BLEllipse, direction)` | `add_ellipse(cx, cy, rx, ry)` | 差異あり: raden は direction パラメータがない |
 | `add_triangle(BLTriangle, direction)` | なし | 未実装 |
@@ -276,7 +276,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `BLSizeI` (int w, h) / `BLSize` (double w, h) | なし | 未実装: サイズ型 |
 | `BLCircle` (double cx, cy, r) | `Circle` (f64 cx, cy, r) | 一致 |
 | `BLEllipse` (double cx, cy, rx, ry) | `Ellipse` (f64 cx, cy, rx, ry) | 一致 |
-| `BLRoundRect` (double x, y, w, h, rx, ry) | なし | 未実装: 角丸矩形 |
+| `BLRoundRect` (double x, y, w, h, rx, ry) | `RoundRect` (f64 x, y, w, h, rx, ry) | 一致 |
 | `BLLine` (double x0, y0, x1, y1) | `Line` (f64 x0, y0, x1, y1) | 一致 |
 | `BLTriangle` (double x0, y0, x1, y1, x2, y2) | なし | 未実装: 三角形 (Path で代替可能) |
 | `BLArc` (double cx, cy, rx, ry, start, sweep) | `Arc` (f64 cx, cy, rx, ry, start, sweep) | 一致 |

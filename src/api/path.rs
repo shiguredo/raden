@@ -219,6 +219,49 @@ impl Path {
         self.close();
     }
 
+    /// 角丸矩形をパスに追加する。
+    ///
+    /// 角の半径 `rx` / `ry` は幅・高さの半分でクランプされる (Blend2D と同様)。
+    /// 半径が 0 以下の場合は通常の矩形 (4 本の line_to + close) を追加する。
+    pub fn add_round_rect(&mut self, x: f64, y: f64, w: f64, h: f64, rx: f64, ry: f64) {
+        if w <= 0.0 || h <= 0.0 {
+            return;
+        }
+        let rx = rx.max(0.0).min(w * 0.5);
+        let ry = ry.max(0.0).min(h * 0.5);
+        if rx == 0.0 || ry == 0.0 {
+            self.move_to(x, y);
+            self.line_to(x + w, y);
+            self.line_to(x + w, y + h);
+            self.line_to(x, y + h);
+            self.close();
+            return;
+        }
+        let kx = rx * KAPPA;
+        let ky = ry * KAPPA;
+        let x1 = x + w;
+        let y1 = y + h;
+
+        // 上辺 (左上の弧の終点 → 右上の弧の始点)
+        self.move_to(x + rx, y);
+        self.line_to(x1 - rx, y);
+        // 右上の角
+        self.cubic_to(x1 - rx + kx, y, x1, y + ry - ky, x1, y + ry);
+        // 右辺
+        self.line_to(x1, y1 - ry);
+        // 右下の角
+        self.cubic_to(x1, y1 - ry + ky, x1 - rx + kx, y1, x1 - rx, y1);
+        // 下辺
+        self.line_to(x + rx, y1);
+        // 左下の角
+        self.cubic_to(x + rx - kx, y1, x, y1 - ry + ky, x, y1 - ry);
+        // 左辺
+        self.line_to(x, y + ry);
+        // 左上の角
+        self.cubic_to(x, y + ry - ky, x + rx - kx, y, x + rx, y);
+        self.close();
+    }
+
     /// 楕円を 4 本の cubic Bezier で近似して追加する。`add_circle` の `rx == ry` 版と一致する。
     pub fn add_ellipse(&mut self, cx: f64, cy: f64, rx: f64, ry: f64) {
         let kx = rx * KAPPA;
