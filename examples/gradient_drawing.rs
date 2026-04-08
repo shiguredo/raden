@@ -126,6 +126,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::thread::sleep(std::time::Duration::from_millis(16));
     }
 
-    quit();
+    unsafe {
+        quit();
+    }
     Ok(())
 }

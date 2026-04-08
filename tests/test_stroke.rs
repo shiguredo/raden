@@ -121,3 +121,123 @@ fn stroke_round_cap_has_curves() {
         cubic_count
     );
 }
+
+// ストロークスタイルにグラデーション/パターンを設定したときの描画テスト
+mod stroke_style_gradient_pattern {
+    use raden::{
+        CompOp, Context, ExtendMode, Gradient, Image, Matrix2D, Path, Pattern, PatternFilter,
+        PipelineRuntime, PixelFormat, Rgba32,
+    };
+
+    fn read_pixel(img: &Image, x: u32, y: u32) -> u32 {
+        let offset = y as usize * img.stride() + x as usize * 4;
+        let data = img.data();
+        u32::from_le_bytes([
+            data[offset],
+            data[offset + 1],
+            data[offset + 2],
+            data[offset + 3],
+        ])
+    }
+
+    /// ストロークにリニアグラデーションを適用すると、線に沿って色が変化する。
+    #[test]
+    fn stroke_linear_gradient_varies_along_line() {
+        let mut img = Image::new(64, 16, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+        ctx.set_comp_op(CompOp::SrcCopy);
+
+        let mut grad = Gradient::new_linear(0.0, 0.0, 64.0, 0.0);
+        grad.add_stop(0.0, Rgba32::rgb(0xFF, 0x00, 0x00));
+        grad.add_stop(1.0, Rgba32::rgb(0x00, 0x00, 0xFF));
+        ctx.set_stroke_style_gradient(&grad);
+        ctx.set_stroke_width(8.0);
+
+        let mut path = Path::new();
+        path.move_to(0.0, 8.0);
+        path.line_to(64.0, 8.0);
+        ctx.stroke_path(&path);
+        ctx.end();
+
+        // 左端は赤寄り、右端は青寄り
+        let left = read_pixel(&img, 4, 8);
+        let right = read_pixel(&img, 60, 8);
+        let left_r = (left >> 16) & 0xFF;
+        let left_b = left & 0xFF;
+        let right_r = (right >> 16) & 0xFF;
+        let right_b = right & 0xFF;
+        assert!(left_r > left_b, "left should be red-ish: {:08x}", left);
+        assert!(right_b > right_r, "right should be blue-ish: {:08x}", right);
+    }
+
+    /// set_stroke_style(color) はグラデーション/パターンをクリアする。
+    #[test]
+    fn set_stroke_style_clears_gradient_and_pattern() {
+        let mut img = Image::new(4, 4, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+
+        let mut grad = Gradient::new_linear(0.0, 0.0, 4.0, 0.0);
+        grad.add_stop(0.0, Rgba32::rgb(0xFF, 0x00, 0x00));
+        grad.add_stop(1.0, Rgba32::rgb(0x00, 0x00, 0xFF));
+        ctx.set_stroke_style_gradient(&grad);
+        assert!(ctx.stroke_gradient().is_some());
+
+        ctx.set_stroke_style(Rgba32::new(0x10, 0x20, 0x30, 0xFF));
+        assert!(ctx.stroke_gradient().is_none());
+        assert!(ctx.stroke_pattern().is_none());
+    }
+
+    /// save / restore はストロークのグラデーション/パターンも含めて復元する。
+    #[test]
+    fn save_restore_preserves_stroke_gradient() {
+        let mut img = Image::new(4, 4, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+
+        let mut grad = Gradient::new_linear(0.0, 0.0, 4.0, 0.0);
+        grad.add_stop(0.0, Rgba32::rgb(0xFF, 0x00, 0x00));
+        grad.add_stop(1.0, Rgba32::rgb(0x00, 0xFF, 0x00));
+        ctx.set_stroke_style_gradient(&grad);
+
+        ctx.save();
+        ctx.set_stroke_style(Rgba32::new(0, 0, 0, 0xFF));
+        assert!(ctx.stroke_gradient().is_none());
+        ctx.restore();
+        assert!(ctx.stroke_gradient().is_some());
+    }
+
+    /// ストロークパターンは線の領域にテクスチャを貼り付ける。
+    #[test]
+    fn stroke_pattern_applies_texture() {
+        // 2x1 の赤・青タイル
+        let mut tile = vec![0u8; 8];
+        tile[0..4].copy_from_slice(&0xFF_FF_00_00u32.to_le_bytes());
+        tile[4..8].copy_from_slice(&0xFF_00_00_FFu32.to_le_bytes());
+
+        let mut pat = Pattern::new(&tile, 2, 1, 8);
+        pat.set_filter(PatternFilter::Nearest);
+        pat.set_extend_mode(ExtendMode::Repeat);
+        pat.set_transform(Matrix2D::IDENTITY);
+
+        let mut img = Image::new(8, 8, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+        ctx.set_comp_op(CompOp::SrcCopy);
+        ctx.set_stroke_style_pattern(&pat);
+        ctx.set_stroke_width(4.0);
+
+        let mut path = Path::new();
+        path.move_to(0.0, 4.0);
+        path.line_to(8.0, 4.0);
+        ctx.stroke_path(&path);
+        ctx.end();
+
+        // 線上の偶数 x は赤、奇数 x は青 (Repeat)
+        assert_eq!(read_pixel(&img, 0, 4), 0xFF_FF_00_00);
+        assert_eq!(read_pixel(&img, 1, 4), 0xFF_00_00_FF);
+        assert_eq!(read_pixel(&img, 2, 4), 0xFF_FF_00_00);
+        assert_eq!(read_pixel(&img, 3, 4), 0xFF_00_00_FF);
+    }
+}

@@ -263,11 +263,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         while let Some(event) = poll_event() {
             match event {
                 Event::Quit | Event::WindowClose => {
-                    quit();
+                    unsafe {
+                        quit();
+                    }
                     return Ok(());
                 }
                 Event::KeyDown { keycode } if keycode == KEYCODE_ESCAPE => {
-                    quit();
+                    unsafe {
+                        quit();
+                    }
                     return Ok(());
                 }
                 _ => {}

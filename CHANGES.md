@@ -11,6 +11,8 @@
 
 ## develop
 
+- [ADD] Context に `set_stroke_style_gradient` / `set_stroke_style_pattern` と `stroke_gradient` / `stroke_pattern` getter を追加し、ストロークでもグラデーション/パターンを使用できるようにする
+  - @voluntas
 - [UPDATE] `Pattern` の `prepare` にコンテキスト行列を渡し、`PatternFilter`（Nearest / Bilinear）、`set_transform` によるアフィンと `set_origin` による原点指定をサポートする
   - @voluntas
 - [ADD] Context に `blit_image_rect` / `blit_image_at` を追加し、逆行列に基づく Nearest サンプリングで `SrcOver` / `SrcCopy` 転送を行う

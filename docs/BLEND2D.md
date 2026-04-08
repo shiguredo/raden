@@ -90,8 +90,9 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | Blend2D | raden | 状態 |
 |---------|-------|------|
 | `set_stroke_style(rgba32)` | `set_stroke_style(Rgba32)` | 一致 |
-| `set_stroke_style(gradient/pattern)` | なし | 未実装: ストロークのグラデーション/パターンスタイル |
-| `stroke_style_type()` / `get_stroke_style()` / `get_transformed_stroke_style()` | `stroke_color_prgb32()` | 差異あり: Rgba32 のみ取得可能。種別の統合取得や変換済みスタイルは未実装 |
+| `set_stroke_style(gradient)` | `set_stroke_style_gradient(&Gradient)` | 実装済み: Linear/Radial/Conic グラデーション |
+| `set_stroke_style(pattern)` | `set_stroke_style_pattern(&Pattern)` | 実装済み: 画像パターン |
+| `stroke_style_type()` / `get_stroke_style()` / `get_transformed_stroke_style()` | `stroke_color_prgb32()` / `stroke_gradient()` / `stroke_pattern()` | 差異あり: 種別の統合取得や変換済みスタイルは未実装 |
 | `disable_stroke_style()` | なし | 未実装 |
 | `stroke_alpha()` / `set_stroke_alpha()` | なし | 未実装: ストローク個別のアルファ値 |
 | `stroke_width()` / `set_stroke_width()` | `stroke_width()` / `set_stroke_width()` | 一致 |
@@ -550,5 +551,5 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 14. ~~**パターンの Bilinear 補間 / Affine 変換が未実装**~~ → **実装済み**
     - `PatternFilter::Nearest` / `Bilinear`、`Pattern::set_origin` / `set_transform`（アフィン）、`prepare` で `Context::matrix` と合成
 
-15. **ストロークのグラデーション/パターンスタイルが未実装**
-    - `set_stroke_style` は Rgba32 のみ。グラデーション/パターンは fill のみ対応
+15. ~~**ストロークのグラデーション/パターンスタイルが未実装**~~ → **実装済み**
+    - `set_stroke_style_gradient` / `set_stroke_style_pattern` を実装済み (`stroke_path` 内で fill 側スタイルと一時差し替え)

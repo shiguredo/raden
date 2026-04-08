@@ -103,6 +103,8 @@ struct ContextState {
     fill_gradient: Option<Gradient>,
     fill_pattern: Option<Pattern>,
     stroke_color_prgb32: u32,
+    stroke_gradient: Option<Gradient>,
+    stroke_pattern: Option<Pattern>,
     stroke_width: f64,
     stroke_start_cap: StrokeCap,
     stroke_end_cap: StrokeCap,
@@ -124,6 +126,8 @@ pub struct Context<'a> {
     fill_gradient: Option<Gradient>,
     fill_pattern: Option<Pattern>,
     stroke_color_prgb32: u32,
+    stroke_gradient: Option<Gradient>,
+    stroke_pattern: Option<Pattern>,
     stroke_width: f64,
     stroke_start_cap: StrokeCap,
     stroke_end_cap: StrokeCap,
@@ -163,6 +167,8 @@ impl<'a> Context<'a> {
             fill_gradient: None,
             fill_pattern: None,
             stroke_color_prgb32: 0,
+            stroke_gradient: None,
+            stroke_pattern: None,
             stroke_width: 1.0,
             stroke_start_cap: StrokeCap::default(),
             stroke_end_cap: StrokeCap::default(),
@@ -192,6 +198,8 @@ impl<'a> Context<'a> {
             fill_gradient: self.fill_gradient.clone(),
             fill_pattern: self.fill_pattern.clone(),
             stroke_color_prgb32: self.stroke_color_prgb32,
+            stroke_gradient: self.stroke_gradient.clone(),
+            stroke_pattern: self.stroke_pattern.clone(),
             stroke_width: self.stroke_width,
             stroke_start_cap: self.stroke_start_cap,
             stroke_end_cap: self.stroke_end_cap,
@@ -213,6 +221,8 @@ impl<'a> Context<'a> {
             self.fill_gradient = state.fill_gradient;
             self.fill_pattern = state.fill_pattern;
             self.stroke_color_prgb32 = state.stroke_color_prgb32;
+            self.stroke_gradient = state.stroke_gradient;
+            self.stroke_pattern = state.stroke_pattern;
             self.stroke_width = state.stroke_width;
             self.stroke_start_cap = state.stroke_start_cap;
             self.stroke_end_cap = state.stroke_end_cap;
@@ -257,6 +267,14 @@ impl<'a> Context<'a> {
 
     pub fn stroke_color_prgb32(&self) -> u32 {
         self.stroke_color_prgb32
+    }
+
+    pub fn stroke_gradient(&self) -> Option<&Gradient> {
+        self.stroke_gradient.as_ref()
+    }
+
+    pub fn stroke_pattern(&self) -> Option<&Pattern> {
+        self.stroke_pattern.as_ref()
     }
 
     pub fn stroke_width(&self) -> f64 {
@@ -312,6 +330,20 @@ impl<'a> Context<'a> {
     /// ストローク色を設定する。
     pub fn set_stroke_style(&mut self, color: Rgba32) {
         self.stroke_color_prgb32 = color.to_prgb32();
+        self.stroke_gradient = None;
+        self.stroke_pattern = None;
+    }
+
+    /// ストロークスタイルをグラデーションに設定する。
+    pub fn set_stroke_style_gradient(&mut self, gradient: &Gradient) {
+        self.stroke_gradient = Some(gradient.clone());
+        self.stroke_pattern = None;
+    }
+
+    /// ストロークスタイルをパターンに設定する。
+    pub fn set_stroke_style_pattern(&mut self, pattern: &Pattern) {
+        self.stroke_pattern = Some(pattern.clone());
+        self.stroke_gradient = None;
     }
 
     /// 平行移動を現在の変換行列に後乗算で適用する。
@@ -887,11 +919,18 @@ impl<'a> Context<'a> {
         let mut workspace = std::mem::take(&mut self.stroke_workspace);
         stroke_to_fill_with_workspace(path, &options, &mut stroke_buf, &mut workspace);
         self.stroke_workspace = workspace;
-        // fill 色を一時的にストローク色に差し替えて描画する
-        let saved_fill = self.fill_color_prgb32;
+        // fill スタイルを一時的にストロークスタイルに差し替えて描画する。
+        // ストローク側にグラデ/パターンが設定されていれば優先し、なければ単色を使う。
+        let saved_fill_color = self.fill_color_prgb32;
+        let saved_fill_gradient = self.fill_gradient.take();
+        let saved_fill_pattern = self.fill_pattern.take();
         self.fill_color_prgb32 = self.stroke_color_prgb32;
+        self.fill_gradient = self.stroke_gradient.clone();
+        self.fill_pattern = self.stroke_pattern.clone();
         self.fill_path(&stroke_buf);
-        self.fill_color_prgb32 = saved_fill;
+        self.fill_color_prgb32 = saved_fill_color;
+        self.fill_gradient = saved_fill_gradient;
+        self.fill_pattern = saved_fill_pattern;
         self.stroke_path_buf = stroke_buf;
     }
 
