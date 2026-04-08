@@ -11,6 +11,8 @@
 
 ## develop
 
+- [ADD] `Ellipse` 型と `Context::fill_ellipse` / `stroke_ellipse`、`Path::add_ellipse` を追加する
+  - @voluntas
 - [ADD] Context に `clear_all` / `clear_rect` を追加し、現在のクリップ領域内をピクセル値 0 で直接クリアできるようにする
   - @voluntas
 - [ADD] Context に `set_stroke_style_gradient` / `set_stroke_style_pattern` と `stroke_gradient` / `stroke_pattern` getter を追加し、ストロークでもグラデーション/パターンを使用できるようにする

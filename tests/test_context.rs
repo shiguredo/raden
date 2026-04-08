@@ -124,3 +124,72 @@ mod clear {
         assert_eq!(ctx.comp_op(), before);
     }
 }
+
+mod ellipse {
+    use raden::{
+        Circle, CompOp, Context, Ellipse, Image, Path, PipelineRuntime, PixelFormat, Rgba32,
+    };
+
+    fn render_circle(r: f64) -> Image {
+        let size = 64u32;
+        let mut img = Image::new(size, size, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+        ctx.set_comp_op(CompOp::SrcCopy);
+        ctx.set_fill_style(Rgba32::new(0xFF, 0xFF, 0xFF, 0xFF));
+        ctx.fill_circle(&Circle::new(32.0, 32.0, r));
+        ctx.end();
+        img
+    }
+
+    fn render_ellipse(rx: f64, ry: f64) -> Image {
+        let size = 64u32;
+        let mut img = Image::new(size, size, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+        ctx.set_comp_op(CompOp::SrcCopy);
+        ctx.set_fill_style(Rgba32::new(0xFF, 0xFF, 0xFF, 0xFF));
+        ctx.fill_ellipse(&Ellipse::new(32.0, 32.0, rx, ry));
+        ctx.end();
+        img
+    }
+
+    /// fill_ellipse(rx==ry) は fill_circle と一致する。
+    #[test]
+    fn ellipse_with_equal_radii_matches_circle() {
+        let circle_img = render_circle(20.0);
+        let ellipse_img = render_ellipse(20.0, 20.0);
+        assert_eq!(circle_img.data(), ellipse_img.data());
+    }
+
+    /// 横長の楕円は水平軸方向に広がる。
+    #[test]
+    fn wide_ellipse_extends_horizontally() {
+        let img = render_ellipse(28.0, 10.0);
+        // 中心行で左右端付近のピクセルがオン
+        let read = |x: u32, y: u32| {
+            let off = y as usize * img.stride() + x as usize * 4;
+            img.data()[off + 3]
+        };
+        assert!(read(6, 32) > 0, "left edge should be filled");
+        assert!(read(58, 32) > 0, "right edge should be filled");
+        // 上下端のピクセルは未塗りつぶし (ry=10 なので y=4 は範囲外)
+        assert_eq!(read(32, 4), 0);
+        assert_eq!(read(32, 60), 0);
+    }
+
+    /// add_ellipse(rx==ry) は add_circle と同じコマンド列を生成する。
+    #[test]
+    fn add_ellipse_equal_radii_matches_add_circle() {
+        let mut p1 = Path::new();
+        p1.add_circle(10.0, 20.0, 5.0);
+        let mut p2 = Path::new();
+        p2.add_ellipse(10.0, 20.0, 5.0, 5.0);
+        assert_eq!(p1.cmds(), p2.cmds());
+        assert_eq!(p1.points().len(), p2.points().len());
+        for (a, b) in p1.points().iter().zip(p2.points()) {
+            assert!((a.x - b.x).abs() < 1e-12);
+            assert!((a.y - b.y).abs() < 1e-12);
+        }
+    }
+}

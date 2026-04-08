@@ -219,6 +219,19 @@ impl Path {
         self.close();
     }
 
+    /// 楕円を 4 本の cubic Bezier で近似して追加する。`add_circle` の `rx == ry` 版と一致する。
+    pub fn add_ellipse(&mut self, cx: f64, cy: f64, rx: f64, ry: f64) {
+        let kx = rx * KAPPA;
+        let ky = ry * KAPPA;
+
+        self.move_to(cx + rx, cy);
+        self.cubic_to(cx + rx, cy + ky, cx + kx, cy + ry, cx, cy + ry);
+        self.cubic_to(cx - kx, cy + ry, cx - rx, cy + ky, cx - rx, cy);
+        self.cubic_to(cx - rx, cy - ky, cx - kx, cy - ry, cx, cy - ry);
+        self.cubic_to(cx + kx, cy - ry, cx + rx, cy - ky, cx + rx, cy);
+        self.close();
+    }
+
     /// 円を 4 本の cubic Bezier で近似して追加する。Blend2D と同一のアルゴリズム。
     pub fn add_circle(&mut self, cx: f64, cy: f64, r: f64) {
         let kx = r * KAPPA;

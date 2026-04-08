@@ -128,7 +128,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `fill_box(BLBoxI/BLBox/x0,y0,x1,y1)` | なし | 未実装: 2 点指定の矩形塗りつぶし |
 | `fill_round_rect(BLRoundRect/...)` | なし | 未実装: 角丸矩形 |
 | `fill_circle(BLCircle/cx,cy,r)` | `fill_circle(&Circle)` | 一致 |
-| `fill_ellipse(BLEllipse/cx,cy,rx,ry)` | なし | 未実装: 楕円 |
+| `fill_ellipse(BLEllipse/cx,cy,rx,ry)` | `fill_ellipse(&Ellipse)` | 一致 |
 | `fill_triangle(BLTriangle/x0,y0,x1,y1,x2,y2)` | なし | 未実装: 三角形 |
 | `fill_pie(BLArc/cx,cy,r,start,sweep/cx,cy,rx,ry,start,sweep)` | `fill_pie(&Arc)` | 一致 |
 | `fill_chord(BLArc/...)` | なし | 未実装: 弦で閉じた円弧 |
@@ -156,7 +156,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `stroke_box(BLBoxI/BLBox/x0,y0,x1,y1)` | なし | 未実装 |
 | `stroke_round_rect(BLRoundRect/...)` | なし | 未実装 |
 | `stroke_circle(BLCircle/cx,cy,r)` | `stroke_circle(&Circle)` | 一致 |
-| `stroke_ellipse(BLEllipse/cx,cy,rx,ry)` | なし | 未実装 |
+| `stroke_ellipse(BLEllipse/cx,cy,rx,ry)` | `stroke_ellipse(&Ellipse)` | 一致 |
 | `stroke_triangle(BLTriangle/...)` | なし | 未実装 |
 | `stroke_pie(BLArc/...)` | なし | 未実装 |
 | `stroke_chord(BLArc/...)` | なし | 未実装 |
@@ -243,7 +243,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `add_box(BLBox/BLBoxI/x0,y0,x1,y1, direction)` | なし | 未実装 |
 | `add_round_rect(BLRoundRect, direction)` | なし | 未実装: 角丸矩形 |
 | `add_circle(BLCircle, direction)` | `add_circle(cx, cy, r)` | 差異あり: raden は direction パラメータがない |
-| `add_ellipse(BLEllipse, direction)` | なし | 未実装: 楕円 |
+| `add_ellipse(BLEllipse, direction)` | `add_ellipse(cx, cy, rx, ry)` | 差異あり: raden は direction パラメータがない |
 | `add_triangle(BLTriangle, direction)` | なし | 未実装 |
 | `add_arc(BLArc, direction)` | なし | 未実装: 円弧 |
 | `add_pie(BLArc, direction)` | `add_pie(cx, cy, rx, ry, start, sweep)` | 差異あり: raden は direction パラメータがない |
@@ -275,7 +275,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `BLBoxI` (int x0, y0, x1, y1) | なし | 未実装: 整数座標版。`contains()` メソッドあり |
 | `BLSizeI` (int w, h) / `BLSize` (double w, h) | なし | 未実装: サイズ型 |
 | `BLCircle` (double cx, cy, r) | `Circle` (f64 cx, cy, r) | 一致 |
-| `BLEllipse` (double cx, cy, rx, ry) | なし | 未実装: 楕円 |
+| `BLEllipse` (double cx, cy, rx, ry) | `Ellipse` (f64 cx, cy, rx, ry) | 一致 |
 | `BLRoundRect` (double x, y, w, h, rx, ry) | なし | 未実装: 角丸矩形 |
 | `BLLine` (double x0, y0, x1, y1) | `Line` (f64 x0, y0, x1, y1) | 一致 |
 | `BLTriangle` (double x0, y0, x1, y1, x2, y2) | なし | 未実装: 三角形 (Path で代替可能) |

@@ -7,7 +7,7 @@ pub mod pipeline;
 pub mod pixel;
 pub mod raster;
 
-pub use api::context::{Arc, Circle, Context, Line, Rect};
+pub use api::context::{Arc, Circle, Context, Ellipse, Line, Rect};
 pub use api::gradient::{
     ConicGradientValues, ExtendMode, Gradient, GradientStop, GradientValues, LinearGradientValues,
     RadialGradientValues,

@@ -42,6 +42,21 @@ impl Circle {
     }
 }
 
+/// 楕円。中心 (cx, cy)、半径 (rx, ry)。
+#[derive(Debug, Clone, Copy)]
+pub struct Ellipse {
+    pub cx: f64,
+    pub cy: f64,
+    pub rx: f64,
+    pub ry: f64,
+}
+
+impl Ellipse {
+    pub fn new(cx: f64, cy: f64, rx: f64, ry: f64) -> Self {
+        Self { cx, cy, rx, ry }
+    }
+}
+
 /// 線分。(x0, y0) から (x1, y1) への線分。
 #[derive(Debug, Clone, Copy)]
 pub struct Line {
@@ -855,6 +870,18 @@ impl<'a> Context<'a> {
         self.tmp_path = path;
     }
 
+    /// 楕円を塗りつぶす。
+    pub fn fill_ellipse(&mut self, ellipse: &Ellipse) {
+        if ellipse.rx <= 0.0 || ellipse.ry <= 0.0 {
+            return;
+        }
+        let mut path = std::mem::take(&mut self.tmp_path);
+        path.clear();
+        path.add_ellipse(ellipse.cx, ellipse.cy, ellipse.rx, ellipse.ry);
+        self.fill_path(&path);
+        self.tmp_path = path;
+    }
+
     /// テキストを塗りつぶし描画する。
     ///
     /// (x, y) はベースライン左端の位置。全グリフを 1 つの Path に結合し、
@@ -985,6 +1012,18 @@ impl<'a> Context<'a> {
         let mut path = std::mem::take(&mut self.tmp_path);
         path.clear();
         path.add_circle(circle.cx, circle.cy, circle.r);
+        self.stroke_path(&path);
+        self.tmp_path = path;
+    }
+
+    /// 楕円をストローク描画する。
+    pub fn stroke_ellipse(&mut self, ellipse: &Ellipse) {
+        if ellipse.rx <= 0.0 || ellipse.ry <= 0.0 {
+            return;
+        }
+        let mut path = std::mem::take(&mut self.tmp_path);
+        path.clear();
+        path.add_ellipse(ellipse.cx, ellipse.cy, ellipse.rx, ellipse.ry);
         self.stroke_path(&path);
         self.tmp_path = path;
     }
