@@ -59,7 +59,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | Blend2D | raden | 状態 |
 |---------|-------|------|
 | `comp_op()` / `set_comp_op()` | `comp_op()` / `set_comp_op()` | 一致 |
-| `global_alpha()` / `set_global_alpha()` | なし | 未実装: 全描画に適用されるグローバル透明度 |
+| `global_alpha()` / `set_global_alpha()` | `global_alpha()` / `set_global_alpha(f64)` | 一致 (値域 [0, 1] にクランプ) |
 
 ### スタイル (汎用)
 
@@ -82,7 +82,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `set_fill_style(style, transform_mode)` | なし | 未実装: 変換モード付きスタイル設定 |
 | `fill_style_type()` / `get_fill_style()` / `get_transformed_fill_style()` | `fill_color_prgb32()` / `fill_gradient()` / `fill_pattern()` | 差異あり: 種別の統合取得や変換済みスタイルは未実装 |
 | `disable_fill_style()` | なし | 未実装 |
-| `fill_alpha()` / `set_fill_alpha()` | なし | 未実装: フィル個別のアルファ値 |
+| `fill_alpha()` / `set_fill_alpha()` | `fill_alpha()` / `set_fill_alpha(f64)` | 一致 (値域 [0, 1] にクランプ) |
 | `fill_rule()` / `set_fill_rule()` | `fill_rule()` / `set_fill_rule(FillRule)` | 一致 |
 
 ### ストロークスタイル / オプション
@@ -94,7 +94,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `set_stroke_style(pattern)` | `set_stroke_style_pattern(&Pattern)` | 実装済み: 画像パターン |
 | `stroke_style_type()` / `get_stroke_style()` / `get_transformed_stroke_style()` | `stroke_color_prgb32()` / `stroke_gradient()` / `stroke_pattern()` | 差異あり: 種別の統合取得や変換済みスタイルは未実装 |
 | `disable_stroke_style()` | なし | 未実装 |
-| `stroke_alpha()` / `set_stroke_alpha()` | なし | 未実装: ストローク個別のアルファ値 |
+| `stroke_alpha()` / `set_stroke_alpha()` | `stroke_alpha()` / `set_stroke_alpha(f64)` | 一致 (値域 [0, 1] にクランプ) |
 | `stroke_width()` / `set_stroke_width()` | `stroke_width()` / `set_stroke_width()` | 一致 |
 | `stroke_miter_limit()` / `set_stroke_miter_limit()` | `stroke_miter_limit()` / `set_stroke_miter_limit()` | 一致 |
 | `stroke_join()` / `set_stroke_join()` | `stroke_join()` / `set_stroke_join()` | 一致 |
@@ -539,8 +539,10 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 10. **画像出力が BMP のみ**
     - `write_to_file()` は BMP 形式のみ。Blend2D は BLImageCodec でコーデックを指定
 
-11. **個別アルファ (`fill_alpha` / `stroke_alpha`) とグローバルアルファが未実装**
-    - Blend2D は fill/stroke それぞれに独立したアルファ値を持つ
+11. ~~**個別アルファ (`fill_alpha` / `stroke_alpha`) とグローバルアルファが未実装**~~ → **実装済み (一部制限あり)**
+    - `global_alpha` / `fill_alpha` / `stroke_alpha` を実装。実効アルファは `global_alpha * (fill_alpha or stroke_alpha)` で計算
+    - 単色 fill/stroke、グラデーション fill/stroke、パターン fill/stroke の各経路で適用される
+    - 制限: `blit_image_*` 系には未適用 (今後対応)。グラデ/パターンの `fill_rect` 高速パスは alpha != 1.0 のとき span path にフォールバックする (Linear gradient JIT cov、Radial JIT row 含む)
 
 12. ~~**せん断変換 (`skew`) が未実装**~~ → **実装済み**
     - `Matrix2D::skewing` / `skew` / `post_skew`、`Context::skew` / `post_skew` (係数は接線)

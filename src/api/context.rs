@@ -13,6 +13,35 @@ use crate::pixel::PixelFormat;
 use crate::raster::analytic::AnalyticRasterizer;
 use crate::raster::edge_builder::EdgeBuilder;
 
+/// 0..=1 のアルファ値を 0..=255 の整数に丸める。範囲外はクランプする。
+fn alpha_to_u8(a: f64) -> u8 {
+    if !a.is_finite() || a <= 0.0 {
+        0
+    } else if a >= 1.0 {
+        255
+    } else {
+        (a * 255.0 + 0.5) as u8
+    }
+}
+
+/// premultiplied ARGB32 ピクセルを 0..=255 のアルファでスケールする。
+/// すべてのチャネル (a/r/g/b) を等しく乗算するため premultiplied 不変条件は保たれる。
+fn scale_prgb32(prgb32: u32, alpha: u8) -> u32 {
+    if alpha == 0xFF {
+        return prgb32;
+    }
+    if alpha == 0 {
+        return 0;
+    }
+    let a = alpha as u32;
+    let scale_chan = |c: u32| (c * a + 127) / 255;
+    let aa = scale_chan((prgb32 >> 24) & 0xFF);
+    let r = scale_chan((prgb32 >> 16) & 0xFF);
+    let g = scale_chan((prgb32 >> 8) & 0xFF);
+    let b = scale_chan(prgb32 & 0xFF);
+    (aa << 24) | (r << 16) | (g << 8) | b
+}
+
 /// 浮動小数点の矩形。(x, y) は左上、(w, h) はサイズ。
 #[derive(Debug, Clone, Copy)]
 pub struct Rect {
@@ -169,6 +198,9 @@ struct ContextState {
     stroke_dash_array: Vec<f64>,
     stroke_dash_offset: f64,
     matrix: Matrix2D,
+    global_alpha: f64,
+    fill_alpha: f64,
+    stroke_alpha: f64,
     /// ユーザー指定のクリップ領域
     clip_box: BoxI,
 }
@@ -192,6 +224,9 @@ pub struct Context<'a> {
     stroke_dash_array: Vec<f64>,
     stroke_dash_offset: f64,
     matrix: Matrix2D,
+    global_alpha: f64,
+    fill_alpha: f64,
+    stroke_alpha: f64,
     /// メタクリップ (画像境界)。restore_clipping で戻る先。
     meta_clip_box: BoxI,
     /// 現在のクリップ領域。clip_to_rect で縮小される。
@@ -233,6 +268,9 @@ impl<'a> Context<'a> {
             stroke_dash_array: Vec::new(),
             stroke_dash_offset: 0.0,
             matrix: Matrix2D::IDENTITY,
+            global_alpha: 1.0,
+            fill_alpha: 1.0,
+            stroke_alpha: 1.0,
             meta_clip_box,
             clip_box: meta_clip_box,
             state_stack: Vec::new(),
@@ -264,6 +302,9 @@ impl<'a> Context<'a> {
             stroke_dash_array: self.stroke_dash_array.clone(),
             stroke_dash_offset: self.stroke_dash_offset,
             matrix: self.matrix,
+            global_alpha: self.global_alpha,
+            fill_alpha: self.fill_alpha,
+            stroke_alpha: self.stroke_alpha,
             clip_box: self.clip_box,
         });
     }
@@ -287,6 +328,9 @@ impl<'a> Context<'a> {
             self.stroke_dash_array = state.stroke_dash_array;
             self.stroke_dash_offset = state.stroke_dash_offset;
             self.matrix = state.matrix;
+            self.global_alpha = state.global_alpha;
+            self.fill_alpha = state.fill_alpha;
+            self.stroke_alpha = state.stroke_alpha;
             self.clip_box = state.clip_box;
         }
     }
@@ -363,6 +407,38 @@ impl<'a> Context<'a> {
 
     pub fn matrix(&self) -> &Matrix2D {
         &self.matrix
+    }
+
+    pub fn global_alpha(&self) -> f64 {
+        self.global_alpha
+    }
+
+    /// 全描画に乗算されるグローバルアルファを設定する。値域 [0, 1] でクランプする。
+    pub fn set_global_alpha(&mut self, a: f64) {
+        self.global_alpha = a.clamp(0.0, 1.0);
+    }
+
+    pub fn fill_alpha(&self) -> f64 {
+        self.fill_alpha
+    }
+
+    /// fill 個別のアルファを設定する。値域 [0, 1] でクランプする。
+    pub fn set_fill_alpha(&mut self, a: f64) {
+        self.fill_alpha = a.clamp(0.0, 1.0);
+    }
+
+    pub fn stroke_alpha(&self) -> f64 {
+        self.stroke_alpha
+    }
+
+    /// stroke 個別のアルファを設定する。値域 [0, 1] でクランプする。
+    pub fn set_stroke_alpha(&mut self, a: f64) {
+        self.stroke_alpha = a.clamp(0.0, 1.0);
+    }
+
+    /// fill 経路で適用される実効アルファ (global * fill) を 0..=255 で返す。
+    fn effective_fill_alpha_u8(&self) -> u8 {
+        alpha_to_u8(self.global_alpha * self.fill_alpha)
     }
 
     pub fn set_fill_style(&mut self, color: Rgba32) {
@@ -522,6 +598,22 @@ impl<'a> Context<'a> {
     }
 
     pub fn fill_rect(&mut self, rect: &Rect) {
+        let eff_alpha = self.effective_fill_alpha_u8();
+        // 実効アルファが 1.0 未満でグラデ/パターンの場合は span path 経由 (fill_path) を使う。
+        // fill_rect の高速パスは alpha 適用に対応していないため。
+        if eff_alpha != 0xFF && (self.fill_gradient.is_some() || self.fill_pattern.is_some()) {
+            let mut path = std::mem::take(&mut self.tmp_path);
+            path.clear();
+            path.move_to(rect.x, rect.y);
+            path.line_to(rect.x + rect.w, rect.y);
+            path.line_to(rect.x + rect.w, rect.y + rect.h);
+            path.line_to(rect.x, rect.y + rect.h);
+            path.close();
+            self.fill_path(&path);
+            self.tmp_path = path;
+            return;
+        }
+
         // 変換行列が identity でない場合、矩形をパスに変換して fill_path にフォールバック
         if !self.matrix.is_identity() {
             let mut path = std::mem::take(&mut self.tmp_path);
@@ -590,7 +682,7 @@ impl<'a> Context<'a> {
             return;
         }
 
-        let prgb32 = self.fill_color_prgb32;
+        let prgb32 = scale_prgb32(self.fill_color_prgb32, eff_alpha);
         let alpha = prgb32 >> 24;
 
         // alpha ファストパス: SrcOver で完全透明なら描画不要
@@ -651,9 +743,16 @@ impl<'a> Context<'a> {
         );
 
         let bpp = self.image.format().bytes_per_pixel();
+        let eff_alpha = self.effective_fill_alpha_u8();
 
-        // グラデーションの場合は透明チェックをスキップ
-        if self.fill_gradient.is_none() {
+        // 実効アルファが 0 の場合は SrcOver/SrcCopy 以外でも実質変更がないため省略するのは
+        // 厳密ではない (Clear などはゼロを書く必要がある)。ここでは SrcOver のみ早期 return。
+        if self.comp_op == CompOp::SrcOver && eff_alpha == 0 {
+            return;
+        }
+
+        // グラデーションの場合は色アルファのチェックをスキップ
+        if self.fill_gradient.is_none() && self.fill_pattern.is_none() {
             // alpha ファストパス: SrcOver で完全透明なら描画不要
             if self.comp_op == CompOp::SrcOver && (self.fill_color_prgb32 >> 24) == 0 {
                 return;
@@ -774,6 +873,11 @@ impl<'a> Context<'a> {
                 |y, x_start, coverage| {
                     span_buf.resize(coverage.len(), 0);
                     pattern.fetch_span(x_start, y, &mut span_buf);
+                    if eff_alpha != 0xFF {
+                        for px in span_buf.iter_mut() {
+                            *px = scale_prgb32(*px, eff_alpha);
+                        }
+                    }
 
                     let offset = y as usize * stride + x_start as usize * bpp;
                     let dst_row = unsafe { base.add(offset) };
@@ -799,7 +903,8 @@ impl<'a> Context<'a> {
 
         if let Some(ref gradient) = prepared_gradient {
             // Linear + 不透明 LUT + Pad モードの場合は融合 JIT パスを使用する
-            if gradient.is_linear_pad() && gradient.is_opaque() {
+            // 実効アルファが 1 未満のときはスパンバッファ経由にフォールバックする
+            if eff_alpha == 0xFF && gradient.is_linear_pad() && gradient.is_opaque() {
                 let linear_cov_fn = self.runtime.get_or_compile_linear_gradient_cov();
                 gradient.fill_path_linear_jit(
                     &mut self.rasterizer,
@@ -835,6 +940,11 @@ impl<'a> Context<'a> {
                 |y, x_start, coverage| {
                     span_buf.resize(coverage.len(), 0);
                     gradient.fetch_span_linear_fixed(x_start, y, &mut span_buf);
+                    if eff_alpha != 0xFF {
+                        for px in span_buf.iter_mut() {
+                            *px = scale_prgb32(*px, eff_alpha);
+                        }
+                    }
 
                     let offset = y as usize * stride + x_start as usize * bpp;
                     let dst_row = unsafe { base.add(offset) };
@@ -857,7 +967,7 @@ impl<'a> Context<'a> {
                 self.comp_op,
                 FetchType::Solid,
             );
-            let prgb32 = self.fill_color_prgb32;
+            let prgb32 = scale_prgb32(self.fill_color_prgb32, eff_alpha);
 
             self.rasterizer.rasterize(
                 &edge_buf,
@@ -1052,16 +1162,21 @@ impl<'a> Context<'a> {
         self.stroke_workspace = workspace;
         // fill スタイルを一時的にストロークスタイルに差し替えて描画する。
         // ストローク側にグラデ/パターンが設定されていれば優先し、なければ単色を使う。
+        // fill_alpha も一時的に stroke_alpha に差し替えて effective_fill_alpha が
+        // stroke 経路の実効アルファを返すようにする。
         let saved_fill_color = self.fill_color_prgb32;
         let saved_fill_gradient = self.fill_gradient.take();
         let saved_fill_pattern = self.fill_pattern.take();
+        let saved_fill_alpha = self.fill_alpha;
         self.fill_color_prgb32 = self.stroke_color_prgb32;
         self.fill_gradient = self.stroke_gradient.clone();
         self.fill_pattern = self.stroke_pattern.clone();
+        self.fill_alpha = self.stroke_alpha;
         self.fill_path(&stroke_buf);
         self.fill_color_prgb32 = saved_fill_color;
         self.fill_gradient = saved_fill_gradient;
         self.fill_pattern = saved_fill_pattern;
+        self.fill_alpha = saved_fill_alpha;
         self.stroke_path_buf = stroke_buf;
     }
 

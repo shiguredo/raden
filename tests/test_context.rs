@@ -328,3 +328,163 @@ mod triangle_polygon {
         assert_eq!(read(&img, 16, 13), 0xFF);
     }
 }
+
+mod alpha {
+    use raden::{CompOp, Context, Gradient, Image, PipelineRuntime, PixelFormat, Rect, Rgba32};
+
+    fn read(img: &Image, x: u32, y: u32) -> u32 {
+        let off = y as usize * img.stride() + x as usize * 4;
+        let d = img.data();
+        u32::from_le_bytes([d[off], d[off + 1], d[off + 2], d[off + 3]])
+    }
+
+    /// global_alpha = 1.0 + fill_alpha = 1.0 では出力が変化しない (回帰テスト)。
+    #[test]
+    fn unit_alpha_matches_no_alpha() {
+        let render = |use_alpha: bool| {
+            let mut img = Image::new(4, 4, PixelFormat::Prgb32);
+            let mut runtime = PipelineRuntime::new();
+            let mut ctx = Context::new(&mut img, &mut runtime);
+            ctx.set_comp_op(CompOp::SrcCopy);
+            if use_alpha {
+                ctx.set_global_alpha(1.0);
+                ctx.set_fill_alpha(1.0);
+            }
+            ctx.set_fill_style(Rgba32::new(0xC0, 0x40, 0x80, 0xFF));
+            ctx.fill_rect(&Rect::new(0.0, 0.0, 4.0, 4.0));
+            ctx.end();
+            img
+        };
+        assert_eq!(render(true).data(), render(false).data());
+    }
+
+    /// global_alpha = 0.0 では描画が起きない (キャンバスは透明のまま)。
+    #[test]
+    fn zero_global_alpha_skips_draw() {
+        let mut img = Image::new(4, 4, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+        ctx.set_global_alpha(0.0);
+        ctx.set_fill_style(Rgba32::new(0xFF, 0x00, 0x00, 0xFF));
+        ctx.fill_rect(&Rect::new(0.0, 0.0, 4.0, 4.0));
+        ctx.end();
+        for y in 0..4 {
+            for x in 0..4 {
+                assert_eq!(read(&img, x, y), 0);
+            }
+        }
+    }
+
+    /// fill_alpha = 0.5 で SrcCopy 描画した結果は半透明 (アルファ ≈ 128)。
+    #[test]
+    fn half_fill_alpha_solid_src_copy() {
+        let mut img = Image::new(2, 2, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+        ctx.set_comp_op(CompOp::SrcCopy);
+        ctx.set_fill_alpha(0.5);
+        ctx.set_fill_style(Rgba32::new(0xFF, 0xFF, 0xFF, 0xFF));
+        ctx.fill_rect(&Rect::new(0.0, 0.0, 2.0, 2.0));
+        ctx.end();
+
+        let p = read(&img, 0, 0);
+        let a = (p >> 24) & 0xFF;
+        let r = (p >> 16) & 0xFF;
+        // alpha は約 128、premultiplied で R チャネルも 128
+        assert!((120..=132).contains(&a), "alpha was {}", a);
+        assert!((120..=132).contains(&r), "red was {}", r);
+    }
+
+    /// global_alpha は fill_alpha と乗算される。
+    #[test]
+    fn global_and_fill_alpha_multiply() {
+        let mut img = Image::new(2, 2, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+        ctx.set_comp_op(CompOp::SrcCopy);
+        ctx.set_global_alpha(0.5);
+        ctx.set_fill_alpha(0.5);
+        ctx.set_fill_style(Rgba32::new(0xFF, 0xFF, 0xFF, 0xFF));
+        ctx.fill_rect(&Rect::new(0.0, 0.0, 2.0, 2.0));
+        ctx.end();
+
+        let a = (read(&img, 0, 0) >> 24) & 0xFF;
+        // 0.5 * 0.5 = 0.25 → 約 64
+        assert!((58..=70).contains(&a), "alpha was {}", a);
+    }
+
+    /// グラデーションにも fill_alpha が適用される (左端の不透明度が下がる)。
+    #[test]
+    fn alpha_applies_to_gradient() {
+        let mut img = Image::new(8, 4, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+        ctx.set_comp_op(CompOp::SrcCopy);
+        ctx.set_fill_alpha(0.5);
+        let mut grad = Gradient::new_linear(0.0, 0.0, 8.0, 0.0);
+        grad.add_stop(0.0, Rgba32::rgb(0xFF, 0xFF, 0xFF));
+        grad.add_stop(1.0, Rgba32::rgb(0xFF, 0xFF, 0xFF));
+        ctx.set_fill_style_gradient(&grad);
+        ctx.fill_rect(&Rect::new(0.0, 0.0, 8.0, 4.0));
+        ctx.end();
+
+        let a = (read(&img, 4, 2) >> 24) & 0xFF;
+        assert!((120..=132).contains(&a), "alpha was {}", a);
+    }
+
+    /// stroke_alpha は stroke 経路にだけ適用される (fill には影響しない)。
+    #[test]
+    fn stroke_alpha_independent_from_fill() {
+        let mut img = Image::new(8, 8, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+        ctx.set_comp_op(CompOp::SrcCopy);
+        ctx.set_fill_style(Rgba32::new(0xFF, 0xFF, 0xFF, 0xFF));
+        ctx.set_stroke_style(Rgba32::new(0xFF, 0xFF, 0xFF, 0xFF));
+        ctx.set_stroke_alpha(0.5);
+        ctx.fill_rect(&Rect::new(0.0, 0.0, 8.0, 1.0));
+        ctx.set_stroke_width(1.0);
+        let mut path = raden::Path::new();
+        path.move_to(0.0, 4.5);
+        path.line_to(8.0, 4.5);
+        ctx.stroke_path(&path);
+        ctx.end();
+
+        // 上段 (fill) は不透明
+        assert_eq!((read(&img, 0, 0) >> 24) & 0xFF, 0xFF);
+        // 中段 (stroke) はおよそ 128
+        let a = (read(&img, 4, 4) >> 24) & 0xFF;
+        assert!((120..=132).contains(&a), "stroke alpha was {}", a);
+    }
+
+    /// save / restore で alpha 状態が復元される。
+    #[test]
+    fn save_restore_preserves_alpha() {
+        let mut img = Image::new(2, 2, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+        ctx.set_global_alpha(0.7);
+        ctx.set_fill_alpha(0.3);
+        ctx.set_stroke_alpha(0.4);
+        ctx.save();
+        ctx.set_global_alpha(1.0);
+        ctx.set_fill_alpha(1.0);
+        ctx.set_stroke_alpha(1.0);
+        ctx.restore();
+        assert!((ctx.global_alpha() - 0.7).abs() < 1e-12);
+        assert!((ctx.fill_alpha() - 0.3).abs() < 1e-12);
+        assert!((ctx.stroke_alpha() - 0.4).abs() < 1e-12);
+    }
+
+    /// 範囲外の値はクランプされる。
+    #[test]
+    fn alpha_clamps_to_unit_range() {
+        let mut img = Image::new(2, 2, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+        ctx.set_global_alpha(2.0);
+        ctx.set_fill_alpha(-1.0);
+        assert_eq!(ctx.global_alpha(), 1.0);
+        assert_eq!(ctx.fill_alpha(), 0.0);
+    }
+}
