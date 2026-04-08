@@ -11,6 +11,8 @@
 
 ## develop
 
+- [ADD] `Path` に `translate` / `transform` / `add_path` / `add_path_translated` / `add_path_transformed` / `bounding_box` / `control_box` を追加する
+  - @voluntas
 - [ADD] Context に `global_alpha` / `fill_alpha` / `stroke_alpha` の getter/setter を追加し、単色・グラデーション・パターンの fill / stroke 経路で実効アルファ (global * fill|stroke) を適用する。`blit_image_*` は未対応
   - @voluntas
 - [ADD] `Triangle` 型と `Context::fill_triangle` / `stroke_triangle`、`fill_polygon` / `stroke_polygon` / `stroke_polyline`、`Path::add_triangle` / `add_polygon` / `add_polyline` を追加する

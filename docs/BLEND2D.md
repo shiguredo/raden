@@ -213,8 +213,8 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `view()` | なし | 未実装 |
 | `equals(const BLPath&)` | なし | 未実装 |
 | `get_info_flags(uint32_t*)` | なし | 未実装: パスの内容フラグ取得 |
-| `get_bounding_box(BLBox*)` | なし | 未実装: `fill_path` 内部ではバウンディングボックスを計算済み |
-| `get_control_box(BLBox*)` | なし | 未実装: コントロール点のバウンディングボックス取得 |
+| `get_bounding_box(BLBox*)` | `bounding_box() -> Option<Rect>` | 差異あり: 現在は制御点ベース (`control_box` のエイリアス)。曲線の厳密な bbox は今後対応 |
+| `get_control_box(BLBox*)` | `control_box() -> Option<Rect>` | 一致 |
 | `get_last_vertex(BLPoint*)` | なし | 未実装 |
 | `get_figure_range(size_t, BLRange*)` | なし | 未実装 |
 | `get_closest_vertex(...)` | なし | 未実装 |
@@ -235,7 +235,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | Blend2D | raden | 状態 |
 |---------|-------|------|
 | `add_geometry(BLGeometryType, data, matrix, direction)` | なし | 未実装: 汎用ジオメトリ追加 |
-| `add_path(BLPath)` / `add_path(BLPath, BLPoint)` / `add_path(BLPath, BLMatrix2D)` | なし | 未実装: 他の Path のコマンドを結合 |
+| `add_path(BLPath)` / `add_path(BLPath, BLPoint)` / `add_path(BLPath, BLMatrix2D)` | `add_path(&Path)` / `add_path_translated(&Path, dx, dy)` / `add_path_transformed(&Path, &Matrix2D)` | 一致 |
 | `add_reversed_path(BLPath, BLPathReverseMode)` | なし | 未実装 |
 | `add_stroked_path(BLPath, BLStrokeOptions, BLApproximationOptions)` | なし | 未実装: ストローク結果を Path に追加 |
 | `add_line(BLLine, direction)` | なし | 未実装: 線分をパスに追加 |
@@ -257,8 +257,8 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 
 | Blend2D | raden | 状態 |
 |---------|-------|------|
-| `translate(BLPoint)` / `translate(BLRange, BLPoint)` | なし | 未実装: パス自体の座標変換 |
-| `transform(BLMatrix2D)` / `transform(BLRange, BLMatrix2D)` | なし | 未実装 |
+| `translate(BLPoint)` / `translate(BLRange, BLPoint)` | `translate(dx, dy)` | 差異あり: raden は範囲指定なし、in-place で全頂点に適用 |
+| `transform(BLMatrix2D)` / `transform(BLRange, BLMatrix2D)` | `transform(&Matrix2D)` | 差異あり: raden は範囲指定なし。コニックの重みは行列適用で不変 |
 | `fit_to(BLRect, flags)` / `fit_to(BLRange, BLRect, flags)` | なし | 未実装 |
 | `set_vertex_at(index, cmd, BLPoint)` | なし | 未実装: 頂点の個別変更 |
 | `remove_range(BLRange)` | なし | 未実装 |
@@ -524,11 +524,10 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
    - Variable Fonts も未対応
    - `BLGlyphBuffer` 相当がなく、raden は 1 文字ずつ処理
 
-7. **Path の高度な操作が未実装**
-   - パス自体の座標変換 (`translate` / `transform`)
-   - パスの結合 (`add_path` / `add_transformed_path`)
-   - バウンディングボックス取得 (`get_bounding_box`)
-   - ヒットテスト (`hit_test`)
+7. **Path の高度な操作が一部未実装**
+   - 実装済み: `translate` / `transform` / `add_path` / `add_path_translated` / `add_path_transformed` / `bounding_box` / `control_box`
+   - `bounding_box` は現在制御点ベース。ベジェ曲線の厳密な bbox は今後対応
+   - 未実装: ヒットテスト (`hit_test`)、範囲指定 (`BLRange`) 版
 
 8. ~~**Context の getter メソッドがない**~~ → **実装済み**
    - `comp_op()` / `fill_rule()` / `fill_color_prgb32()` / `fill_gradient()` / `fill_pattern()` / `stroke_color_prgb32()` / `stroke_width()` / `stroke_miter_limit()` / `stroke_join()` / `stroke_start_cap()` / `stroke_end_cap()` / `stroke_dash_array()` / `stroke_dash_offset()` / `matrix()`（`src/api/context.rs`）

@@ -109,3 +109,110 @@ fn manual_path_construction() {
     assert_eq!(path.points()[1], Point::new(10.0, 0.0));
     assert_eq!(path.points()[2], Point::new(10.0, 10.0));
 }
+
+mod transform_merge_bbox {
+    use raden::{Matrix2D, Path};
+
+    fn make_square() -> Path {
+        let mut p = Path::new();
+        p.move_to(0.0, 0.0);
+        p.line_to(2.0, 0.0);
+        p.line_to(2.0, 2.0);
+        p.line_to(0.0, 2.0);
+        p.close();
+        p
+    }
+
+    #[test]
+    fn translate_shifts_all_points() {
+        let mut p = make_square();
+        p.translate(3.0, 4.0);
+        let pts = p.points();
+        assert!((pts[0].x - 3.0).abs() < 1e-12 && (pts[0].y - 4.0).abs() < 1e-12);
+        assert!((pts[2].x - 5.0).abs() < 1e-12 && (pts[2].y - 6.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn transform_identity_is_noop() {
+        let mut p = make_square();
+        let original: Vec<_> = p.points().to_vec();
+        p.transform(&Matrix2D::IDENTITY);
+        let after: Vec<_> = p.points().to_vec();
+        assert_eq!(original, after);
+    }
+
+    #[test]
+    fn transform_scale_doubles_extent() {
+        let mut p = make_square();
+        p.transform(&Matrix2D::scaling(2.0, 2.0));
+        let bbox = p.bounding_box().unwrap();
+        assert!((bbox.w - 4.0).abs() < 1e-12);
+        assert!((bbox.h - 4.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn add_path_appends_commands() {
+        let a = make_square();
+        let b = make_square();
+        let mut combined = Path::new();
+        combined.add_path(&a);
+        combined.add_path(&b);
+        assert_eq!(combined.cmds().len(), a.cmds().len() + b.cmds().len());
+    }
+
+    #[test]
+    fn add_path_translated_shifts_appended_points() {
+        let a = make_square();
+        let mut combined = Path::new();
+        combined.add_path_translated(&a, 10.0, 20.0);
+        let pts = combined.points();
+        assert!((pts[0].x - 10.0).abs() < 1e-12 && (pts[0].y - 20.0).abs() < 1e-12);
+        assert!((pts[2].x - 12.0).abs() < 1e-12 && (pts[2].y - 22.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn add_path_transformed_applies_matrix() {
+        let a = make_square();
+        let mut combined = Path::new();
+        combined.add_path_transformed(&a, &Matrix2D::translation(5.0, 6.0));
+        let pts = combined.points();
+        assert!((pts[0].x - 5.0).abs() < 1e-12 && (pts[0].y - 6.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn empty_path_has_no_bbox() {
+        let p = Path::new();
+        assert!(p.bounding_box().is_none());
+    }
+
+    #[test]
+    fn bounding_box_matches_extent() {
+        let p = make_square();
+        let bbox = p.bounding_box().unwrap();
+        assert!((bbox.x - 0.0).abs() < 1e-12);
+        assert!((bbox.y - 0.0).abs() < 1e-12);
+        assert!((bbox.w - 2.0).abs() < 1e-12);
+        assert!((bbox.h - 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn translate_then_bounding_box_shifts() {
+        let mut p = make_square();
+        p.translate(3.0, 4.0);
+        let bbox = p.bounding_box().unwrap();
+        assert!((bbox.x - 3.0).abs() < 1e-12);
+        assert!((bbox.y - 4.0).abs() < 1e-12);
+    }
+
+    /// コニックの重みは行列適用で不変。
+    #[test]
+    fn transform_preserves_conic_weights() {
+        let mut p = Path::new();
+        p.move_to(0.0, 0.0);
+        p.conic_to(1.0, 0.0, 1.0, 1.0, 0.7);
+        let weights_before: Vec<_> = p.conic_weights().to_vec();
+        p.transform(&Matrix2D::scaling(3.0, 3.0));
+        let weights_after: Vec<_> = p.conic_weights().to_vec();
+        assert_eq!(weights_before, weights_after);
+    }
+}

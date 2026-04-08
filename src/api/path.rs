@@ -219,6 +219,236 @@ impl Path {
         self.close();
     }
 
+    /// すべての頂点を `(dx, dy)` だけ平行移動する。`cur` / `sub_start` も同期する。
+    pub fn translate(&mut self, dx: f64, dy: f64) {
+        for p in self.points.iter_mut() {
+            p.x += dx;
+            p.y += dy;
+        }
+        self.cur.x += dx;
+        self.cur.y += dy;
+        self.sub_start.x += dx;
+        self.sub_start.y += dy;
+        if let Some(ref mut p) = self.last_quad_cp {
+            p.x += dx;
+            p.y += dy;
+        }
+        if let Some(ref mut p) = self.last_cubic_cp2 {
+            p.x += dx;
+            p.y += dy;
+        }
+    }
+
+    /// すべての頂点に行列を適用する。コニックの重み (`w`) はアフィン変換で不変なので変更しない。
+    pub fn transform(&mut self, m: &crate::api::matrix::Matrix2D) {
+        for p in self.points.iter_mut() {
+            let (x, y) = m.map_point(p.x, p.y);
+            p.x = x;
+            p.y = y;
+        }
+        let (cx, cy) = m.map_point(self.cur.x, self.cur.y);
+        self.cur = Point::new(cx, cy);
+        let (sx, sy) = m.map_point(self.sub_start.x, self.sub_start.y);
+        self.sub_start = Point::new(sx, sy);
+        if let Some(p) = self.last_quad_cp {
+            let (x, y) = m.map_point(p.x, p.y);
+            self.last_quad_cp = Some(Point::new(x, y));
+        }
+        if let Some(p) = self.last_cubic_cp2 {
+            let (x, y) = m.map_point(p.x, p.y);
+            self.last_cubic_cp2 = Some(Point::new(x, y));
+        }
+    }
+
+    /// 別の Path のコマンド/頂点列をこの Path に追加する。
+    ///
+    /// 内部状態 (`cur` / `sub_start` / `last_*`) も自然に更新されるよう、コマンドを 1 つずつ
+    /// replay する実装を取る。
+    pub fn add_path(&mut self, other: &Path) {
+        if other.is_empty() {
+            return;
+        }
+        let mut pi = 0usize;
+        let mut wi = 0usize;
+        for &cmd in &other.cmds {
+            match cmd {
+                PathCmd::MoveTo => {
+                    let p = other.points[pi];
+                    pi += 1;
+                    self.move_to(p.x, p.y);
+                }
+                PathCmd::LineTo => {
+                    let p = other.points[pi];
+                    pi += 1;
+                    self.line_to(p.x, p.y);
+                }
+                PathCmd::QuadTo => {
+                    let cp = other.points[pi];
+                    let end = other.points[pi + 1];
+                    pi += 2;
+                    self.quad_to(cp.x, cp.y, end.x, end.y);
+                }
+                PathCmd::ConicTo => {
+                    let cp = other.points[pi];
+                    let end = other.points[pi + 1];
+                    pi += 2;
+                    let w = other.conic_weights[wi];
+                    wi += 1;
+                    self.conic_to(cp.x, cp.y, end.x, end.y, w);
+                }
+                PathCmd::CubicTo => {
+                    let cp1 = other.points[pi];
+                    let cp2 = other.points[pi + 1];
+                    let end = other.points[pi + 2];
+                    pi += 3;
+                    self.cubic_to(cp1.x, cp1.y, cp2.x, cp2.y, end.x, end.y);
+                }
+                PathCmd::Close => {
+                    self.close();
+                }
+            }
+        }
+    }
+
+    /// 別の Path を平行移動して追加する。
+    pub fn add_path_translated(&mut self, other: &Path, dx: f64, dy: f64) {
+        let mut pi = 0usize;
+        let mut wi = 0usize;
+        for &cmd in &other.cmds {
+            match cmd {
+                PathCmd::MoveTo => {
+                    let p = other.points[pi];
+                    pi += 1;
+                    self.move_to(p.x + dx, p.y + dy);
+                }
+                PathCmd::LineTo => {
+                    let p = other.points[pi];
+                    pi += 1;
+                    self.line_to(p.x + dx, p.y + dy);
+                }
+                PathCmd::QuadTo => {
+                    let cp = other.points[pi];
+                    let end = other.points[pi + 1];
+                    pi += 2;
+                    self.quad_to(cp.x + dx, cp.y + dy, end.x + dx, end.y + dy);
+                }
+                PathCmd::ConicTo => {
+                    let cp = other.points[pi];
+                    let end = other.points[pi + 1];
+                    pi += 2;
+                    let w = other.conic_weights[wi];
+                    wi += 1;
+                    self.conic_to(cp.x + dx, cp.y + dy, end.x + dx, end.y + dy, w);
+                }
+                PathCmd::CubicTo => {
+                    let cp1 = other.points[pi];
+                    let cp2 = other.points[pi + 1];
+                    let end = other.points[pi + 2];
+                    pi += 3;
+                    self.cubic_to(
+                        cp1.x + dx,
+                        cp1.y + dy,
+                        cp2.x + dx,
+                        cp2.y + dy,
+                        end.x + dx,
+                        end.y + dy,
+                    );
+                }
+                PathCmd::Close => {
+                    self.close();
+                }
+            }
+        }
+    }
+
+    /// 別の Path に行列を適用して追加する。
+    pub fn add_path_transformed(&mut self, other: &Path, m: &crate::api::matrix::Matrix2D) {
+        let mut pi = 0usize;
+        let mut wi = 0usize;
+        let map = |p: Point| {
+            let (x, y) = m.map_point(p.x, p.y);
+            (x, y)
+        };
+        for &cmd in &other.cmds {
+            match cmd {
+                PathCmd::MoveTo => {
+                    let (x, y) = map(other.points[pi]);
+                    pi += 1;
+                    self.move_to(x, y);
+                }
+                PathCmd::LineTo => {
+                    let (x, y) = map(other.points[pi]);
+                    pi += 1;
+                    self.line_to(x, y);
+                }
+                PathCmd::QuadTo => {
+                    let (cx, cy) = map(other.points[pi]);
+                    let (ex, ey) = map(other.points[pi + 1]);
+                    pi += 2;
+                    self.quad_to(cx, cy, ex, ey);
+                }
+                PathCmd::ConicTo => {
+                    let (cx, cy) = map(other.points[pi]);
+                    let (ex, ey) = map(other.points[pi + 1]);
+                    pi += 2;
+                    let w = other.conic_weights[wi];
+                    wi += 1;
+                    self.conic_to(cx, cy, ex, ey, w);
+                }
+                PathCmd::CubicTo => {
+                    let (c1x, c1y) = map(other.points[pi]);
+                    let (c2x, c2y) = map(other.points[pi + 1]);
+                    let (ex, ey) = map(other.points[pi + 2]);
+                    pi += 3;
+                    self.cubic_to(c1x, c1y, c2x, c2y, ex, ey);
+                }
+                PathCmd::Close => {
+                    self.close();
+                }
+            }
+        }
+    }
+
+    /// すべての頂点を含む軸並行バウンディングボックスを返す。空パスは `None`。
+    ///
+    /// 注意: これは制御点を含む `control_box` に相当する (Blend2D の `get_control_box`)。
+    /// 厳密な曲線のバウンディングボックスではないため、ベジェ制御点が外側に出る場合は
+    /// 実際のラスタライズ範囲よりも広めの矩形が返る。
+    pub fn control_box(&self) -> Option<crate::api::context::Rect> {
+        if self.points.is_empty() {
+            return None;
+        }
+        let mut min_x = f64::INFINITY;
+        let mut min_y = f64::INFINITY;
+        let mut max_x = f64::NEG_INFINITY;
+        let mut max_y = f64::NEG_INFINITY;
+        for p in &self.points {
+            if p.x < min_x {
+                min_x = p.x;
+            }
+            if p.y < min_y {
+                min_y = p.y;
+            }
+            if p.x > max_x {
+                max_x = p.x;
+            }
+            if p.y > max_y {
+                max_y = p.y;
+            }
+        }
+        Some(crate::api::context::Rect::new(
+            min_x,
+            min_y,
+            max_x - min_x,
+            max_y - min_y,
+        ))
+    }
+
+    /// `control_box` のエイリアス (Blend2D の `get_bounding_box` 相当だが、現状は制御点ベース)。
+    pub fn bounding_box(&self) -> Option<crate::api::context::Rect> {
+        self.control_box()
+    }
+
     /// 三角形をパスに追加する (3 頂点を結んで閉じる)。
     pub fn add_triangle(&mut self, x0: f64, y0: f64, x1: f64, y1: f64, x2: f64, y2: f64) {
         self.move_to(x0, y0);
