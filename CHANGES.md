@@ -11,6 +11,8 @@
 
 ## develop
 
+- [ADD] `Triangle` 型と `Context::fill_triangle` / `stroke_triangle`、`fill_polygon` / `stroke_polygon` / `stroke_polyline`、`Path::add_triangle` / `add_polygon` / `add_polyline` を追加する
+  - @voluntas
 - [ADD] `RoundRect` 型と `Context::fill_round_rect` / `stroke_round_rect`、`Path::add_round_rect` を追加する
   - @voluntas
 - [ADD] `Ellipse` 型と `Context::fill_ellipse` / `stroke_ellipse`、`Path::add_ellipse` を追加する

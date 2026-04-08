@@ -266,3 +266,65 @@ mod round_rect {
         assert_eq!(p.cmds().len(), 5);
     }
 }
+
+mod triangle_polygon {
+    use raden::{
+        CompOp, Context, Image, Path, PipelineRuntime, PixelFormat, Point, Rgba32, Triangle,
+    };
+
+    fn read(img: &Image, x: u32, y: u32) -> u8 {
+        let off = y as usize * img.stride() + x as usize * 4;
+        img.data()[off + 3]
+    }
+
+    /// fill_triangle と fill_polygon([3 点]) のラスタ結果が一致する。
+    #[test]
+    fn triangle_matches_3_point_polygon() {
+        let make_image = || Image::new(32, 32, PixelFormat::Prgb32);
+
+        let mut img1 = make_image();
+        let mut runtime1 = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img1, &mut runtime1);
+        ctx.set_comp_op(CompOp::SrcCopy);
+        ctx.set_fill_style(Rgba32::new(0xFF, 0xFF, 0xFF, 0xFF));
+        ctx.fill_triangle(&Triangle::new(4.0, 4.0, 28.0, 8.0, 16.0, 28.0));
+        ctx.end();
+
+        let mut img2 = make_image();
+        let mut runtime2 = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img2, &mut runtime2);
+        ctx.set_comp_op(CompOp::SrcCopy);
+        ctx.set_fill_style(Rgba32::new(0xFF, 0xFF, 0xFF, 0xFF));
+        ctx.fill_polygon(&[
+            Point::new(4.0, 4.0),
+            Point::new(28.0, 8.0),
+            Point::new(16.0, 28.0),
+        ]);
+        ctx.end();
+
+        assert_eq!(img1.data(), img2.data());
+    }
+
+    /// add_polygon の点が 3 点未満なら何も追加されない。
+    #[test]
+    fn add_polygon_too_few_points_noop() {
+        let mut p = Path::new();
+        p.add_polygon(&[Point::new(0.0, 0.0), Point::new(1.0, 1.0)]);
+        assert_eq!(p.cmds().len(), 0);
+    }
+
+    /// 三角形の重心は塗りつぶされる。
+    #[test]
+    fn triangle_centroid_filled() {
+        let mut img = Image::new(32, 32, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+        ctx.set_comp_op(CompOp::SrcCopy);
+        ctx.set_fill_style(Rgba32::new(0xFF, 0xFF, 0xFF, 0xFF));
+        ctx.fill_triangle(&Triangle::new(4.0, 4.0, 28.0, 8.0, 16.0, 28.0));
+        ctx.end();
+
+        // 重心 ((4+28+16)/3, (4+8+28)/3) ≈ (16, 13)
+        assert_eq!(read(&img, 16, 13), 0xFF);
+    }
+}

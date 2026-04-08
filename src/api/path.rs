@@ -219,6 +219,37 @@ impl Path {
         self.close();
     }
 
+    /// 三角形をパスに追加する (3 頂点を結んで閉じる)。
+    pub fn add_triangle(&mut self, x0: f64, y0: f64, x1: f64, y1: f64, x2: f64, y2: f64) {
+        self.move_to(x0, y0);
+        self.line_to(x1, y1);
+        self.line_to(x2, y2);
+        self.close();
+    }
+
+    /// 点列を結んで閉じたポリゴンを追加する。点が 2 つ以下の場合は何もしない。
+    pub fn add_polygon(&mut self, points: &[Point]) {
+        if points.len() < 3 {
+            return;
+        }
+        self.move_to(points[0].x, points[0].y);
+        for p in &points[1..] {
+            self.line_to(p.x, p.y);
+        }
+        self.close();
+    }
+
+    /// 点列を結んだ折れ線 (polyline) を追加する。閉じない。
+    pub fn add_polyline(&mut self, points: &[Point]) {
+        if points.len() < 2 {
+            return;
+        }
+        self.move_to(points[0].x, points[0].y);
+        for p in &points[1..] {
+            self.line_to(p.x, p.y);
+        }
+    }
+
     /// 角丸矩形をパスに追加する。
     ///
     /// 角の半径 `rx` / `ry` は幅・高さの半分でクランプされる (Blend2D と同様)。

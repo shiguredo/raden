@@ -2,7 +2,7 @@ use crate::api::blit;
 use crate::api::gradient::Gradient;
 use crate::api::image::Image;
 use crate::api::matrix::Matrix2D;
-use crate::api::path::Path;
+use crate::api::path::{Path, Point};
 use crate::api::pattern::Pattern;
 use crate::api::stroke::{StrokeOptions, StrokeWorkspace, stroke_to_fill_with_workspace};
 use crate::api::style::{CompOp, FillRule, Rgba32, StrokeCap, StrokeJoin};
@@ -71,6 +71,30 @@ pub struct RoundRect {
 impl RoundRect {
     pub fn new(x: f64, y: f64, w: f64, h: f64, rx: f64, ry: f64) -> Self {
         Self { x, y, w, h, rx, ry }
+    }
+}
+
+/// 三角形。
+#[derive(Debug, Clone, Copy)]
+pub struct Triangle {
+    pub x0: f64,
+    pub y0: f64,
+    pub x1: f64,
+    pub y1: f64,
+    pub x2: f64,
+    pub y2: f64,
+}
+
+impl Triangle {
+    pub fn new(x0: f64, y0: f64, x1: f64, y1: f64, x2: f64, y2: f64) -> Self {
+        Self {
+            x0,
+            y0,
+            x1,
+            y1,
+            x2,
+            y2,
+        }
     }
 }
 
@@ -887,6 +911,27 @@ impl<'a> Context<'a> {
         self.tmp_path = path;
     }
 
+    /// 三角形を塗りつぶす。
+    pub fn fill_triangle(&mut self, t: &Triangle) {
+        let mut path = std::mem::take(&mut self.tmp_path);
+        path.clear();
+        path.add_triangle(t.x0, t.y0, t.x1, t.y1, t.x2, t.y2);
+        self.fill_path(&path);
+        self.tmp_path = path;
+    }
+
+    /// ポリゴンを塗りつぶす。点列が 3 点未満なら何もしない。
+    pub fn fill_polygon(&mut self, points: &[Point]) {
+        if points.len() < 3 {
+            return;
+        }
+        let mut path = std::mem::take(&mut self.tmp_path);
+        path.clear();
+        path.add_polygon(points);
+        self.fill_path(&path);
+        self.tmp_path = path;
+    }
+
     /// 角丸矩形を塗りつぶす。
     pub fn fill_round_rect(&mut self, rr: &RoundRect) {
         if rr.w <= 0.0 || rr.h <= 0.0 {
@@ -1041,6 +1086,39 @@ impl<'a> Context<'a> {
         let mut path = std::mem::take(&mut self.tmp_path);
         path.clear();
         path.add_circle(circle.cx, circle.cy, circle.r);
+        self.stroke_path(&path);
+        self.tmp_path = path;
+    }
+
+    /// 三角形をストローク描画する。
+    pub fn stroke_triangle(&mut self, t: &Triangle) {
+        let mut path = std::mem::take(&mut self.tmp_path);
+        path.clear();
+        path.add_triangle(t.x0, t.y0, t.x1, t.y1, t.x2, t.y2);
+        self.stroke_path(&path);
+        self.tmp_path = path;
+    }
+
+    /// ポリゴンをストローク描画する (閉じる)。
+    pub fn stroke_polygon(&mut self, points: &[Point]) {
+        if points.len() < 3 {
+            return;
+        }
+        let mut path = std::mem::take(&mut self.tmp_path);
+        path.clear();
+        path.add_polygon(points);
+        self.stroke_path(&path);
+        self.tmp_path = path;
+    }
+
+    /// 折れ線 (polyline) をストローク描画する。閉じない。
+    pub fn stroke_polyline(&mut self, points: &[Point]) {
+        if points.len() < 2 {
+            return;
+        }
+        let mut path = std::mem::take(&mut self.tmp_path);
+        path.clear();
+        path.add_polyline(points);
         self.stroke_path(&path);
         self.tmp_path = path;
     }

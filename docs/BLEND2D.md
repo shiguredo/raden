@@ -129,10 +129,10 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `fill_round_rect(BLRoundRect/...)` | `fill_round_rect(&RoundRect)` | 一致 |
 | `fill_circle(BLCircle/cx,cy,r)` | `fill_circle(&Circle)` | 一致 |
 | `fill_ellipse(BLEllipse/cx,cy,rx,ry)` | `fill_ellipse(&Ellipse)` | 一致 |
-| `fill_triangle(BLTriangle/x0,y0,x1,y1,x2,y2)` | なし | 未実装: 三角形 |
+| `fill_triangle(BLTriangle/x0,y0,x1,y1,x2,y2)` | `fill_triangle(&Triangle)` | 一致 |
 | `fill_pie(BLArc/cx,cy,r,start,sweep/cx,cy,rx,ry,start,sweep)` | `fill_pie(&Arc)` | 一致 |
 | `fill_chord(BLArc/...)` | なし | 未実装: 弦で閉じた円弧 |
-| `fill_polygon(BLPoint*/BLPointI*/BLArrayView)` | なし | 未実装: ポリゴン |
+| `fill_polygon(BLPoint*/BLPointI*/BLArrayView)` | `fill_polygon(&[Point])` | 一致 (3 点未満は no-op) |
 | `fill_rect_array(BLRect*/BLRectI*/BLArrayView)` | なし | 未実装: 複数矩形一括塗りつぶし |
 | `fill_box_array(BLBox*/BLBoxI*/BLArrayView)` | なし | 未実装: 複数ボックス一括塗りつぶし |
 | `fill_path(BLPath)` / `fill_path(BLPoint, BLPath)` | `fill_path(&Path)` | 差異あり: raden は origin 付きオーバーロードがない |
@@ -157,13 +157,13 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `stroke_round_rect(BLRoundRect/...)` | `stroke_round_rect(&RoundRect)` | 一致 |
 | `stroke_circle(BLCircle/cx,cy,r)` | `stroke_circle(&Circle)` | 一致 |
 | `stroke_ellipse(BLEllipse/cx,cy,rx,ry)` | `stroke_ellipse(&Ellipse)` | 一致 |
-| `stroke_triangle(BLTriangle/...)` | なし | 未実装 |
+| `stroke_triangle(BLTriangle/...)` | `stroke_triangle(&Triangle)` | 一致 |
 | `stroke_pie(BLArc/...)` | なし | 未実装 |
 | `stroke_chord(BLArc/...)` | なし | 未実装 |
 | `stroke_arc(BLArc/...)` | なし | 未実装 |
 | `stroke_line(BLLine/BLPoint,BLPoint/x0,y0,x1,y1)` | `stroke_line(&Line)` | 一致 |
-| `stroke_polygon(BLPoint*/BLPointI*/BLArrayView)` | なし | 未実装 |
-| `stroke_polyline(BLPoint*/BLPointI*/BLArrayView)` | なし | 未実装 |
+| `stroke_polygon(BLPoint*/BLPointI*/BLArrayView)` | `stroke_polygon(&[Point])` | 一致 (閉じる) |
+| `stroke_polyline(BLPoint*/BLPointI*/BLArrayView)` | `stroke_polyline(&[Point])` | 一致 (閉じない) |
 | `stroke_rect_array(...)` / `stroke_box_array(...)` | なし | 未実装 |
 | `stroke_path(BLPath)` / `stroke_path(BLPoint, BLPath)` | `stroke_path(&Path)` | 差異あり: raden は origin 付きオーバーロードがない |
 | `stroke_geometry(BLGeometryType, data)` | なし | 未実装 |
@@ -244,12 +244,12 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `add_round_rect(BLRoundRect, direction)` | `add_round_rect(x, y, w, h, rx, ry)` | 差異あり: raden は direction パラメータがない。半径は幅/高さの半分でクランプ |
 | `add_circle(BLCircle, direction)` | `add_circle(cx, cy, r)` | 差異あり: raden は direction パラメータがない |
 | `add_ellipse(BLEllipse, direction)` | `add_ellipse(cx, cy, rx, ry)` | 差異あり: raden は direction パラメータがない |
-| `add_triangle(BLTriangle, direction)` | なし | 未実装 |
+| `add_triangle(BLTriangle, direction)` | `add_triangle(x0, y0, x1, y1, x2, y2)` | 差異あり: raden は direction パラメータがない |
 | `add_arc(BLArc, direction)` | なし | 未実装: 円弧 |
 | `add_pie(BLArc, direction)` | `add_pie(cx, cy, rx, ry, start, sweep)` | 差異あり: raden は direction パラメータがない |
 | `add_chord(BLArc, direction)` | なし | 未実装: 弦で閉じた円弧 |
-| `add_polygon(BLPoint*/BLPointI*, direction)` | なし | 未実装 |
-| `add_polyline(BLPoint*/BLPointI*, direction)` | なし | 未実装 |
+| `add_polygon(BLPoint*/BLPointI*, direction)` | `add_polygon(&[Point])` | 差異あり: raden は direction パラメータがない |
+| `add_polyline(BLPoint*/BLPointI*, direction)` | `add_polyline(&[Point])` | 差異あり: raden は direction パラメータがない |
 | `add_rect_array(BLRect*/BLRectI*, direction)` | なし | 未実装 |
 | `add_box_array(BLBox*/BLBoxI*, direction)` | なし | 未実装 |
 
@@ -278,11 +278,11 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `BLEllipse` (double cx, cy, rx, ry) | `Ellipse` (f64 cx, cy, rx, ry) | 一致 |
 | `BLRoundRect` (double x, y, w, h, rx, ry) | `RoundRect` (f64 x, y, w, h, rx, ry) | 一致 |
 | `BLLine` (double x0, y0, x1, y1) | `Line` (f64 x0, y0, x1, y1) | 一致 |
-| `BLTriangle` (double x0, y0, x1, y1, x2, y2) | なし | 未実装: 三角形 (Path で代替可能) |
+| `BLTriangle` (double x0, y0, x1, y1, x2, y2) | `Triangle` (f64 x0, y0, x1, y1, x2, y2) | 一致 |
 | `BLArc` (double cx, cy, rx, ry, start, sweep) | `Arc` (f64 cx, cy, rx, ry, start, sweep) | 一致 |
 | `BLChord` | なし | 未実装: 円弧の弦で閉じた図形 (Blend2D では BLArc を共用) |
 | `BLMatrix2D` | `Matrix2D` | 一致: 2D アフィン変換行列。Blend2D と同一レイアウト |
-| Polyline / Polygon | なし | 未実装: 複数点列 (Path で代替可能) |
+| Polyline / Polygon | `&[Point]` (`add_polygon` / `add_polyline`) | 差異あり: 専用型ではなくスライスを直接渡す |
 
 ## Matrix2D API
 
