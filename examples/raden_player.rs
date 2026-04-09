@@ -370,9 +370,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     gen_thread.join().unwrap();
 
     player.close();
-    unsafe {
-        raw_player::quit();
-    }
+    // SAFETY: quit はメインスレッドから一度だけ呼び出す
+    unsafe { raw_player::quit() };
 
     // 最終統計
     let total_time = start_time.elapsed().as_secs_f64();
