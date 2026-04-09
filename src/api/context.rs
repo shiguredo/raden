@@ -26,6 +26,9 @@ fn alpha_to_u8(a: f64) -> u8 {
 
 /// premultiplied ARGB32 ピクセルを 0..=255 のアルファでスケールする。
 /// すべてのチャネル (a/r/g/b) を等しく乗算するため premultiplied 不変条件は保たれる。
+///
+/// 除数は厳密に 255 ではなく `(v + 0x80 + (v >> 8)) >> 8` の近似式を使う。これは /255 を
+/// 最大 1 LSB の誤差で近似しつつ、分岐なし・SIMD 化可能な形になる。
 fn scale_prgb32(prgb32: u32, alpha: u8) -> u32 {
     if alpha == 0xFF {
         return prgb32;
@@ -34,12 +37,88 @@ fn scale_prgb32(prgb32: u32, alpha: u8) -> u32 {
         return 0;
     }
     let a = alpha as u32;
-    let scale_chan = |c: u32| (c * a + 127) / 255;
+    let scale_chan = |c: u32| {
+        let v = c * a + 0x80;
+        (v + (v >> 8)) >> 8
+    };
     let aa = scale_chan((prgb32 >> 24) & 0xFF);
     let r = scale_chan((prgb32 >> 16) & 0xFF);
     let g = scale_chan((prgb32 >> 8) & 0xFF);
     let b = scale_chan(prgb32 & 0xFF);
     (aa << 24) | (r << 16) | (g << 8) | b
+}
+
+/// `span` の各 premultiplied ARGB32 ピクセルに `alpha` を乗算する。
+///
+/// 内部ループを自動ベクトル化しやすい形に整え、alpha == 0 / 255 はホットループの外で早期
+/// return する。aarch64 の場合は NEON で 8 ピクセルずつ処理する手書き版を使う。
+#[inline]
+fn scale_span_prgb32(span: &mut [u32], alpha: u8) {
+    if alpha == 0xFF || span.is_empty() {
+        return;
+    }
+    if alpha == 0 {
+        span.fill(0);
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        scale_span_prgb32_neon(span, alpha);
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        scale_span_prgb32_scalar(span, alpha);
+    }
+}
+
+#[allow(dead_code)]
+#[inline]
+fn scale_span_prgb32_scalar(span: &mut [u32], alpha: u8) {
+    for px in span.iter_mut() {
+        *px = scale_prgb32(*px, alpha);
+    }
+}
+
+/// aarch64 NEON 実装: 一度に 4 ピクセル (16 u8 チャネル) を乗算する。
+///
+/// 近似式 `(v + 0x80 + (v >> 8)) >> 8` を u16 レーンで適用する。残りはスカラで処理する。
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn scale_span_prgb32_neon(span: &mut [u32], alpha: u8) {
+    use std::arch::aarch64::*;
+
+    let a_u8 = vdup_n_u8(alpha);
+    let c80 = vdupq_n_u16(0x80);
+
+    let ptr = span.as_mut_ptr() as *mut u8;
+    let len = span.len();
+    let mut i = 0usize;
+    while i + 4 <= len {
+        unsafe {
+            let p = ptr.add(i * 4);
+            // 4 ピクセル = 16 u8 を読み込む
+            let v = vld1q_u8(p);
+            let lo = vget_low_u8(v);
+            let hi = vget_high_u8(v);
+            // u8 × u8 → u16 (乗算で 16bit に拡張)
+            let lo16 = vmull_u8(lo, a_u8);
+            let hi16 = vmull_u8(hi, a_u8);
+            // (v + 0x80 + (v >> 8)) >> 8
+            let lo16 = vaddq_u16(lo16, c80);
+            let lo16 = vaddq_u16(lo16, vshrq_n_u16(lo16, 8));
+            let lo_out = vshrn_n_u16(lo16, 8);
+            let hi16 = vaddq_u16(hi16, c80);
+            let hi16 = vaddq_u16(hi16, vshrq_n_u16(hi16, 8));
+            let hi_out = vshrn_n_u16(hi16, 8);
+            let out = vcombine_u8(lo_out, hi_out);
+            vst1q_u8(p, out);
+        }
+        i += 4;
+    }
+    // 残りピクセルはスカラで処理する
+    for px in &mut span[i..] {
+        *px = scale_prgb32(*px, alpha);
+    }
 }
 
 /// 浮動小数点の矩形。(x, y) は左上、(w, h) はサイズ。
@@ -873,11 +952,7 @@ impl<'a> Context<'a> {
                 |y, x_start, coverage| {
                     span_buf.resize(coverage.len(), 0);
                     pattern.fetch_span(x_start, y, &mut span_buf);
-                    if eff_alpha != 0xFF {
-                        for px in span_buf.iter_mut() {
-                            *px = scale_prgb32(*px, eff_alpha);
-                        }
-                    }
+                    scale_span_prgb32(&mut span_buf, eff_alpha);
 
                     let offset = y as usize * stride + x_start as usize * bpp;
                     let dst_row = unsafe { base.add(offset) };
@@ -940,11 +1015,7 @@ impl<'a> Context<'a> {
                 |y, x_start, coverage| {
                     span_buf.resize(coverage.len(), 0);
                     gradient.fetch_span_linear_fixed(x_start, y, &mut span_buf);
-                    if eff_alpha != 0xFF {
-                        for px in span_buf.iter_mut() {
-                            *px = scale_prgb32(*px, eff_alpha);
-                        }
-                    }
+                    scale_span_prgb32(&mut span_buf, eff_alpha);
 
                     let offset = y as usize * stride + x_start as usize * bpp;
                     let dst_row = unsafe { base.add(offset) };

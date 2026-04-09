@@ -11,6 +11,8 @@
 
 ## develop
 
+- [UPDATE] `fill_alpha` / `stroke_alpha` != 1 のときのグラデーション/パターン span スケーリングを aarch64 NEON で 4 ピクセル並列に実行する。1920x1080 の Linear alpha fill_rect で 6.82ms → 4.15ms (-39%)、Radial alpha fill_rect で 8.47ms → 5.87ms (-31%)
+  - @voluntas
 - [ADD] `Path` に `translate` / `transform` / `add_path` / `add_path_translated` / `add_path_transformed` / `bounding_box` / `control_box` を追加する
   - @voluntas
 - [ADD] Context に `global_alpha` / `fill_alpha` / `stroke_alpha` の getter/setter を追加し、単色・グラデーション・パターンの fill / stroke 経路で実効アルファ (global * fill|stroke) を適用する。`blit_image_*` は未対応

@@ -122,6 +122,52 @@ fn bench_fill_gradient(c: &mut Criterion) {
         });
     }
 
+    // --- Linear Gradient with fill_alpha = 0.5 (span path フォールバック) ---
+    for &(w, h) in &sizes {
+        let mut gradient = Gradient::new_linear(0.0, 0.0, w as f64, h as f64);
+        gradient.add_stop(0.0, Rgba32::rgb(255, 0, 0));
+        gradient.add_stop(0.5, Rgba32::rgb(0, 255, 0));
+        gradient.add_stop(1.0, Rgba32::rgb(0, 0, 255));
+
+        group.bench_function(
+            BenchmarkId::new("Linear/Alpha05", format!("{w}x{h}")),
+            |b| {
+                b.iter(|| {
+                    let mut ctx = Context::new(&mut image, &mut runtime);
+                    ctx.set_comp_op(CompOp::SrcOver);
+                    ctx.set_fill_alpha(0.5);
+                    ctx.set_fill_style_gradient(&gradient);
+                    ctx.fill_rect(&Rect::new(0.0, 0.0, w as f64, h as f64));
+                    ctx.end();
+                });
+            },
+        );
+    }
+
+    // --- Radial Gradient with fill_alpha = 0.5 (JIT row パスをスキップ) ---
+    for &(w, h) in &sizes {
+        let cx = w as f64 / 2.0;
+        let cy = h as f64 / 2.0;
+        let r = cx.min(cy);
+        let mut gradient = Gradient::new_radial(cx, cy, cx, cy, 0.0, r);
+        gradient.add_stop(0.0, Rgba32::rgb(255, 255, 0));
+        gradient.add_stop(1.0, Rgba32::rgb(0, 0, 128));
+
+        group.bench_function(
+            BenchmarkId::new("Radial/Alpha05", format!("{w}x{h}")),
+            |b| {
+                b.iter(|| {
+                    let mut ctx = Context::new(&mut image, &mut runtime);
+                    ctx.set_comp_op(CompOp::SrcOver);
+                    ctx.set_fill_alpha(0.5);
+                    ctx.set_fill_style_gradient(&gradient);
+                    ctx.fill_rect(&Rect::new(0.0, 0.0, w as f64, h as f64));
+                    ctx.end();
+                });
+            },
+        );
+    }
+
     group.finish();
 }
 
