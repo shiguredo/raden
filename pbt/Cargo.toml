@@ -1,0 +1,12 @@
+[package]
+name = "pbt"
+version = "2026.0.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+
+[dependencies]
+raden = { path = ".." }
+
+[dev-dependencies]
+proptest = "1"

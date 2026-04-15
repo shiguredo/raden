@@ -1,0 +1,101 @@
+use raden::{Font, FontData, FontFace};
+
+/// macOS の Arial.ttf を使ったフォント読み込みテスト。
+/// CI 環境では Arial がない可能性があるため、ファイルが存在しない場合はスキップする。
+fn load_arial() -> Option<(FontData, FontFace)> {
+    let path = "/System/Library/Fonts/Supplemental/Arial.ttf";
+    if !std::path::Path::new(path).exists() {
+        return None;
+    }
+    let data = FontData::from_file(path).ok()?;
+    let face = FontFace::from_data(&data, 0).ok()?;
+    Some((data, face))
+}
+
+#[test]
+fn font_face_metrics() {
+    let Some((_data, face)) = load_arial() else {
+        return;
+    };
+    // Arial の units_per_em は 2048
+    assert_eq!(face.units_per_em(), 2048);
+    // ascent > 0, descent < 0
+    assert!(face.ascent() > 0);
+    assert!(face.descent() < 0);
+}
+
+#[test]
+fn font_char_to_glyph() {
+    let Some((_data, face)) = load_arial() else {
+        return;
+    };
+    let font = Font::from_face(&face, 48.0);
+
+    // 'A' (U+0041) はグリフ ID != 0 でなければならない
+    let glyph_a = font.map_char_to_glyph('A');
+    assert_ne!(glyph_a, 0, "'A' should map to a non-zero glyph ID");
+
+    // スペース (U+0020) もグリフ ID != 0
+    let glyph_space = font.map_char_to_glyph(' ');
+    assert_ne!(glyph_space, 0, "space should map to a non-zero glyph ID");
+
+    // advance width > 0
+    assert!(font.glyph_advance(glyph_a) > 0.0);
+    assert!(font.glyph_advance(glyph_space) > 0.0);
+}
+
+#[test]
+fn font_glyph_outline_to_path() {
+    let Some((_data, face)) = load_arial() else {
+        return;
+    };
+    let font = Font::from_face(&face, 48.0);
+
+    let glyph_a = font.map_char_to_glyph('A');
+    let mut path = raden::Path::new();
+    font.append_glyph_outline(glyph_a, 0.0, 48.0, &mut path)
+        .expect("glyph outline should succeed");
+
+    // 'A' はアウトラインを持つ (空でない)
+    assert!(!path.is_empty(), "'A' glyph should produce non-empty path");
+    assert!(path.points().len() > 4, "'A' should have multiple points");
+}
+
+#[test]
+fn font_space_glyph_has_no_outline() {
+    let Some((_data, face)) = load_arial() else {
+        return;
+    };
+    let font = Font::from_face(&face, 48.0);
+
+    let glyph_space = font.map_char_to_glyph(' ');
+    let mut path = raden::Path::new();
+    font.append_glyph_outline(glyph_space, 0.0, 48.0, &mut path)
+        .expect("space glyph outline should succeed");
+
+    // スペースはアウトラインなし
+    assert!(path.is_empty(), "space glyph should have empty path");
+}
+
+#[test]
+fn font_fill_text_integration() {
+    let Some((_data, face)) = load_arial() else {
+        return;
+    };
+    let font = Font::from_face(&face, 32.0);
+
+    let mut img = raden::Image::new(256, 64, raden::PixelFormat::Prgb32);
+    let mut runtime = raden::PipelineRuntime::new();
+    let mut ctx = raden::Context::new(&mut img, &mut runtime);
+
+    ctx.set_fill_style(raden::Rgba32::rgb(255, 255, 255));
+    ctx.fill_text(10.0, 48.0, &font, "Hello");
+    ctx.end();
+
+    // 描画後、少なくとも一部のピクセルが非ゼロであること
+    let has_nonzero = img
+        .data()
+        .chunks(4)
+        .any(|px| px[0] != 0 || px[1] != 0 || px[2] != 0);
+    assert!(has_nonzero, "fill_text should produce visible pixels");
+}

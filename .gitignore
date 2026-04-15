@@ -1,0 +1,13 @@
+target/
+
+# Agents
+.claude/
+.codex/
+.cursor/
+
+# macOS
+.DS_Store
+
+# Image
+*.png
+*.bmp
