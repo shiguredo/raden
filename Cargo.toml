@@ -1,6 +1,6 @@
 [package]
 name = "raden"
-version = "2026.1.0"
+version = "2026.1.1"
 edition = "2024"
 rust-version = "1.91"
 description = "2D Vector Graphics Library"
@@ -8,7 +8,7 @@ readme = "README.md"
 homepage = "https://github.com/shiguredo/raden"
 repository = "https://github.com/shiguredo/raden"
 license = "Apache-2.0"
-include = ["/benches/**", "Cargo.toml", "README.md"]
+include = ["/LICENSE", "/README.md", "/src/**"]
 autobenches = false
 
 [workspace]
