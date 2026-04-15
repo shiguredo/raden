@@ -8,7 +8,7 @@ readme = "README.md"
 homepage = "https://github.com/shiguredo/raden"
 repository = "https://github.com/shiguredo/raden"
 license = "Apache-2.0"
-include = ["/benches/**", "Cargo.toml", "README.md"]
+include = ["/LICENSE", "/README.md", "/src/**"]
 autobenches = false
 
 [workspace]
