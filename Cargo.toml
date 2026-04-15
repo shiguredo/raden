@@ -1,17 +1,62 @@
 [package]
 name = "raden"
-version = "2026.1.0-canary.6"
+version = "2026.1.0"
 edition = "2024"
 rust-version = "1.91"
-license = "Apache-2.0"
 description = "2D Vector Graphics Library"
+readme = "README.md"
 homepage = "https://github.com/shiguredo/raden"
 repository = "https://github.com/shiguredo/raden"
-readme = "README.md"
+license = "Apache-2.0"
+include = ["/benches/**", "Cargo.toml", "README.md"]
 autobenches = false
+
+[workspace]
+members = ["pbt"]
+exclude = ["fuzz"]
 
 [lib]
 bench = false
+
+[[bench]]
+harness = false
+name = "fill_rect"
+
+[[bench]]
+harness = false
+name = "fill_rect_smooth"
+
+[[bench]]
+harness = false
+name = "fill_rect_rotated"
+
+[[bench]]
+harness = false
+name = "fill_polygon"
+
+[[bench]]
+harness = false
+name = "fill_shape"
+
+[[bench]]
+harness = false
+name = "stroke_rect"
+
+[[bench]]
+harness = false
+name = "stroke_polygon"
+
+[[bench]]
+harness = false
+name = "stroke_shape"
+
+[[bench]]
+harness = false
+name = "fill_gradient"
+
+[[bench]]
+harness = false
+name = "matrix"
 
 [dependencies]
 cranelift-codegen = "=0.130.1"
@@ -21,53 +66,9 @@ cranelift-module = "=0.130.1"
 cranelift-native = "=0.130.1"
 
 [dev-dependencies]
-# サンプルの SDL3 ウィンドウ表示
-raw_player = "2026.1.0"
 # ベンチマークフレームワーク
 criterion = { version = "0.8", features = ["html_reports"] }
 # ベンチマークの乱数生成
 rand = { version = "0.10", features = ["chacha"] }
-
-[[bench]]
-name = "fill_rect"
-harness = false
-
-[[bench]]
-name = "fill_rect_smooth"
-harness = false
-
-[[bench]]
-name = "fill_rect_rotated"
-harness = false
-
-[[bench]]
-name = "fill_polygon"
-harness = false
-
-[[bench]]
-name = "fill_shape"
-harness = false
-
-[[bench]]
-name = "stroke_rect"
-harness = false
-
-[[bench]]
-name = "stroke_polygon"
-harness = false
-
-[[bench]]
-name = "stroke_shape"
-harness = false
-
-[[bench]]
-name = "fill_gradient"
-harness = false
-
-[[bench]]
-name = "matrix"
-harness = false
-
-[workspace]
-members = ["pbt"]
-exclude = ["fuzz"]
+# サンプルの SDL3 ウィンドウ表示
+raw_player = "2026.1.0"

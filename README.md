@@ -33,39 +33,84 @@ GPU を利用できない CI 環境において、CPU のみを利用して 1080
 
 ## 現在の機能
 
-### 描画 API (`Context`)
+### フィル描画 API (`Context`)
 
 | メソッド | 説明 |
 |---|---|
-| `fill_all()` | 画像全体をフィルスタイルで塗りつぶす |
+| `fill_all()` | 画像全体を現在のフィルスタイルで塗りつぶす |
 | `fill_rect(&Rect)` | 矩形塗りつぶし。クリッピング付き |
 | `fill_path(&Path)` | 任意パス塗りつぶし。ベジェ平坦化 + ラスタライズ |
 | `fill_circle(&Circle)` | 円塗りつぶし。内部で Path に変換 |
+| `fill_ellipse(&Ellipse)` | 楕円塗りつぶし |
+| `fill_round_rect(&RoundRect)` | 角丸矩形塗りつぶし |
+| `fill_triangle(&Triangle)` | 三角形塗りつぶし |
+| `fill_polygon(&[Point])` | ポリゴン塗りつぶし (3 点未満は no-op) |
 | `fill_pie(&Arc)` | 扇形塗りつぶし。中心から弧を経由して中心に戻る閉じた領域 |
 | `fill_text(x, y, &Font, text)` | テキスト描画。全グリフを 1 つの Path に結合して `fill_path` で一括描画 |
+
+### ストローク描画 API (`Context`)
+
+| メソッド | 説明 |
+|---|---|
 | `stroke_line(&Line)` | 線分のストローク描画 |
 | `stroke_rect(&Rect)` | 矩形のストローク描画 |
 | `stroke_circle(&Circle)` | 円のストローク描画 |
+| `stroke_ellipse(&Ellipse)` | 楕円のストローク描画 |
+| `stroke_round_rect(&RoundRect)` | 角丸矩形のストローク描画 |
+| `stroke_triangle(&Triangle)` | 三角形のストローク描画 |
+| `stroke_polygon(&[Point])` | ポリゴンのストローク描画 (閉じる) |
+| `stroke_polyline(&[Point])` | 折れ線のストローク描画 (閉じない) |
 | `stroke_path(&Path)` | 任意パスのストローク描画。stroke-to-fill 変換後 `fill_path` で描画 |
-| `translate(tx, ty)` | 平行移動を現在の変換行列に適用する |
-| `scale(sx, sy)` | スケーリングを現在の変換行列に適用する |
-| `rotate(angle)` | 回転を現在の変換行列に適用する (ラジアン) |
-| `apply_matrix(&Matrix2D)` | 任意の変換行列を現在の変換行列に適用する |
-| `reset_matrix()` | 変換行列を単位行列にリセットする |
-| `user_to_meta()` | ユーザー変換をメタ変換に統合する |
-| `save()` | 現在の描画状態をスタックに保存する |
-| `restore()` | スタックから描画状態を復元する |
 
-### フィルスタイル
+### クリア / Blit (`Context`)
+
+| メソッド | 説明 |
+|---|---|
+| `clear_all()` | 現在のクリップ領域全体をピクセル値 0 で書き換える (`comp_op` は変更しない) |
+| `clear_rect(&Rect)` | 指定矩形をピクセル値 0 で書き換える (デバイス座標、変換行列は無視) |
+| `blit_image_at(x, y, &Image)` | ソース画像全体を (x, y) に Nearest 転送する |
+| `blit_image_rect(&Rect, &Image, Option<Rect>)` | ソース矩形を宛先矩形に Nearest 転送する。`CompOp` は `SrcOver` / `SrcCopy` のみ |
+
+### 変換 (`Context`)
+
+後乗算 (`matrix = matrix * T`) は Blend2D / SVG / Canvas 互換で、前乗算 (`post_*`) も提供する。
+
+| メソッド | 説明 |
+|---|---|
+| `translate(tx, ty)` | 平行移動を後乗算で適用する |
+| `scale(sx, sy)` | スケーリングを後乗算で適用する |
+| `rotate(angle)` | 回転 (ラジアン) を後乗算で適用する |
+| `rotate_around(angle, cx, cy)` | 指定中心まわりの回転を後乗算で適用する |
+| `skew(kx, ky)` | せん断 (係数は接線) を後乗算で適用する |
+| `apply_matrix(&Matrix2D)` | 任意行列を後乗算で適用する |
+| `post_translate(tx, ty)` / `post_scale(sx, sy)` / `post_rotate(angle)` / `post_skew(kx, ky)` / `post_transform(&Matrix2D)` | 前乗算版 |
+| `reset_matrix()` | 変換行列を単位行列にリセットする |
+| `user_to_meta()` | Blend2D 互換のエントリポイント。raden はメタ行列を別保持しないため、ユーザ行列を単位にリセットするのみ |
+
+### 状態管理 / クリッピング (`Context`)
+
+| メソッド | 説明 |
+|---|---|
+| `save()` | 現在の描画状態 (スタイル、変換、クリップ等) をスタックに保存する |
+| `restore()` | スタックから描画状態を復元する |
+| `clip_to_rect(&Rect)` | クリップ領域を指定矩形との積集合に縮小する (拡大不可) |
+| `restore_clipping()` | クリップ領域を画像境界 (メタクリップ) に戻す |
+
+### フィルスタイル / ストロークスタイル
 
 | 種類 | 説明 |
 |---|---|
-| `set_fill_style(Rgba32)` | 単色塗りつぶし |
-| `set_fill_style_gradient(&Gradient)` | グラデーション塗りつぶし (Linear / Radial / Conic) |
-| `set_fill_style_pattern(&Pattern)` | 画像パターン塗りつぶし |
-| `set_stroke_style(Rgba32)` | ストローク色を設定する |
+| `set_fill_style(Rgba32)` | フィルを単色に設定する |
+| `set_fill_style_gradient(&Gradient)` | フィルをグラデーションに設定する (Linear / Radial / Conic) |
+| `set_fill_style_pattern(&Pattern)` | フィルを画像パターンに設定する |
+| `set_stroke_style(Rgba32)` | ストロークを単色に設定する |
+| `set_stroke_style_gradient(&Gradient)` | ストロークをグラデーションに設定する |
+| `set_stroke_style_pattern(&Pattern)` | ストロークを画像パターンに設定する |
 | `set_fill_rule(FillRule)` | 塗りつぶし規則を設定する (`NonZero` / `EvenOdd`) |
 | `set_comp_op(CompOp)` | 合成モードを設定する |
+| `set_global_alpha(a)` | 全描画に乗算されるグローバルアルファを設定する (値域 [0, 1]) |
+| `set_fill_alpha(a)` | フィル個別アルファを設定する (値域 [0, 1]) |
+| `set_stroke_alpha(a)` | ストローク個別アルファを設定する (値域 [0, 1]) |
 
 ### グラデーション (`Gradient`)
 
@@ -77,13 +122,13 @@ GPU を利用できない CI 環境において、CPU のみを利用して 1080
 
 範囲外処理モード (`ExtendMode`): `Pad` (デフォルト) / `Repeat` / `Reflect`
 
-`fill_rect` でグラデーションを塗る場合、現状は `set_comp_op` の値を参照せず、内部で SrcOver 相当の融合のみを行う。
+`fill_rect` でグラデーションを塗る場合、現状は `set_comp_op` の値を参照せず、内部で SrcOver 相当の融合のみを行う。`fill_path` 経由では `CompOp` をパイプラインで適用する。
 
 ### パターン (`Pattern`)
 
-画像をタイルとして繰り返す塗りつぶし。`set_origin` / `set_transform`、`PatternFilter`（Nearest / Bilinear）、`ExtendMode`（`Pad` / `Repeat` / `Reflect`）に対応する。
+画像をタイルとして繰り返す塗りつぶし。`set_origin` / `set_transform`、`PatternFilter` (`Nearest` / `Bilinear`)、`ExtendMode` (`Pad` / `Repeat` / `Reflect`) に対応する。
 
-`fill_rect` でパターンを塗るときは `set_comp_op` が `SrcOver` または `SrcCopy` のみ対応（それ以外はパニック）。`fill_path` では `CompOp` をパイプライン経由で適用できる。
+`fill_rect` でパターンを塗るときは `set_comp_op` が `SrcOver` または `SrcCopy` のみ対応 (それ以外はパニック)。`fill_path` では `CompOp` をパイプライン経由で適用できる。
 
 ### 合成モード (`CompOp`)
 
@@ -163,16 +208,32 @@ Porter-Duff 基本セット + Clear + Plus の 13 種類と、ブレンドモー
 | `move_to(x, y)` | サブパス開始点を設定する |
 | `line_to(x, y)` | 直線を追加する |
 | `quad_to(cpx, cpy, x, y)` | 2 次ベジェ曲線を追加する |
+| `smooth_quad_to(x, y)` | 直前 `quad_to` の制御点を反射したスムーズ 2 次ベジェを追加する |
 | `cubic_to(cp1x, cp1y, cp2x, cp2y, x, y)` | 3 次ベジェ曲線を追加する |
+| `smooth_cubic_to(cp2x, cp2y, x, y)` | 直前 `cubic_to` の第 2 制御点を反射したスムーズ 3 次ベジェを追加する |
+| `conic_to(cx, cy, ex, ey, w)` | 有理 2 次ベジェ (円錐曲線、重み `w > 0`) を追加する |
+| `arc_to(cx, cy, rx, ry, start, sweep, force_move_to)` | 楕円弧を現在点から cubic Bezier 近似で接続する |
 | `close()` | サブパスを閉じる |
 | `add_circle(cx, cy, r)` | 円を 4 本の cubic Bezier で近似して追加する (Blend2D 互換の KAPPA 定数使用) |
+| `add_ellipse(cx, cy, rx, ry)` | 楕円を追加する |
+| `add_round_rect(x, y, w, h, rx, ry)` | 角丸矩形を追加する (`rx` / `ry` は幅・高さの半分でクランプ) |
+| `add_triangle(x0, y0, x1, y1, x2, y2)` | 三角形を追加する |
+| `add_polygon(&[Point])` | 点列を結んで閉じたポリゴンを追加する |
+| `add_polyline(&[Point])` | 点列を結んだ折れ線 (閉じない) を追加する |
+| `add_pie(cx, cy, rx, ry, start, sweep)` | 扇形を追加する |
+| `translate(dx, dy)` | 全頂点を平行移動する |
+| `transform(&Matrix2D)` | 全頂点に行列を適用する |
+| `add_path(&Path)` / `add_path_translated(&Path, dx, dy)` / `add_path_transformed(&Path, &Matrix2D)` | 別パスを取り込む |
+| `control_box()` / `bounding_box()` | 制御点ベースのバウンディングボックスを返す (曲線の厳密な bbox は未対応) |
 
 ### その他
 
 | 機能 | 説明 |
 |---|---|
-| `Image` | 画像バッファ管理。`new(width, height, format)` で生成、`data()` でバイト列参照 |
-| `PixelFormat::Prgb32` | 32-bit premultiplied ARGB。現在唯一のフォーマット |
+| `Image` | 画像バッファ管理。`new(width, height, format)` で生成、`data()` / `data_mut()` でバイト列参照 |
+| `PixelFormat::Prgb32` | 32-bit premultiplied ARGB (デフォルト想定) |
+| `PixelFormat::Xrgb32` | 32-bit XRGB。アルファは未使用で、合成は `Prgb32` と同一 JIT を共有する |
+| `PixelFormat::A8` | 8-bit アルファ専用。合成はスカラ実装で `fill_rect` のみ対応 (`fill_path`、グラデ/パターン塗りは未対応) |
 | BMP 出力 | `Image::write_to_file()` で BI_BITFIELDS 形式の top-down BMP を出力する |
 
 ## JIT パイプライン
@@ -255,6 +316,14 @@ cargo run --example tiger --release
 cargo run --example raden_player --release
 ```
 
+### blit_clip_pattern_paths
+
+`blit_image_rect`、`clip_to_rect`、パターン塗り (`PatternFilter` と `set_transform`)、拡張パス命令 (`smooth_quad_to` / `smooth_cubic_to` / `conic_to` / `arc_to`)、行列 (`rotate_around` / `skew`) を組み合わせたサンプル。
+
+```bash
+cargo run --example blit_clip_pattern_paths --release
+```
+
 ## 最小コード例
 
 ```rust
@@ -283,10 +352,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## 制約
 
-- `PixelFormat` は現在 `Prgb32` のみ
-- グラデーション/パターンはフィルスタイルのみ対応 (ストロークスタイルは単色のみ)
-- フォントは TrueType アウトライン (glyf/loca) のみ対応 (CFF, OpenType Layout 未対応)
+- `PixelFormat::A8` は単色 `fill_rect` とスカラ合成 (SrcOver / SrcCopy / Clear) のみ対応。`fill_path`・グラデーション塗り・パターン塗りは未対応
+- フォントは TrueType アウトライン (glyf/loca) のみ対応 (CFF、OpenType Layout、カーニング、シェーピングは未対応)
 - クリッピングは矩形のみ対応 (パスクリッピングは未対応)
+- `blit_image_*` は Nearest 補間、`CompOp` は `SrcOver` / `SrcCopy` のみ対応
 
 ## ライセンス
 
