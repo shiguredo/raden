@@ -59,11 +59,11 @@ harness = false
 name = "matrix"
 
 [dependencies]
-cranelift-codegen = "=0.130.1"
-cranelift-frontend = "=0.130.1"
-cranelift-jit = "=0.130.1"
-cranelift-module = "=0.130.1"
-cranelift-native = "=0.130.1"
+cranelift-codegen = "~0.130"
+cranelift-frontend = "~0.130"
+cranelift-jit = "~0.130"
+cranelift-module = "~0.130"
+cranelift-native = "~0.130"
 
 [dev-dependencies]
 # ベンチマークフレームワーク
@@ -71,4 +71,4 @@ criterion = { version = "0.8", features = ["html_reports"] }
 # ベンチマークの乱数生成
 rand = { version = "0.10", features = ["chacha"] }
 # サンプルの SDL3 ウィンドウ表示
-raw_player = "2026.1.0"
+raw_player = "2026.1"
