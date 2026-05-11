@@ -7,7 +7,7 @@
 
 ## 目的
 
-`fill_text` と同様に、テキストの輪郭線（ストローク）を描画できるようにする。タイトル表示やエフェクト用途で必要になる。
+`fill_text` と同様に、テキストの輪郭線（ストローク）を描画できるようにする。タイトル表示やエフェクト用途 で必要になる。
 
 ## 現状
 
@@ -32,18 +32,19 @@
 1. `Context` に以下のメソッドを追加する
    - `stroke_text(x: f64, y: f64, font: &Font, text: &str)`
 2. 実装方針
-   - `fill_text` と同様に文字列を走査し、`map_char_to_glyph` → `append_glyph_outline` で Path を構築
+   - `fill_text` (`src/api/context.rs:1144-1169`) と同様に文字列を走査し、`map_char_to_glyph` → `append_glyph_outline` で Path を構築
    - 構築した Path を `stroke_path` で描画
-   - `stroke_options`（幅・キャップ・ジョイン等）は `Context` の現在の設定を参照する
+   - `stroke_options`（幅・キャップ・ジョイン等）は `Context` の現在の設定を参照する (`stroke_width`, `stroke_start_cap`, `stroke_end_cap`, `stroke_join`, `stroke_miter_limit`, `stroke_dash_array`, `stroke_dash_offset`)
 3. 文字列処理は 0022 で追加した `glyph_run_for_text` を使用する
-4. 単体テストで「stroke_text 後の画像に輪郭線が描画されることを目視確認するテスト」を追加する（ピクセルベースの厳密検証は困難なため、アウトライン一致で検証）
-5. 0022 の `glyph_run_for_text` が未実装の場合は、0022 を先に実装する
+4. `fill_text` の `glyph_run_for_text` を使ったリファクタリングは 0022 で実施する (0024 では `stroke_text` の追加のみ)
+5. 単体テストでは `stroke_text` 実行後に輪郭線が描画されることを検証する
+   - `stroke_text` の結果が、手動で `append_glyph_outline` + `stroke_path` を組み合わせた場合と一致することを検証する
+6. `fill_text` と同様に `append_glyph_outline` のエラーは無視してスキップする
 
 ## 変更対象ファイル
 
 - `src/api/context.rs`: `stroke_text()` の追加、`fill_text` を `glyph_run_for_text` を使う形に変更
 - `tests/test_context.rs`: 単体テストの追加
-- `docs/BLEND2D.md`: Context API セクションの更新
 
 ## 依存
 
@@ -51,4 +52,4 @@
 
 ## 関連
 
-- `docs/BLEND2D.md` Context API セクションの更新
+- 0001-enhance-font-module-maturity.md

@@ -7,7 +7,7 @@
 
 ## 目的
 
-個別グリフの境界ボックスを取得できるようにし、グリフクリッピングや精密なテキストレイアウトを可能にする。
+個別グリフの境界ボックスを取得できるようにし、グリフクリッピングや精密なテキストレイアウト を可能にする。
 
 ## 現状
 
@@ -38,9 +38,11 @@
 4. 実装方針
    - glyf テーブルからグリフエントリを読み、ヘッダの xMin/yMin/xMax/yMax を返す
    - Simple Glyph と Compound Glyph の両方でヘッダに bbox が記録されている
-   - `append_glyph_outline` と glyf_start/glyf_end の計算部分を共通ヘルパーに抽出する
+   - `glyph::append_glyph_outline` 内の `glyf_start` / `glyf_end` 計算とグリフデータスライス取得 (`glyph.rs:94-114`) を共通ヘルパーに抽出する
+   - `glyph_bounds` はヘッダの bbox 読み取りのみで完結し、アウトラインパースは不要
+   - Compound Glyph の bbox が `(0,0,0,0)` の場合は `None` を返す（有効な bbox と区別できないため）
    - 存在しない glyph_id の場合は `None`
-   - 空グリフ（`glyf_start == glyf_end`）の場合は `Some(GlyphBounds{0,0,0,0})`
+   - 空グリフ（`glyf_start == glyf_end`）の場合は `None` を返す（アウトラインが存在しないグリフに bbox は存在しない）
 5. PBT で「glyph_bounds の範囲内に append_glyph_outline の結果が収まる」ことを検証する
    - `Path::control_box()` を使って bbox を取得し、包含関係を検証
    - `control_box()` は制御点ベースの近似であるため、厳密な包含ではなく「glyph_bounds が control_box を含むか、または近似的に一致する」を検証
@@ -51,14 +53,14 @@
 - `src/font/glyph.rs`: グリフヘッダから bbox を読むヘルパーの追加
 - `tests/test_font.rs`: 単体テストの追加
 - `pbt/tests/prop_font/main.rs`: PBT の追加
-- `docs/BLEND2D.md`: Font API セクションの更新
 
 ## エッジケース
 
 - `glyph_id` が `num_glyphs` 以上: `None`
-- 空グリフ: `Some(GlyphBounds{0,0,0,0})`
+- 空グリフ (`glyf_start == glyf_end`): `None`
+- Compound Glyph の bbox が `(0,0,0,0)`: `None`
 - `size=0`: スケール済み値はすべて 0.0
 
 ## 関連
 
-- `docs/BLEND2D.md` Font API セクションの更新
+- 0001-enhance-font-module-maturity.md
