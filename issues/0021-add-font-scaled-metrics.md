@@ -57,6 +57,12 @@
 - OS/2 テーブル不在時: `cap_height()` / `x_height()` は `None`
 - OS/2 version < 2: `cap_height` / `x_height` フィールドが存在しないため `None`
 - OS/2 フィールド値が 0 の場合: `None` とする（0 は「未定義」の意味で使われることがある）
+- `ParsedTables` にフィールドを追加しても `Clone` コストは無視できる（`i16` 2 つ分）
+
+## 注意事項
+
+- `FontFaceInner` と `FontFace` の構造が重複している（data + tables）。将来的なリファクタリングで統合を検討するが、本 issue では対象外とする
+- `cap_height` / `x_height` が `None` の場合のフォールバック戦略（例: 小文字 'x' の bbox から `x_height` を推定）は本 issue では対象外とする
 
 ## 関連
 

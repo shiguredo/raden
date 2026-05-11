@@ -38,9 +38,12 @@
 4. 実装方針
    - glyf テーブルからグリフエントリを読み、ヘッダの xMin/yMin/xMax/yMax を返す
    - Simple Glyph と Compound Glyph の両方でヘッダに bbox が記録されている
+   - `append_glyph_outline` と glyf_start/glyf_end の計算部分を共通ヘルパーに抽出する
    - 存在しない glyph_id の場合は `None`
    - 空グリフ（`glyf_start == glyf_end`）の場合は `Some(GlyphBounds{0,0,0,0})`
 5. PBT で「glyph_bounds の範囲内に append_glyph_outline の結果が収まる」ことを検証する
+   - `Path::control_box()` を使って bbox を取得し、包含関係を検証
+   - `control_box()` は制御点ベースの近似であるため、厳密な包含ではなく「glyph_bounds が control_box を含むか、または近似的に一致する」を検証
 
 ## 変更対象ファイル
 

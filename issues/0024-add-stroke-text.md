@@ -35,14 +35,19 @@
    - `fill_text` と同様に文字列を走査し、`map_char_to_glyph` → `append_glyph_outline` で Path を構築
    - 構築した Path を `stroke_path` で描画
    - `stroke_options`（幅・キャップ・ジョイン等）は `Context` の現在の設定を参照する
-3. `fill_text` と共通する文字列処理ロジックを抽出し、内部メソッドとして共通化する
+3. 文字列処理は 0022 で追加した `glyph_run_for_text` を使用する
 4. 単体テストで「stroke_text 後の画像に輪郭線が描画されることを目視確認するテスト」を追加する（ピクセルベースの厳密検証は困難なため、アウトライン一致で検証）
+5. 0022 の `glyph_run_for_text` が未実装の場合は、0022 を先に実装する
 
 ## 変更対象ファイル
 
-- `src/api/context.rs`: `stroke_text()` の追加、文字列処理ロジックの共通化
+- `src/api/context.rs`: `stroke_text()` の追加、`fill_text` を `glyph_run_for_text` を使う形に変更
 - `tests/test_context.rs`: 単体テストの追加
 - `docs/BLEND2D.md`: Context API セクションの更新
+
+## 依存
+
+- 0022-add-text-measurement（`glyph_run_for_text` の実装）
 
 ## 関連
 

@@ -19,9 +19,11 @@ OpenType の GSUB/GPOS レイアウト機能を適用し、リガチャ等の高
 
 - `GlyphBuffer` 構造体を定義し、シェーピング結果を保持する
 - GSUB の基本 Lookup Type（Single, Multiple, Ligature, Alternate）をサポート
-- GPOS の基本 Lookup Type（Single Adjustment, Pair Adjustment）をサポート
+- GPOS の基本 Lookup Type（Single Adjustment, Pair Adjustment）をサポート（0025 のカーニングもここで統合）
 - `FontFeatureSettings` 構造体を追加し、features を on/off できるようにする
 - 複雑スクリプト（Arabic, Indic 等）と BiDi は本 issue のスコープ外とする
+- `shape()` の結果は呼び出し側でキャッシュすることを推奨（短い文字列でも毎回 `GlyphBuffer` を割り当てるため）
+- `GlyphBuffer` はヒープ割り当てを避けるため、呼び出し側が `Vec` を渡す API も検討する
 
 ## 完了条件
 
@@ -38,8 +40,9 @@ OpenType の GSUB/GPOS レイアウト機能を適用し、リガチャ等の高
 2. `Font` に `shape(text: &str) -> GlyphBuffer` を追加する
    - cmap で文字→グリフ変換
    - GSUB でグリフ置換（リガチャ等）
-   - GPOS でグリフ位置調整（マーク配置等は後回し）
+   - GPOS でグリフ位置調整（カーニング含む）
 3. `Context` の `fill_text` / `stroke_text` / `measure_text` を `shape` を使う形に変更する
+   - `glyph_run_for_text` を `shape` に置き換える
 4. `FontFeatureSettings` 構造体を追加し、features を on/off できるようにする（最低限 "kern", "liga" 等）
 5. PBT で「shape 後のグリフ数 ≤ shape 前の文字数」等の不変条件を検証する
 
@@ -63,5 +66,6 @@ OpenType の GSUB/GPOS レイアウト機能を適用し、リガチャ等の高
 
 - `docs/BLEND2D.md` Font API セクションの更新
 - テスト: `tests/test_font.rs` / `pbt/tests/prop_font/main.rs`
-- 依存: 0025-add-font-kerning（GPOS の Pair Adjustment と関連）
+- 依存: 0022-add-text-measurement（`glyph_run_for_text` の置き換え）
+- 0025-add-font-kerning は本 issue で統合（GPOS Pair Adjustment として実装）
 - 0001-enhance-font-module-maturity.md でも言及されている課題
