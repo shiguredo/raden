@@ -1,23 +1,33 @@
 # カーニング適用機能を追加する
 
-Created: 2026-05-11
-Model: Kimi K2.6
+- Priority: Medium
+- Created: 2026-05-11
+- Model: Kimi K2.6
+- Branch: feature/add-font-kerning
 
-## 根拠
+## 目的
 
-現状のテキスト描画は各グリフの advance を単純に累積するだけであり、文字間隔の微調整（カーニング）が適用されていない。プロポーショナルフォントではカーニングがないと「AV」「To」等の組み合わせで不自然な隙間が生じ、品質が著しく低下する。Blend2D では `apply_kerning()` で kern テーブルと GPOS の pair adjustment に対応している。
+グリフペア間のカーニングを適用し、プロポーショナルフォントでのテキスト描画品質を向上させる。
 
-## 概要
-
-`kern` テーブル（legacy）および GPOS テーブルの Pair Adjustment（Lookup Type 2）に基づいて、グリフペア間のカーニングを適用する。
-
-## 現状の問題
+## 現状
 
 - `measure_text()` も `fill_text()` もカーニングを考慮していない
-- kern テーブルはパース済みのはずだが、公開 API からアクセスできない
+- kern テーブル（legacy）は未パース
 - GPOS テーブルは未パースまたは未利用
 
-## 対応内容
+## 設計方針
+
+- `kern` テーブル（legacy）を優先し、存在しない場合は GPOS の Pair Adjustment（Lookup Type 2）をフォールバックとして使用する
+- カーニング量はデザインユニットで保持し、`Font` レベルでスケール済み値を返す
+- `fill_text` / `measure_text` / `stroke_text` 内でカーニングを適用する
+
+## 完了条件
+
+- `Font::kern()` / `Font::kern_scaled()` でグリフペアのカーニング量が取得できる
+- `fill_text` / `measure_text` / `stroke_text` でカーニングが適用されている
+- 単体テストと PBT で正しさを検証している
+
+## 解決方法
 
 1. `kern` テーブルのパースを確認し、必要に応じて修正・拡張する
 2. `GPOS` テーブルの Pair Adjustment（Lookup Type 2）をパースする
@@ -29,9 +39,26 @@ Model: Kimi K2.6
 5. PBT で「カーニング適用後の advance ≥ カーニング適用前の advance」等の不変条件を検証する
 6. Fuzzing で不正な kern/GPOS テーブルに対するクラッシュ耐性を検証する
 
+## 変更対象ファイル
+
+- `src/font/tables.rs`: kern/GPOS テーブルパースの追加・修正
+- `src/font/mod.rs`: `kern()` / `kern_scaled()` の追加
+- `src/api/context.rs`: `fill_text` / `measure_text` / `stroke_text` へのカーニング適用
+- `tests/test_font.rs`: 単体テストの追加
+- `pbt/tests/prop_font/main.rs`: PBT の追加
+- `fuzz/`: Fuzzing ターゲットの追加
+- `docs/BLEND2D.md`: Font API セクションの更新
+
+## エッジケース
+
+- kern テーブル不在: カーニング量 0.0
+- GPOS テーブル不在: kern テーブルのみを使用
+- 両方不在: カーニング量 0.0
+- `size=0`: スケール済みカーニング量 0.0
+
 ## 関連
 
 - `docs/BLEND2D.md` Font API セクションの更新
-- テスト: `tests/test_font.rs` / `pbt/tests/prop_font.rs` / `fuzz/`
+- テスト: `tests/test_font.rs` / `pbt/tests/prop_font/main.rs` / `fuzz/`
 - 依存: 0022-add-text-measurement（measure_text に反映）
 - 0001-enhance-font-module-maturity.md でも言及されている課題

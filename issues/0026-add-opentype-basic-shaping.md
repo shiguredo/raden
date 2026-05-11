@@ -1,26 +1,39 @@
 # OpenType 基本シェーピング機能を追加する
 
-Created: 2026-05-11
-Model: Kimi K2.6
+- Priority: Medium
+- Created: 2026-05-11
+- Model: Kimi K2.6
+- Branch: feature/add-opentype-basic-shaping
 
-## 根拠
+## 目的
 
-現状のテキスト描画は cmap による文字→グリフ変換と advance の累積のみであり、OpenType の高度なレイアウト機能（GSUB/GPOS）が適用されていない。リガチャ（fi → ﬁ 等）、コンテクスチュアルサブスティテューション、マーク配置等が行われないため、ラテン文字以外の品質が著しく低下する。Blend2D では `shape()` / `apply_gsub()` / `apply_gpos()` を提供している。
+OpenType の GSUB/GPOS レイアウト機能を適用し、リガチャ等の高度なテキスト表現を可能にする。
 
-## 概要
+## 現状
 
-`GSUB` テーブルの基本 Lookup Type（Single, Multiple, Ligature, Alternate）と `GPOS` テーブルの基本 Lookup Type（Single Adjustment, Pair Adjustment）をサポートし、テキスト描画パイプラインに統合する。
-
-## 現状の問題
-
+- テキスト描画は cmap による文字→グリフ変換と advance の累積のみ
 - リガチャが適用されない（例: "fi" が個別の "f" + "i" のまま）
-- アラビア語・ヒンディー語等の複雑スクリプトは未対応（本 issue のスコープ外）
 - `BLGlyphBuffer` 相当の中間バッファがない
 
-## 対応内容
+## 設計方針
+
+- `GlyphBuffer` 構造体を定義し、シェーピング結果を保持する
+- GSUB の基本 Lookup Type（Single, Multiple, Ligature, Alternate）をサポート
+- GPOS の基本 Lookup Type（Single Adjustment, Pair Adjustment）をサポート
+- `FontFeatureSettings` 構造体を追加し、features を on/off できるようにする
+- 複雑スクリプト（Arabic, Indic 等）と BiDi は本 issue のスコープ外とする
+
+## 完了条件
+
+- `Font::shape(text)` でシェーピング結果（`GlyphBuffer`）が取得できる
+- リガチャ（"fi" → "ﬁ" 等）が適用される
+- `fill_text` / `stroke_text` / `measure_text` でシェーピング結果が使用される
+- 単体テストと PBT で正しさを検証している
+
+## 解決方法
 
 1. `GlyphBuffer` 構造体を定義する
-   - 文字列（UCS4 コードポイント列）またはグリフ ID 列を保持
+   - グリフ ID 列を保持
    - 各グリフの `advance` / `offset` を保持
 2. `Font` に `shape(text: &str) -> GlyphBuffer` を追加する
    - cmap で文字→グリフ変換
@@ -29,6 +42,15 @@ Model: Kimi K2.6
 3. `Context` の `fill_text` / `stroke_text` / `measure_text` を `shape` を使う形に変更する
 4. `FontFeatureSettings` 構造体を追加し、features を on/off できるようにする（最低限 "kern", "liga" 等）
 5. PBT で「shape 後のグリフ数 ≤ shape 前の文字数」等の不変条件を検証する
+
+## 変更対象ファイル
+
+- `src/font/tables.rs`: GSUB/GPOS テーブルパースの追加
+- `src/font/mod.rs`: `GlyphBuffer` / `shape()` / `FontFeatureSettings` の追加
+- `src/api/context.rs`: `fill_text` / `stroke_text` / `measure_text` のシェーピング対応
+- `tests/test_font.rs`: 単体テストの追加
+- `pbt/tests/prop_font/main.rs`: PBT の追加
+- `docs/BLEND2D.md`: Font API セクションの更新
 
 ## 非対応（将来の課題）
 
@@ -40,6 +62,6 @@ Model: Kimi K2.6
 ## 関連
 
 - `docs/BLEND2D.md` Font API セクションの更新
-- テスト: `tests/test_font.rs` / `pbt/tests/prop_font.rs`
+- テスト: `tests/test_font.rs` / `pbt/tests/prop_font/main.rs`
 - 依存: 0025-add-font-kerning（GPOS の Pair Adjustment と関連）
 - 0001-enhance-font-module-maturity.md でも言及されている課題

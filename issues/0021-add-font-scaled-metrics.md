@@ -1,35 +1,63 @@
 # Font にスケール済みメトリクス取得を追加する
 
-Created: 2026-05-11
-Model: Kimi K2.6
+- Priority: High
+- Created: 2026-05-11
+- Model: Kimi K2.6
+- Branch: feature/add-font-scaled-metrics
 
-## 概要
+## 目的
 
-現状 `FontFace` は `units_per_em()` / `ascent()` / `descent()` といったデザインメトリクスを提供しているが、`Font`（サイズ指定済みインスタンス）からはスケール済みメトリクスを取得できない。テキスト描画時のベースライン計算や行間制御には `Font` レベルでのスケール済みメトリクスが必須である。
+`Font`（サイズ指定済みインスタンス）からスケール済みメトリクスを取得できるようにし、テキスト描画時の行間計算や精密なレイアウトを可能にする。
 
-## 根拠
+## 現状
 
-`fill_text(x, y, &font, text)` を使ってテキストを描画する際、`y` は通常ベースライン位置を指す。ベースライン位置を正しく計算するには `Font::ascent()` / `Font::descent()` / `Font::line_gap()` といったスケール済み値が必要である。現状は `FontFace::ascent() * font.scale()` のように呼び出し側で計算する必要があり、API の一貫性が欠けている。
+- `FontFace::line_gap()` は実装済みだが、`Font::line_gap()` が未実装
+- `cap_height` / `x_height` は OS/2 テーブル（version 2+ の `sCapHeight` / `sxHeight`）に存在するが、現状 OS/2 テーブルのパースが未実装
+- `cap_height` / `x_height` が存在しないフォント（OS/2 version < 2 やフィールドが 0 の場合）の扱いが未定義
 
-## 現状の問題
+## 設計方針
 
-- `Font::scale()` は公開されているが、呼び出し側が毎回 `face.ascent() * font.scale()` を計算する必要がある
-- `line_gap()` / `cap_height()` / `x_height()` 等が `FontFace` にも `Font` にも未実装
-- テキストの行高を計算する際の情報が不足している
+- OS/2 テーブルを新規パースし、`ParsedTables` に `cap_height` / `x_height` を追加する
+- 存在しないメトリクスは `Option` で表現し、呼び出し側で明示的に処理する
+- スケール済み値はデザイン値に `Font::scale()` を乗じて計算する
 
-## 対応内容
+## 完了条件
+
+- `Font::line_gap()` / `cap_height()` / `x_height()` が利用可能である
+- OS/2 テーブル不在時や version < 2 の場合は `None` を返す
+- 単体テストと PBT で正しさを検証している
+
+## 解決方法
 
 1. `Font` に以下のメソッドを追加する
-   - `ascent() -> f64`
-   - `descent() -> f64`
-   - `line_gap() -> f64`
-   - `cap_height() -> f64`（存在する場合）
-   - `x_height() -> f64`（存在する場合）
-2. これらは `FontFace` のデザインメトリクスに `scale()` を乗じた値を返す
-3. `FontFace` に不足しているメトリクス（`line_gap` / `cap_height` / `x_height` 等）のパースを追加する
-4. PBT で「スケール済み値 ≒ デザイン値 × scale」の関係を検証する
+   - `line_gap() -> f64`（`FontFace::line_gap()` × `scale()`）
+2. OS/2 テーブルをパースし、`ParsedTables` に以下を追加する
+   - `cap_height: Option<i16>`
+   - `x_height: Option<i16>`
+3. `FontFace` / `Font` に以下のメソッドを追加する
+   - `cap_height() -> Option<f64>`（存在しない場合は `None`）
+   - `x_height() -> Option<f64>`（存在しない場合は `None`）
+4. OS/2 テーブルが存在しない場合や version < 2 の場合は `None` を返す
+5. テスト:
+   - 単体テスト: `tests/test_font.rs` で `line_gap()` のスケール検証
+   - PBT: `pbt/tests/prop_font/main.rs` で「スケール済み値 = デザイン値 × scale」の関係を検証
+   - OS/2 テーブルを持つテスト用フォントで `cap_height` / `x_height` の検証
+
+## 変更対象ファイル
+
+- `src/font/tables.rs`: OS/2 テーブルパースの追加
+- `src/font/mod.rs`: `Font::line_gap()` / `cap_height()` / `x_height()` の追加
+- `tests/test_font.rs`: 単体テストの追加
+- `pbt/tests/prop_font/main.rs`: PBT の追加
+- `docs/BLEND2D.md`: Font API セクションの更新
+
+## エッジケース
+
+- `size = 0` の場合 `scale = 0` となり、すべてのスケール済みメトリクスは 0.0 を返す
+- OS/2 テーブル不在時: `cap_height()` / `x_height()` は `None`
+- OS/2 version < 2: `cap_height` / `x_height` フィールドが存在しないため `None`
+- OS/2 フィールド値が 0 の場合: `None` とする（0 は「未定義」の意味で使われることがある）
 
 ## 関連
 
 - `docs/BLEND2D.md` Font API セクションの更新
-- テスト: `tests/test_font.rs` / `pbt/tests/prop_font.rs`
