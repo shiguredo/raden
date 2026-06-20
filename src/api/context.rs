@@ -312,6 +312,9 @@ pub struct Context<'a> {
     clip_box: BoxI,
     state_stack: Vec<ContextState>,
     tmp_path: Path,
+    /// テキスト描画用の一時バッファ。
+    /// `(glyph_id, advance_in_pixels)` のペア列。`glyph_run_for_text` の出力先。
+    tmp_glyph_run: Vec<(u16, f64)>,
     stroke_path_buf: Path,
     stroke_workspace: StrokeWorkspace,
     edge_buf: Vec<(f64, f64, f64, f64)>,
@@ -354,6 +357,7 @@ impl<'a> Context<'a> {
             clip_box: meta_clip_box,
             state_stack: Vec::new(),
             tmp_path: Path::new(),
+            tmp_glyph_run: Vec::new(),
             stroke_path_buf: Path::new(),
             stroke_workspace: StrokeWorkspace::new(),
             edge_buf: Vec::new(),
@@ -1143,22 +1147,20 @@ impl<'a> Context<'a> {
     /// `fill_path` 1 回で一括描画する (Blend2D と同じアプローチ)。
     pub fn fill_text(&mut self, x: f64, y: f64, font: &Font, text: &str) {
         let mut path = std::mem::take(&mut self.tmp_path);
+        let mut run = std::mem::take(&mut self.tmp_glyph_run);
         path.clear();
 
+        font.glyph_run_for_text(text, &mut run);
+
         let mut cursor_x = x;
-        let baseline_y = y;
-
-        for ch in text.chars() {
-            let glyph_id = font.map_char_to_glyph(ch);
-            if glyph_id == 0 {
-                // 未定義グリフはスキップ (スペースは glyph_id != 0 だがアウトラインなし)
-                cursor_x += font.glyph_advance(glyph_id);
-                continue;
+        for &(glyph_id, advance) in run.iter() {
+            // glyph_id == 0 はアウトラインを構築せず advance のみ加算する。
+            // append_glyph_outline のエラーは let _ で黙殺し、外部入力に対する
+            // クラッシュ耐性を優先する (部分欠落を許容)。
+            if glyph_id != 0 {
+                let _ = font.append_glyph_outline(glyph_id, cursor_x, y, &mut path);
             }
-
-            // アウトラインを Path に追加 (エラーは無視してスキップ)
-            let _ = font.append_glyph_outline(glyph_id, cursor_x, baseline_y, &mut path);
-            cursor_x += font.glyph_advance(glyph_id);
+            cursor_x += advance;
         }
 
         if !path.is_empty() {
@@ -1166,6 +1168,7 @@ impl<'a> Context<'a> {
         }
 
         self.tmp_path = path;
+        self.tmp_glyph_run = run;
     }
 
     /// ストローク幅を設定する。

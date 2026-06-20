@@ -325,26 +325,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 0.0
             };
             let stats = player.stats();
-            let avg_poll = if loop_count > 0 {
-                poll_total_us / loop_count
-            } else {
-                0
-            };
-            let avg_recv = if loop_count > 0 {
-                recv_total_us / loop_count
-            } else {
-                0
-            };
-            let avg_enq = if recv_hit > 0 {
-                enqueue_total_us / recv_hit
-            } else {
-                0
-            };
-            let avg_loop = if loop_count > 0 {
-                loop_total_us / loop_count
-            } else {
-                0
-            };
+            let avg_poll = poll_total_us.checked_div(loop_count).unwrap_or(0);
+            let avg_recv = recv_total_us.checked_div(loop_count).unwrap_or(0);
+            let avg_enq = enqueue_total_us.checked_div(recv_hit).unwrap_or(0);
+            let avg_loop = loop_total_us.checked_div(loop_count).unwrap_or(0);
             println!(
                 "Frame {frame_number}: FPS={current_fps:.1}, queue={}, drop={}, repeat={} | \
                  loop={avg_loop}us poll={avg_poll}us recv={avg_recv}us enq={avg_enq}us \

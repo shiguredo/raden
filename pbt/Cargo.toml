@@ -10,3 +10,8 @@ raden = { path = ".." }
 
 [dev-dependencies]
 proptest = "1"
+
+# Cargo は tests 配下のディレクトリモジュール (main.rs) を自動認識しないため明示する。
+[[test]]
+name = "prop_font"
+path = "tests/prop_font/main.rs"

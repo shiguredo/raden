@@ -176,4 +176,53 @@ impl Font {
     pub fn descent(&self) -> f64 {
         self.face.tables.descent as f64 * self.scale
     }
+
+    /// 文字列を内部的なグリフ列に変換する。
+    ///
+    /// `(glyph_id, advance_in_pixels)` のペアを `buf` に push する。
+    /// `advance_in_pixels` はスケール済み (ピクセル単位) かつカーニング非適用の単体値。
+    ///
+    /// `glyph_id == 0` (cmap 未マッピング) でも `glyph_advance` を計算して `buf` に
+    /// push する。呼び出し側が他のグリフ位置を維持できるよう、advance 加算側で
+    /// `glyph_id == 0` を除外させないことを意図している。改行や制御文字も通常文字と
+    /// 同様に扱う (cmap 結果に依存)。複数行レイアウトは扱わない。
+    ///
+    /// バッファのクリアは本関数の冒頭で行うため、呼び出し側でのクリアは不要。
+    pub(crate) fn glyph_run_for_text(&self, text: &str, buf: &mut Vec<(u16, f64)>) {
+        buf.clear();
+        for ch in text.chars() {
+            let glyph_id = self.map_char_to_glyph(ch);
+            let advance = self.glyph_advance(glyph_id);
+            buf.push((glyph_id, advance));
+        }
+    }
+
+    /// 文字列全体のスケール済み水平アドバンス幅を計測する。
+    ///
+    /// 戻り値の `TextMetrics` の `advance` フィールドにピクセル単位の
+    /// 総アドバンスを格納する。カーニングは適用されない (`kern` テーブルは未対応)。
+    ///
+    /// `size == 0` のときは `scale == 0` を経由して全 advance が 0.0 となるため
+    /// 自然に `advance == 0.0` を返す。`size` が NaN や非有限のときは IEEE 754
+    /// 算術の結果がそのまま伝播する (`Font::from_face` は size の検証を行わない)。
+    /// 改行や制御文字も `cmap` ルックアップ + advance 加算で扱う (複数行レイアウトなし)。
+    pub fn measure_text(&self, text: &str) -> TextMetrics {
+        let mut buf: Vec<(u16, f64)> = Vec::new();
+        self.glyph_run_for_text(text, &mut buf);
+        let advance: f64 = buf.iter().map(|&(_glyph_id, advance)| advance).sum();
+        TextMetrics { advance }
+    }
+}
+
+/// 文字列全体のメトリクス (ピクセル単位)。
+///
+/// 現状は `advance` のみを保持する。`#[non_exhaustive]` を付与しているため、
+/// 将来 `bounding_box` 等のフィールドが追加されても外部クレートには非破壊となる。
+/// `advance: f64` は IEEE 754 上 `NaN != NaN` のため、`PartialEq` 比較は NaN を
+/// 含む値で false を返す点に注意。
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
+pub struct TextMetrics {
+    /// 文字列全体の水平アドバンス幅 (ピクセル単位)。
+    pub advance: f64,
 }
