@@ -444,15 +444,15 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `feature_settings()` / `set_feature_settings()` / `reset_feature_settings()` | なし | 未実装: OpenType feature 設定 |
 | `variation_settings()` / `set_variation_settings()` / `reset_variation_settings()` | なし | 未実装: Variable Fonts 設定 |
 | `shape(BLGlyphBuffer&)` | なし | 未実装: OpenType シェーピング |
-| `map_text_to_glyphs(BLGlyphBuffer&)` | `map_char_to_glyph(char)` -> `u16` | 差異あり: Blend2D はバッファ単位、raden は文字単位 |
-| `position_glyphs(BLGlyphBuffer&)` | `glyph_advance(u16)` -> `f64` | 差異あり: Blend2D はバッファ内全グリフを一括配置 |
+| `map_text_to_glyphs(BLGlyphBuffer&)` | `map_char_to_glyph(char)` -> `u16` / `Font::glyph_run_for_text` (`pub(crate)`) | 差異あり: Blend2D はバッファ単位、raden は文字単位の公開 API と `pub(crate)` の内部ヘルパーで対応 |
+| `position_glyphs(BLGlyphBuffer&)` | `glyph_advance(u16)` -> `f64` / `Font::glyph_run_for_text` (`pub(crate)`) | 差異あり: Blend2D はバッファ内全グリフを一括配置、raden は文字単位の公開 API `glyph_advance` と `pub(crate)` の内部ヘルパーで対応 |
 | `apply_kerning(BLGlyphBuffer&)` | なし | 未実装: カーニング適用 |
 | `apply_gsub(BLGlyphBuffer&, BLBitArray&)` / `apply_gpos(...)` | なし | 未実装: 個別 OpenType lookup 適用 |
 | `get_glyph_outlines(...)` | `append_glyph_outline(glyph_id, offset_x, offset_y, &mut Path)` | 一致 |
 | `get_glyph_bounds(...)` | なし | 未実装: グリフ境界ボックスの一括取得 |
 | `get_glyph_advances(...)` | なし | 未実装: グリフ advance 幅の一括取得 |
 | `get_glyph_run_outlines(...)` | なし | 未実装: GlyphRun アウトラインの取得 |
-| `get_text_metrics(BLGlyphBuffer&, BLTextMetrics&)` | なし | 未実装: テキストメトリクスの一括取得 |
+| `get_text_metrics(BLGlyphBuffer&, BLTextMetrics&)` | `Font::measure_text(&str)` -> `TextMetrics` | 差異あり: raden は `&str` 入力で `TextMetrics { advance: f64 }` を返す個別取得 (`#[non_exhaustive]`)。Blend2D の `BLTextMetrics` (`advance: BLPoint`, `leading_bearing` 等の 4 フィールド) には将来段階的に拡張予定 |
 | `BLGlyphBuffer` | なし | 未実装: グリフバッファ。raden は `fill_text` 内で 1 文字ずつ処理 |
 | なし | `Font::scale()` -> `f64` | raden 独自: スケール係数取得 (size / units_per_em) |
 

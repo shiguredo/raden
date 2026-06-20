@@ -3,6 +3,7 @@
 - Priority: High
 - Category: add
 - Created: 2026-05-11
+- Completed: 2026-06-20
 - Model: Kimi K2.6
 - Branch: feature/add-text-measurement
 - Polished: 2026-06-20
@@ -252,3 +253,22 @@ pub fn fill_text(&mut self, x: f64, y: f64, font: &Font, text: &str) {
 - `0001-enhance-font-module-maturity.md` (メタ issue。Blend2D 対応マトリクスで本 issue が担当する L447 / L448 / L455、段階拡張表の `TextMetrics.advance` / `TextMetrics` フィールド / `Font::glyph_run_for_text()` 行、依存関係 (0024 / 0025 / 0026、部分並行可) セクションが本 issue の根拠)
 - 並行可能 (相互の API には依存しないが `pbt/tests/prop_font/main.rs` 初回作成権は先着の 1 issue のみ): `0021-add-font-scaled-metrics.md` (原則担当)、`0023-add-glyph-bounds.md`。0001 メタ issue の並行ブロック規約に従い、0022 が先着の場合は本 issue で `pbt/tests/prop_font/main.rs` 初回作成と `pbt/Cargo.toml` の `[[test]]` エントリ追加を行い、0021 / 0023 はマージ・追記する
 - 依存される: `0024-add-stroke-text.md` (`glyph_run_for_text` を `stroke_text` で使用)、`0025-add-font-kerning.md` (カーニング適用と本 issue「結合性 PBT」の更新)、`0026-add-opentype-basic-shaping.md` (`glyph_run_for_text` を `shape()` で置換、`TextMetrics` フィールド追加)
+
+## 解決方法
+
+- `src/font/mod.rs`:
+  - `pub(crate) fn glyph_run_for_text(&self, text: &str, buf: &mut Vec<(u16, f64)>)` を追加。文字列を 1 文字ずつ `map_char_to_glyph` で glyph_id に変換し、`(glyph_id, glyph_advance(glyph_id))` を `buf` に push する。`glyph_id == 0` も含めて push し、advance 計算ロジックを `fill_text` / `measure_text` で共有する
+  - `pub fn measure_text(&self, text: &str) -> TextMetrics` を追加。内部で `Vec<(u16, f64)>` を 1 つ確保し、`glyph_run_for_text` の総和を `TextMetrics.advance` に格納する
+  - `TextMetrics { advance: f64 }` 構造体 (`#[derive(Debug, Clone, Copy, PartialEq)]` + `#[non_exhaustive]`) を追加
+- `src/lib.rs`: `pub use font::{..., TextMetrics};` を alphabetical 順で追加
+- `src/api/context.rs`:
+  - `Context` 構造体に `tmp_glyph_run: Vec<(u16, f64)>` フィールドを `tmp_path` 直後に追加
+  - `Context::new` で `Vec::new()` 初期化を `tmp_path: Path::new()` 直後に追加
+  - `fill_text` を `glyph_run_for_text` 経由に書き換え。借用衝突回避のため `tmp_path` / `tmp_glyph_run` を `mem::take` で取り出し、末尾で書き戻す既存パターンに揃える
+- `tests/test_font.rs`:
+  - `load_arial()` ヘルパーを `Option<FontFace>` を返す形に統一
+  - 単体テスト 4 件追加: `font_measure_text_empty` / `font_measure_text_single_char` / `font_measure_text_newline_no_panic` / `font_glyph_advance_out_of_range_is_zero`
+- `pbt/tests/prop_font/main.rs` を新規作成。`ascii_printable_string` 共有戦略と `close_enough` 相対誤差判定で 4 PBT (`single_char_advance` / `concatenation` / `size_linearity` / `non_negative`) を実装
+- `pbt/Cargo.toml`: `[[test]] name = "prop_font" path = "tests/prop_font/main.rs"` を追加 (Cargo はディレクトリ配下の `main.rs` を自動認識しないため明示)
+- `docs/BLEND2D.md`: L447 / L448 / L455 の raden 列に新規 API 名を追記
+- `CHANGES.md`: `## develop` の `### misc` 直下に `[ADD] TextMetrics 構造体を追加する` / `[ADD] Font::measure_text を追加する` を追記
