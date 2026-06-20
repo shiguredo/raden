@@ -13,6 +13,10 @@
 
 ### misc
 
+- [ADD] `TextMetrics` 構造体を追加する
+  - @voluntas
+- [ADD] `Font::measure_text` を追加する
+  - @voluntas
 
 ## 2026.1.1
 
