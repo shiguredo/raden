@@ -25,6 +25,27 @@ fn font_face_metrics() {
     assert!(face.descent() < 0);
 }
 
+/// Arial の OS/2 v4 で cap_height / x_height が取得できることを確認する。
+#[test]
+fn font_face_cap_x_height() {
+    let Some(face) = load_arial() else {
+        return;
+    };
+    // Arial は OS/2 v4 で sCapHeight / sxHeight が定義済み。
+    let cap_height = face
+        .cap_height()
+        .expect("Arial は cap_height を提供する必要がある");
+    let x_height = face
+        .x_height()
+        .expect("Arial は x_height を提供する必要がある");
+    assert!(cap_height > 0, "cap_height は正値である必要がある");
+    assert!(x_height > 0, "x_height は正値である必要がある");
+    assert!(
+        x_height <= cap_height,
+        "x_height は cap_height 以下である必要がある"
+    );
+}
+
 #[test]
 fn font_char_to_glyph() {
     let Some(face) = load_arial() else {
@@ -34,11 +55,17 @@ fn font_char_to_glyph() {
 
     // 'A' (U+0041) はグリフ ID != 0 でなければならない
     let glyph_a = font.map_char_to_glyph('A');
-    assert_ne!(glyph_a, 0, "'A' should map to a non-zero glyph ID");
+    assert_ne!(
+        glyph_a, 0,
+        "'A' は 0 以外のグリフ ID にマップされる必要がある"
+    );
 
     // スペース (U+0020) もグリフ ID != 0
     let glyph_space = font.map_char_to_glyph(' ');
-    assert_ne!(glyph_space, 0, "space should map to a non-zero glyph ID");
+    assert_ne!(
+        glyph_space, 0,
+        "スペースは 0 以外のグリフ ID にマップされる必要がある"
+    );
 
     // advance width > 0
     assert!(font.glyph_advance(glyph_a) > 0.0);
@@ -55,11 +82,17 @@ fn font_glyph_outline_to_path() {
     let glyph_a = font.map_char_to_glyph('A');
     let mut path = raden::Path::new();
     font.append_glyph_outline(glyph_a, 0.0, 48.0, &mut path)
-        .expect("glyph outline should succeed");
+        .expect("グリフアウトラインの取得に失敗しない");
 
     // 'A' はアウトラインを持つ (空でない)
-    assert!(!path.is_empty(), "'A' glyph should produce non-empty path");
-    assert!(path.points().len() > 4, "'A' should have multiple points");
+    assert!(
+        !path.is_empty(),
+        "'A' グリフは空でないパスを生成する必要がある"
+    );
+    assert!(
+        path.points().len() > 4,
+        "'A' グリフは複数の点を持つ必要がある"
+    );
 }
 
 #[test]
@@ -72,10 +105,10 @@ fn font_space_glyph_has_no_outline() {
     let glyph_space = font.map_char_to_glyph(' ');
     let mut path = raden::Path::new();
     font.append_glyph_outline(glyph_space, 0.0, 48.0, &mut path)
-        .expect("space glyph outline should succeed");
+        .expect("スペースグリフのアウトライン取得に失敗しない");
 
     // スペースはアウトラインなし
-    assert!(path.is_empty(), "space glyph should have empty path");
+    assert!(path.is_empty(), "スペースグリフは空のパスである必要がある");
 }
 
 #[test]
@@ -144,5 +177,5 @@ fn font_fill_text_integration() {
         .data()
         .chunks(4)
         .any(|px| px[0] != 0 || px[1] != 0 || px[2] != 0);
-    assert!(has_nonzero, "fill_text should produce visible pixels");
+    assert!(has_nonzero, "fill_text は可視ピクセルを生成する必要がある");
 }
