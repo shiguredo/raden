@@ -27,6 +27,12 @@
   - @voluntas
 - [ADD] `Font::x_height` を追加する
   - @voluntas
+- [ADD] `GlyphBounds` 構造体を追加する
+  - @voluntas
+- [ADD] `FontFace::glyph_bounds` を追加する
+  - @voluntas
+- [ADD] `Font::glyph_bounds` を追加する
+  - @voluntas
 
 ## 2026.1.1
 

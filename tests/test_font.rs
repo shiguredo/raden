@@ -117,9 +117,14 @@ fn font_measure_text_empty() {
         return;
     };
     let font = Font::from_face(&face, 48.0);
-    // 空文字列のメトリクスは advance が 0.0 になる境界値ケース。
+    // 空文字列のメトリクスは advance が 0.0、bounding_box が None になる境界値ケース。
+    // bounding_box は PBT で空文字列を確実に生成する手段がないため、本単体テストに集約する。
     let metrics = font.measure_text("");
     assert_eq!(metrics.advance, 0.0);
+    assert!(
+        metrics.bounding_box.is_none(),
+        "空文字列の bounding_box は None である必要がある"
+    );
 }
 
 #[test]
@@ -155,6 +160,49 @@ fn font_glyph_advance_out_of_range_is_zero() {
     // glyph_id が num_glyphs を超えた場合の寛容フォールバック挙動を固定する。
     // 壊れた cmap が範囲外グリフ ID を返したときの保険として機能する。
     assert_eq!(font.glyph_advance(u16::MAX), 0.0);
+}
+
+#[test]
+fn font_glyph_bounds_some() {
+    let Some(face) = load_arial() else {
+        return;
+    };
+    let font = Font::from_face(&face, 48.0);
+
+    // 'A' グリフは Arial で必ずアウトラインを持つため、FontFace と Font の両方で
+    // bbox が Some を返ることを固定する。PBT は単一 ASCII 文字の不変条件 (順序関係や
+    // スケール線形性) を検証するため、ここではフォント実機で Some が返る既知特性の
+    // 存在のみを確認する。
+    let glyph_a = font.map_char_to_glyph('A');
+    assert!(
+        face.glyph_bounds(glyph_a).is_some(),
+        "Arial の 'A' は FontFace::glyph_bounds で Some を返す必要がある"
+    );
+    assert!(
+        font.glyph_bounds(glyph_a).is_some(),
+        "Arial の 'A' は Font::glyph_bounds でも Some を返す必要がある"
+    );
+}
+
+#[test]
+fn font_glyph_bounds_invalid_id() {
+    let Some(face) = load_arial() else {
+        return;
+    };
+    let font = Font::from_face(&face, 48.0);
+
+    // num_glyphs を確実に超える glyph_id を渡したとき、寛容方針で None を返すことを
+    // 固定する (`append_glyph_outline` は Err を返すが、bbox 問い合わせ API は
+    // None を返す意図的差異)。壊れた cmap が範囲外 glyph_id を返したときの保険として機能する。
+    // FontFace 側と Font 側の両方で寛容方針が一致することを確認する。
+    assert!(
+        face.glyph_bounds(u16::MAX).is_none(),
+        "範囲外 glyph_id は FontFace::glyph_bounds で None を返す必要がある"
+    );
+    assert!(
+        font.glyph_bounds(u16::MAX).is_none(),
+        "範囲外 glyph_id は Font::glyph_bounds で None を返す必要がある"
+    );
 }
 
 #[test]
