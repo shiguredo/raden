@@ -3,7 +3,7 @@
 - Priority: Medium
 - Category: add
 - Created: 2026-06-20
-- Model: Kimi K2.6
+- Model: Kimi K2.7 Code
 - Branch: feature/add-cff-cff2-outline-support
 - Polished: 2026-06-20
 

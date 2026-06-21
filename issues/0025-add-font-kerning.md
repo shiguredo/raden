@@ -3,7 +3,7 @@
 - Priority: Medium
 - Category: add
 - Created: 2026-05-11
-- Model: Kimi K2.6
+- Model: Kimi K2.7 Code
 - Branch: feature/add-font-kerning
 - Polished: 2026-06-21
 

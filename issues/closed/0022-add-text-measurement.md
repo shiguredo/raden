@@ -4,7 +4,7 @@
 - Category: add
 - Created: 2026-05-11
 - Completed: 2026-06-20
-- Model: Kimi K2.6
+- Model: Kimi K2.7 Code
 - Branch: feature/add-text-measurement
 - Polished: 2026-06-20
 
