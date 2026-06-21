@@ -6,6 +6,7 @@
 - Model: Kimi K2.7 Code
 - Branch: feature/add-font-scaled-metrics
 - Polished: 2026-06-20
+- Completed: 2026-06-21
 
 ## 目的
 
@@ -252,6 +253,22 @@ PBT で実現可能な不変条件は単体テストに書かない (`shiguredo-
 - `docs/BLEND2D.md` L443 の raden 列に `line_gap() / cap_height() / x_height()` 追記
 
 状態列 (`差異あり: ...`) は本 issue では変更しない。0001 メタ issue の close PR でまとめて整理する。
+
+## 解決方法の補足
+
+- `pbt/tests/prop_font/main.rs` と `pbt/Cargo.toml` の `[[test]]` エントリは 0022 が先着して作成済みだったため、本 issue ではそれらに 0021 用の PBT を追加した形となった。
+- `src/font/tables.rs` 内に `parse_os2` の単体テストを追加し、v0 / v1 / v2+ かつ長さ 88 / 90 / 76 の各分岐を検証した。
+- `tests/test_font.rs` の既存アサートメッセージを日本語に修正した（新規テスト追加に伴う影響範囲）。
+- issue 本文の close 前提にあった「fuzzing 基盤が完了し、OS/2 パーサに対する fuzz target を追加する」は、ユーザー判断で不要となったため未実施。後続 issue で対応する場合がある。
+- OS/2 テーブル 68-77 バイトの扱いは issue 設計通り `FontError::InvalidData` とした。
+
+## issue 化候補
+
+`/review-diff-code` ループで指摘されたが、本 issue の完了条件を超えるため別 issue 化を検討する項目:
+
+- OS/2 テーブル不在 / v0 / v1 / 壊れた OS/2 フォントに対する統合テスト（`parse_all` 経由の `None` / `Err` 検証）
+- OS/2 テーブル 68-77 バイトのフォントを `FontFace::from_data` で読み込めるようにするかどうかの再検討（後方互換影響あり）
+- `Font::line_gap` / `cap_height` / `x_height` の固定サイズ統合テスト（PBT との重複を避けるため慎重に設計）
 
 ## 変更対象ファイル
 

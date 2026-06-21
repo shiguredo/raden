@@ -415,7 +415,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 |---------|-------|------|
 | `BLFontFace::create_from_file(path, flags)` | なし | 未実装: raden は FontData 経由の 2 段階設計 |
 | `BLFontFace::create_from_data(BLFontData, face_index)` | `FontFace::from_data(&FontData, index)` | 一致 |
-| `design_metrics()` | `units_per_em()` / `ascent()` / `descent()` / `line_gap()` | 差異あり: Blend2D は構造体で一括取得、raden は個別メソッド |
+| `design_metrics()` | `units_per_em()` / `ascent()` / `descent()` / `line_gap()` / `cap_height()` / `x_height()` | 差異あり: Blend2D は構造体で一括取得、raden は個別メソッド |
 | `face_type()` / `face_flags()` / `face_index()` / `face_info()` | なし | 未実装 |
 | `outline_type()` / `diag_flags()` | なし | 未実装 |
 | `unique_id()` | なし | 未実装 |
@@ -440,7 +440,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `face_type()` / `face_flags()` | なし | 未実装 |
 | `weight()` / `stretch()` / `style()` | なし | 未実装 |
 | `units_per_em()` | なし | 未実装: raden は `Font::scale()` で代替 |
-| `matrix()` / `metrics()` / `design_metrics()` | `ascent()` / `descent()` のみ | 差異あり: Blend2D は構造体で一括取得 |
+| `matrix()` / `metrics()` / `design_metrics()` | `ascent()` / `descent()` / `line_gap()` / `cap_height()` / `x_height()` | 差異あり: Blend2D は構造体で一括取得 |
 | `feature_settings()` / `set_feature_settings()` / `reset_feature_settings()` | なし | 未実装: OpenType feature 設定 |
 | `variation_settings()` / `set_variation_settings()` / `reset_variation_settings()` | なし | 未実装: Variable Fonts 設定 |
 | `shape(BLGlyphBuffer&)` | なし | 未実装: OpenType シェーピング |
