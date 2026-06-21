@@ -33,6 +33,8 @@
   - @voluntas
 - [ADD] `Font::glyph_bounds` を追加する
   - @voluntas
+- [ADD] `Context::stroke_text` を追加する
+  - @voluntas
 
 ## 2026.1.1
 
