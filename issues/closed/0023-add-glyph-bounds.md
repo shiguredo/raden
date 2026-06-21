@@ -6,6 +6,7 @@
 - Model: Kimi K2.7 Code
 - Branch: feature/add-glyph-bounds
 - Polished: 2026-06-21
+- Completed: 2026-06-22
 
 ## 目的
 

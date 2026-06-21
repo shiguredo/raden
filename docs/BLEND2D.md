@@ -449,7 +449,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `apply_kerning(BLGlyphBuffer&)` | なし | 未実装: カーニング適用 |
 | `apply_gsub(BLGlyphBuffer&, BLBitArray&)` / `apply_gpos(...)` | なし | 未実装: 個別 OpenType lookup 適用 |
 | `get_glyph_outlines(...)` | `append_glyph_outline(glyph_id, offset_x, offset_y, &mut Path)` | 一致 |
-| `get_glyph_bounds(...)` | なし | 未実装: グリフ境界ボックスの一括取得 |
+| `get_glyph_bounds(...)` | `FontFace::glyph_bounds(u16) -> Option<GlyphBounds>` / `Font::glyph_bounds(u16) -> Option<GlyphBounds>` | 未実装: グリフ境界ボックスの一括取得 |
 | `get_glyph_advances(...)` | なし | 未実装: グリフ advance 幅の一括取得 |
 | `get_glyph_run_outlines(...)` | なし | 未実装: GlyphRun アウトラインの取得 |
 | `get_text_metrics(BLGlyphBuffer&, BLTextMetrics&)` | `Font::measure_text(&str)` -> `TextMetrics` | 差異あり: raden は `&str` 入力で `TextMetrics { advance: f64 }` を返す個別取得 (`#[non_exhaustive]`)。Blend2D の `BLTextMetrics` (`advance: BLPoint`, `leading_bearing` 等の 4 フィールド) には将来段階的に拡張予定 |
