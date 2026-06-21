@@ -1,7 +1,8 @@
 /// TrueType テーブルパーサ。
 ///
 /// sfnt ヘッダからテーブルディレクトリをパースし、
-/// head, maxp, hhea, hmtx, loca, cmap, glyf の各テーブルを読み出す。
+/// head, maxp, hhea, hmtx, loca, cmap, glyf, OS/2 の各テーブルを読み出す。
+/// OS/2 テーブルは cap_height / x_height の取得にのみ利用する。
 use crate::font::FontError;
 
 // ---------------------------------------------------------------------------
@@ -116,6 +117,7 @@ const TAG_HMTX: u32 = tag(b"hmtx");
 const TAG_LOCA: u32 = tag(b"loca");
 const TAG_CMAP: u32 = tag(b"cmap");
 const TAG_GLYF: u32 = tag(b"glyf");
+const TAG_OS2: u32 = tag(b"OS/2");
 
 // ---------------------------------------------------------------------------
 // head テーブル
@@ -179,6 +181,49 @@ fn parse_hhea(data: &[u8], rec: TableRecord) -> Result<HheaTable, FontError> {
         descent,
         line_gap,
         number_of_h_metrics,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// OS/2 テーブル
+// ---------------------------------------------------------------------------
+
+/// OS/2 テーブルから取得する cap / x 高さ。
+/// OS/2 v2 以上の `sCapHeight` / `sxHeight` フィールドに対応する。
+struct Os2Table {
+    cap_height: Option<i16>,
+    x_height: Option<i16>,
+}
+
+fn parse_os2(data: &[u8], rec: TableRecord) -> Result<Os2Table, FontError> {
+    let off = rec.offset as usize;
+    // Microsoft 拡張形式の OS/2 version 0 最小サイズは 78 バイト。
+    // Apple 旧形式 68 バイトは現代の OS バンドルフォントに存在しないためエラーとする。
+    if rec.length < 78 {
+        return Err(FontError::InvalidData("OS/2 table too short"));
+    }
+    let version = read_u16(data, off)?;
+    if version < 2 {
+        // v0 / v1 では sCapHeight / sxHeight が存在しない。
+        return Ok(Os2Table {
+            cap_height: None,
+            x_height: None,
+        });
+    }
+    // OpenType 仕様 OS/2 テーブル v2+ の sxHeight (offset 86) + sCapHeight (offset 88) を読むには 90 バイト必要。
+    // 将来の OS/2 バージョンでも offset が変わらない前提とする（変更時は要修正）。
+    // 不足時は寛容方針で None を返し、FontFace::from_data 自体は成功させる。
+    if rec.length < 90 {
+        return Ok(Os2Table {
+            cap_height: None,
+            x_height: None,
+        });
+    }
+    let x_height = Some(read_i16(data, off + 86)?);
+    let cap_height = Some(read_i16(data, off + 88)?);
+    Ok(Os2Table {
+        cap_height,
+        x_height,
     })
 }
 
@@ -547,6 +592,8 @@ pub(crate) struct ParsedTables {
     pub ascent: i16,
     pub descent: i16,
     pub line_gap: i16,
+    pub cap_height: Option<i16>,
+    pub x_height: Option<i16>,
     pub loca_offsets: Vec<u32>,
     pub glyf_offset: u32,
     #[allow(dead_code)]
@@ -603,6 +650,13 @@ pub(crate) fn parse_all(data: &[u8], index: u32) -> Result<ParsedTables, FontErr
     let hmtx = parse_hmtx(data, hmtx_rec, hhea.number_of_h_metrics, num_glyphs)?;
     let loca_offsets = parse_loca(data, loca_rec, num_glyphs, head.index_to_loc_format)?;
     let cmap = parse_cmap(data, cmap_rec)?;
+    let os2 = match dir.find(TAG_OS2) {
+        Some(rec) => parse_os2(data, rec)?,
+        None => Os2Table {
+            cap_height: None,
+            x_height: None,
+        },
+    };
 
     Ok(ParsedTables {
         units_per_em: head.units_per_em,
@@ -610,6 +664,8 @@ pub(crate) fn parse_all(data: &[u8], index: u32) -> Result<ParsedTables, FontErr
         ascent: hhea.ascent,
         descent: hhea.descent,
         line_gap: hhea.line_gap,
+        cap_height: os2.cap_height,
+        x_height: os2.x_height,
         loca_offsets,
         glyf_offset: glyf_rec.offset,
         glyf_length: glyf_rec.length,
@@ -646,4 +702,83 @@ pub(crate) fn be_i8(data: &[u8], offset: usize) -> Result<i8, FontError> {
         return Err(FontError::InvalidData("unexpected end of data (i8)"));
     }
     Ok(data[offset] as i8)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 指定バージョン・長さの OS/2 テーブルバイト列を生成する。
+    /// length >= 90 の場合、sxHeight ( offset 86 ) = 16、sCapHeight ( offset 88 ) = 32 を設定する。
+    fn os2_bytes(version: u16, length: u32) -> Vec<u8> {
+        let mut data = vec![0u8; length as usize];
+        // version は先頭 u16 ( big endian ) 。
+        data[0] = (version >> 8) as u8;
+        data[1] = (version & 0xFF) as u8;
+        if length >= 90 {
+            data[86] = 0x00;
+            data[87] = 0x10; // sxHeight = 16
+            data[88] = 0x00;
+            data[89] = 0x20; // sCapHeight = 32
+        }
+        data
+    }
+
+    #[test]
+    fn parse_os2_v0_returns_none() {
+        let data = os2_bytes(0, 78);
+        let rec = TableRecord {
+            offset: 0,
+            length: 78,
+        };
+        let os2 = parse_os2(&data, rec).expect("version 0 の最小長は許容される");
+        assert!(os2.cap_height.is_none());
+        assert!(os2.x_height.is_none());
+    }
+
+    #[test]
+    fn parse_os2_v1_returns_none() {
+        let data = os2_bytes(1, 78);
+        let rec = TableRecord {
+            offset: 0,
+            length: 78,
+        };
+        let os2 = parse_os2(&data, rec).expect("version 1 の最小長は許容される");
+        assert!(os2.cap_height.is_none());
+        assert!(os2.x_height.is_none());
+    }
+
+    #[test]
+    fn parse_os2_v2_length_88_returns_none() {
+        let data = os2_bytes(2, 88);
+        let rec = TableRecord {
+            offset: 0,
+            length: 88,
+        };
+        let os2 = parse_os2(&data, rec).expect("v2+ かつ 78 <= length < 90 は許容される");
+        assert!(os2.cap_height.is_none());
+        assert!(os2.x_height.is_none());
+    }
+
+    #[test]
+    fn parse_os2_v2_length_90_returns_values() {
+        let data = os2_bytes(2, 90);
+        let rec = TableRecord {
+            offset: 0,
+            length: 90,
+        };
+        let os2 = parse_os2(&data, rec).expect("v2+ かつ length >= 90 は許容される");
+        assert_eq!(os2.x_height, Some(16));
+        assert_eq!(os2.cap_height, Some(32));
+    }
+
+    #[test]
+    fn parse_os2_v2_length_76_returns_error() {
+        let data = os2_bytes(2, 76);
+        let rec = TableRecord {
+            offset: 0,
+            length: 76,
+        };
+        assert!(parse_os2(&data, rec).is_err());
+    }
 }

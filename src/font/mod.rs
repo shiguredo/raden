@@ -94,6 +94,19 @@ impl FontFace {
     pub fn line_gap(&self) -> i16 {
         self.tables.line_gap
     }
+
+    /// OS/2 テーブル v2 以上の sCapHeight ( デザインユニット ) 。
+    /// OS/2 不在 / ( v < 2 かつテーブル長 >= 78 ) / ( v2+ かつ 78 <= テーブル長 < 90 ) のいずれかで None 。
+    /// テーブル長 < 78 の場合は FontFace::from_data がエラーになる。
+    pub fn cap_height(&self) -> Option<i16> {
+        self.tables.cap_height
+    }
+
+    /// OS/2 テーブル v2 以上の sxHeight ( デザインユニット ) 。
+    /// None の条件は cap_height と同じ。
+    pub fn x_height(&self) -> Option<i16> {
+        self.tables.x_height
+    }
 }
 
 /// サイズ指定済みフォント。描画に使用する。
@@ -175,6 +188,23 @@ impl Font {
     /// ディセント (ピクセル単位、負値)。
     pub fn descent(&self) -> f64 {
         self.face.tables.descent as f64 * self.scale
+    }
+
+    /// 行間 ( ピクセル単位 ) 。 hhea 必須テーブル由来のため常に値を返す。
+    pub fn line_gap(&self) -> f64 {
+        self.face.tables.line_gap as f64 * self.scale
+    }
+
+    /// cap_height のスケール済み値 ( ピクセル単位 ) 。
+    /// FontFace::cap_height() が None ならば None を返す。
+    pub fn cap_height(&self) -> Option<f64> {
+        self.face.tables.cap_height.map(|v| v as f64 * self.scale)
+    }
+
+    /// x_height のスケール済み値 ( ピクセル単位 ) 。
+    /// FontFace::x_height() が None ならば None を返す。
+    pub fn x_height(&self) -> Option<f64> {
+        self.face.tables.x_height.map(|v| v as f64 * self.scale)
     }
 
     /// 文字列を内部的なグリフ列に変換する。

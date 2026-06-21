@@ -17,6 +17,16 @@
   - @voluntas
 - [ADD] `Font::measure_text` を追加する
   - @voluntas
+- [ADD] `FontFace::cap_height` を追加する
+  - @voluntas
+- [ADD] `FontFace::x_height` を追加する
+  - @voluntas
+- [ADD] `Font::line_gap` を追加する
+  - @voluntas
+- [ADD] `Font::cap_height` を追加する
+  - @voluntas
+- [ADD] `Font::x_height` を追加する
+  - @voluntas
 
 ## 2026.1.1
 
