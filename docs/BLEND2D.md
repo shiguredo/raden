@@ -172,7 +172,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 
 | Blend2D | raden | 状態 |
 |---------|-------|------|
-| `stroke_utf8_text(...)` / `stroke_utf16_text(...)` / `stroke_utf32_text(...)` | なし | 未実装 |
+| `stroke_utf8_text(...)` / `stroke_utf16_text(...)` / `stroke_utf32_text(...)` | `Context::stroke_text(x, y, &Font, &str)` (UTF-8 のみ) | 未実装 |
 | `stroke_glyph_run(...)` | なし | 未実装 |
 
 ### Blit 操作
