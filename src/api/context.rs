@@ -1171,6 +1171,36 @@ impl<'a> Context<'a> {
         self.tmp_glyph_run = run;
     }
 
+    /// 文字列を現在の stroke 設定で描画する。
+    ///
+    /// (x, y) はベースライン左端の位置。全グリフを 1 つの Path に結合し、
+    /// `stroke_path` 1 回で一括描画する (`fill_text` と同じアプローチ)。
+    pub fn stroke_text(&mut self, x: f64, y: f64, font: &Font, text: &str) {
+        let mut path = std::mem::take(&mut self.tmp_path);
+        let mut run = std::mem::take(&mut self.tmp_glyph_run);
+        path.clear();
+
+        font.glyph_run_for_text(text, &mut run);
+
+        let mut cursor_x = x;
+        for &(glyph_id, advance) in run.iter() {
+            // glyph_id == 0 はアウトラインを構築せず advance のみ加算する。
+            // append_glyph_outline のエラーは let _ で黙殺し、外部入力に対する
+            // クラッシュ耐性を優先する (部分欠落を許容、fill_text と同じ寛容方針)。
+            if glyph_id != 0 {
+                let _ = font.append_glyph_outline(glyph_id, cursor_x, y, &mut path);
+            }
+            cursor_x += advance;
+        }
+
+        if !path.is_empty() {
+            self.stroke_path(&path);
+        }
+
+        self.tmp_path = path;
+        self.tmp_glyph_run = run;
+    }
+
     /// ストローク幅を設定する。
     pub fn set_stroke_width(&mut self, width: f64) {
         self.stroke_width = width;

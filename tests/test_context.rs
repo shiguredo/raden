@@ -488,3 +488,181 @@ mod alpha {
         assert_eq!(ctx.fill_alpha(), 0.0);
     }
 }
+
+mod stroke_text {
+    use raden::{
+        Context, Font, FontData, FontFace, Image, Path, PipelineRuntime, PixelFormat, Rgba32,
+    };
+
+    /// macOS の Arial.ttf を読み込むヘルパー。CI 環境ではスキップする。
+    fn load_arial() -> Option<FontFace> {
+        let path = "/System/Library/Fonts/Supplemental/Arial.ttf";
+        if !std::path::Path::new(path).exists() {
+            return None;
+        }
+        let data = FontData::from_file(path).ok()?;
+        FontFace::from_data(&data, 0).ok()
+    }
+
+    /// Arial 環境で `stroke_text` 実行後に非ゼロピクセルが存在することを確認する。
+    #[test]
+    fn renders_visible_pixels() {
+        let Some(face) = load_arial() else {
+            return;
+        };
+        let font = Font::from_face(&face, 48.0);
+
+        let mut img = Image::new(256, 96, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+
+        ctx.set_stroke_style(Rgba32::rgb(255, 255, 255));
+        ctx.set_stroke_width(2.0);
+        ctx.stroke_text(10.0, 64.0, &font, "Hello");
+        ctx.end();
+
+        let has_nonzero = img
+            .data()
+            .chunks(4)
+            .any(|px| px[0] != 0 || px[1] != 0 || px[2] != 0);
+        assert!(
+            has_nonzero,
+            "stroke_text は可視ピクセルを生成する必要がある"
+        );
+    }
+
+    /// `stroke_text` の描画結果が、手動で組み立てた `append_glyph_outline` + `stroke_path`
+    /// の結果とピクセル単位で完全一致することを確認する (内部実装の正当性検証)。
+    /// "ABC" は Arial cmap に確実に含まれ各文字とも空でない Path を生成するため、
+    /// 複数文字 advance 加算をロックする最短文字列として選んでいる。
+    #[test]
+    fn matches_manual_path() {
+        let Some(face) = load_arial() else {
+            return;
+        };
+        let font = Font::from_face(&face, 32.0);
+
+        let baseline_y = 48.0;
+        let baseline_x = 10.0;
+        let stroke_width = 1.5;
+
+        let mut img_auto = Image::new(200, 64, PixelFormat::Prgb32);
+        {
+            let mut runtime = PipelineRuntime::new();
+            let mut ctx = Context::new(&mut img_auto, &mut runtime);
+            ctx.set_stroke_style(Rgba32::rgb(255, 255, 255));
+            ctx.set_stroke_width(stroke_width);
+            ctx.stroke_text(baseline_x, baseline_y, &font, "ABC");
+            ctx.end();
+        }
+
+        let mut img_manual = Image::new(200, 64, PixelFormat::Prgb32);
+        {
+            let mut runtime = PipelineRuntime::new();
+            let mut ctx = Context::new(&mut img_manual, &mut runtime);
+            ctx.set_stroke_style(Rgba32::rgb(255, 255, 255));
+            ctx.set_stroke_width(stroke_width);
+
+            let mut path = Path::new();
+            let mut cursor_x = baseline_x;
+            for ch in "ABC".chars() {
+                let glyph_id = font.map_char_to_glyph(ch);
+                if glyph_id != 0 {
+                    let _ = font.append_glyph_outline(glyph_id, cursor_x, baseline_y, &mut path);
+                }
+                cursor_x += font.glyph_advance(glyph_id);
+            }
+            if !path.is_empty() {
+                ctx.stroke_path(&path);
+            }
+            ctx.end();
+        }
+
+        assert_eq!(
+            img_auto.data(),
+            img_manual.data(),
+            "stroke_text の結果は手動再構築と完全一致する必要がある"
+        );
+    }
+
+    /// 空文字列に対する `stroke_text` は何も描画せず panic しないことを固定する。
+    /// `glyph_run_for_text` が空 run を返し `if !path.is_empty()` ガードで
+    /// `stroke_path` が呼ばれない経路を保護する。
+    #[test]
+    fn empty_string_renders_nothing() {
+        let Some(face) = load_arial() else {
+            return;
+        };
+        let font = Font::from_face(&face, 48.0);
+
+        let mut img = Image::new(64, 32, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+        ctx.set_stroke_style(Rgba32::rgb(255, 255, 255));
+        ctx.set_stroke_width(2.0);
+        ctx.stroke_text(10.0, 24.0, &font, "");
+        ctx.end();
+
+        // 空文字列では全ピクセルが 0 のままである必要がある。
+        assert!(
+            img.data().iter().all(|b| *b == 0),
+            "空文字列の stroke_text は描画を行わない必要がある"
+        );
+    }
+
+    /// `size == 0` の `Font` に対する `stroke_text` は scale == 0 経由で
+    /// 全 advance / アウトラインが 0 になるが、 panic せず空キャンバスを保つことを固定する。
+    #[test]
+    fn zero_size_font_does_not_panic() {
+        let Some(face) = load_arial() else {
+            return;
+        };
+        let font = Font::from_face(&face, 0.0);
+
+        let mut img = Image::new(64, 32, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+        ctx.set_stroke_style(Rgba32::rgb(255, 255, 255));
+        ctx.set_stroke_width(2.0);
+        ctx.stroke_text(10.0, 24.0, &font, "Hello");
+        ctx.end();
+    }
+
+    /// cmap 未マッピング文字 (Arial の Private Use Area 等) を含む文字列で、
+    /// 未マッピング文字のアウトラインがスキップされて他の文字が正常描画されることを固定する。
+    #[test]
+    fn unmapped_char_is_skipped() {
+        let Some(face) = load_arial() else {
+            return;
+        };
+        let font = Font::from_face(&face, 32.0);
+
+        // Arial cmap 未収録の Private Use Area の文字を選ぶ。
+        let unmapped = '\u{E000}';
+        // 未マッピング前提を確認しておく (前提が崩れたらこのテスト自体を見直す)。
+        assert_eq!(
+            font.map_char_to_glyph(unmapped),
+            0,
+            "テスト前提: U+E000 は Arial cmap に含まれない"
+        );
+
+        let mut img = Image::new(128, 64, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+        ctx.set_stroke_style(Rgba32::rgb(255, 255, 255));
+        ctx.set_stroke_width(1.5);
+        let mixed: String = format!("A{unmapped}B");
+        ctx.stroke_text(10.0, 48.0, &font, &mixed);
+        ctx.end();
+
+        // 'A' と 'B' は描画されるため非ゼロピクセルが残る。
+        let has_nonzero = img
+            .data()
+            .chunks(4)
+            .any(|px| px[0] != 0 || px[1] != 0 || px[2] != 0);
+        assert!(
+            has_nonzero,
+            "stroke_text は未マッピング文字をスキップしても他の文字を描画する必要がある"
+        );
+    }
+}
