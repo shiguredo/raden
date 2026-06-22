@@ -11,6 +11,12 @@
 
 ## develop
 
+- [ADD] `examples/font_shaping.rs` を追加する
+  - @voluntas
+- [UPDATE] `README.md` のフォント機能説明を最新の実装に合わせて更新する
+  - @voluntas
+- [UPDATE] `docs/BLEND2D.md` のフォント機能比較を最新の実装に合わせて更新する
+  - @voluntas
 - [CHANGE] `Font::measure_text` の戻り値 `advance` を OpenType GSUB / GPOS シェーピング適用済みに変更する
   - @voluntas
 - [CHANGE] `Font::measure_text` の戻り値 `TextMetrics.bounding_box` を OpenType GSUB / GPOS シェーピング適用済みの bbox に変更する

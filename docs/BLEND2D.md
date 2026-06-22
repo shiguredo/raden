@@ -415,7 +415,8 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 |---------|-------|------|
 | `BLFontFace::create_from_file(path, flags)` | なし | 未実装: raden は FontData 経由の 2 段階設計 |
 | `BLFontFace::create_from_data(BLFontData, face_index)` | `FontFace::from_data(&FontData, index)` | 一致 |
-| `design_metrics()` | `units_per_em()` / `ascent()` / `descent()` / `line_gap()` / `cap_height()` / `x_height()` | 差異あり: Blend2D は構造体で一括取得、raden は個別メソッド |
+| `design_metrics()` | `units_per_em()` / `ascent()` / `descent()` / `line_gap()` / `cap_height()` / `x_height()` / `glyph_bounds(u16)` | 差異あり: Blend2D は構造体で一括取得、raden は個別メソッド |
+| テーブルパース | head / maxp / hhea / hmtx / cmap / loca / glyf / OS/2 / GSUB / GPOS | 実装済み: TrueType アウトラインと OpenType Layout の基本テーブル。CFF / CFF2 は未対応 |
 | `face_type()` / `face_flags()` / `face_index()` / `face_info()` | なし | 未実装 |
 | `outline_type()` / `diag_flags()` | なし | 未実装 |
 | `unique_id()` | なし | 未実装 |
@@ -455,6 +456,14 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `get_text_metrics(BLGlyphBuffer&, BLTextMetrics&)` | `Font::measure_text(&str)` -> `TextMetrics` | 差異あり: raden は `&str` 入力で `TextMetrics { advance, bounding_box, leading_bearing, trailing_bearing }` を返す個別取得 (`#[non_exhaustive]`)。Blend2D の `BLTextMetrics::advance` は `BLPoint` (水平垂直両対応) |
 | `BLGlyphBuffer` | `GlyphBuffer` | 差異あり: raden の `GlyphBuffer` は glyph_ids / placements / clusters の 3 配列構成。フィールドは `pub(crate)` で、クレート外からは `iter()` / `glyph_id()` / `placement()` / `cluster()` 経由でアクセスする |
 | なし | `Font::scale()` -> `f64` | raden 独自: スケール係数取得 (size / units_per_em) |
+
+### BLFontFeatureSettings / FontFeatureSettings
+
+| Blend2D | raden | 状態 |
+|---------|-------|------|
+| `BLFontFeatureSettings` | `FontFeatureSettings` | 差異あり: raden は `liga` / `kern` / `clig` の ON/OFF フラグを個別に持つ Builder スタイル API。デフォルトは `liga=true, kern=true, clig=true` |
+| `addFeature(tag, value)` | `with_liga(bool)` / `with_kern(bool)` / `with_clig(bool)` | 差異あり: 現状は上記 3 タグのみ対応 |
+| `reset()` | `FontFeatureSettings::none()` | 一致: すべての feature を無効にした新しい設定を返す |
 
 ## 画像 API
 

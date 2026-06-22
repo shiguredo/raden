@@ -61,6 +61,7 @@ GPU を利用できない CI 環境において、CPU のみを利用して 1080
 | `stroke_polygon(&[Point])` | ポリゴンのストローク描画 (閉じる) |
 | `stroke_polyline(&[Point])` | 折れ線のストローク描画 (閉じない) |
 | `stroke_path(&Path)` | 任意パスのストローク描画。stroke-to-fill 変換後 `fill_path` で描画 |
+| `stroke_text(x, y, &Font, text)` | テキストの輪郭をストローク描画 |
 
 ### クリア / Blit (`Context`)
 
@@ -198,8 +199,12 @@ Porter-Duff 基本セット + Clear + Plus の 13 種類と、ブレンドモー
 | 型 | 説明 |
 |---|---|
 | `FontData` | フォントファイルのバイトデータ。`from_file(path)` または `from_bytes(bytes)` で作成 |
-| `FontFace` | パース済みフォントフェイス。TrueType テーブル (head, hhea, hmtx, cmap, loca, glyf) を解析 |
-| `Font` | サイズ指定済みフォント。`from_face(&FontFace, size)` で作成し `fill_text` に渡す |
+| `FontFace` | パース済みフォントフェイス。TrueType / OpenType テーブル (head, maxp, hhea, hmtx, cmap, loca, glyf, OS/2, GSUB, GPOS) を解析 |
+| `Font` | サイズ指定済みフォント。`from_face(&FontFace, size)` で作成し `fill_text` / `stroke_text` に渡す。`clone_with_features(...)` で liga / kern / clig 等の feature 設定を切り替え可能 |
+| `FontFeatureSettings` | liga / kern / clig 等の OpenType Layout feature ON/OFF 設定 |
+| `GlyphBuffer` | `Font::shape` / `Font::shape_into` の結果。glyph ID、配置 (`GlyphPlacement`)、クラスタを保持 |
+| `GlyphPlacement` | 1 グリフの配置情報。advance / offset_x / offset_y |
+| `TextMetrics` | `Font::measure_text` の結果。advance / bounding_box / leading_bearing / trailing_bearing |
 
 ### パス (`Path`)
 
@@ -297,6 +302,14 @@ cargo run --example stroke_drawing
 
 [![Image from Gyazo](https://i.gyazo.com/8f2c7ae6e5fa641c8881e15a13563195.png)](https://gyazo.com/8f2c7ae6e5fa641c8881e15a13563195)
 
+### font_shaping
+
+OpenType Layout によるシェーピング効果を可視化するサンプル。同じ文字列を `liga` / `kern` / `clig` ON/OFF で上下に並べて BMP 出力する。
+
+```bash
+cargo run --example font_shaping -- path/to/font.ttf output.bmp "ffi AV fl"
+```
+
 ### tiger
 
 AmanithVG 由来の tiger ベクターグラフィックスを描画するサンプル。240 以上のパスによるフィル・ストロークの組み合わせを実演する。
@@ -353,7 +366,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## 制約
 
 - `PixelFormat::A8` は単色 `fill_rect` とスカラ合成 (SrcOver / SrcCopy / Clear) のみ対応。`fill_path`・グラデーション塗り・パターン塗りは未対応
-- フォントは TrueType アウトライン (glyf/loca) のみ対応 (CFF、OpenType Layout、カーニング、シェーピングは未対応)
+- フォントは TrueType アウトライン (glyf/loca) に対応。OpenType Layout のうち GSUB Single/Ligature (Type 1/4) と GPOS Single/Pair (Type 1/2) による基本シェーピング (liga / kern / clig) に対応。CFF / CFF2 アウトライン、Microsoft `kern` テーブル v0、可変フォントは未対応
 - クリッピングは矩形のみ対応 (パスクリッピングは未対応)
 - `blit_image_*` は Nearest 補間、`CompOp` は `SrcOver` / `SrcCopy` のみ対応
 
