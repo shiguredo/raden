@@ -172,7 +172,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 
 | Blend2D | raden | 状態 |
 |---------|-------|------|
-| `stroke_utf8_text(...)` / `stroke_utf16_text(...)` / `stroke_utf32_text(...)` | `Context::stroke_text(x, y, &Font, &str)` (UTF-8 のみ) | 未実装 |
+| `stroke_utf8_text(...)` / `stroke_utf16_text(...)` / `stroke_utf32_text(...)` | `Context::stroke_text(x, y, &Font, &str)` (UTF-8 のみ) | 差異あり: raden は UTF-8 のみ、整数 / 浮動小数点座標の区別なし |
 | `stroke_glyph_run(...)` | なし | 未実装 |
 
 ### Blit 操作
@@ -415,8 +415,8 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 |---------|-------|------|
 | `BLFontFace::create_from_file(path, flags)` | なし | 未実装: raden は FontData 経由の 2 段階設計 |
 | `BLFontFace::create_from_data(BLFontData, face_index)` | `FontFace::from_data(&FontData, index)` | 一致 |
-| `design_metrics()` | `units_per_em()` / `ascent()` / `descent()` / `line_gap()` / `cap_height()` / `x_height()` / `glyph_bounds(u16)` | 差異あり: Blend2D は構造体で一括取得、raden は個別メソッド |
-| テーブルパース | head / maxp / hhea / hmtx / cmap / loca / glyf / OS/2 / GSUB / GPOS | 実装済み: TrueType アウトラインと OpenType Layout の基本テーブル。CFF / CFF2 は未対応 |
+| `design_metrics()` | `units_per_em()` / `ascent()` / `descent()` / `line_gap()` / `cap_height()` / `x_height()` | 差異あり: Blend2D は構造体で一括取得、raden は個別メソッド |
+| `outline_type()` | なし | 未実装: raden は現状 TrueType アウトライン (glyf/loca) のみをサポート。CFF / CFF2 は未対応 |
 | `face_type()` / `face_flags()` / `face_index()` / `face_info()` | なし | 未実装 |
 | `outline_type()` / `diag_flags()` | なし | 未実装 |
 | `unique_id()` | なし | 未実装 |
@@ -449,8 +449,8 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `position_glyphs(BLGlyphBuffer&)` | `glyph_advance(u16)` -> `f64` / `GlyphBuffer::placements` | 差異あり: Blend2D はバッファ内全グリフを一括配置、raden は文字単位の公開 API `glyph_advance` と `GlyphBuffer` の配置情報で対応 |
 | `apply_kerning(BLGlyphBuffer&)` | raden は対応しない (Microsoft OpenType `kern` テーブル v0 非対応。カーニングは GPOS Pair Adjustment を `Font::shape` / `Font::shape_into` 内で適用) | 対象外: `kern` v0 API は提供せず、GPOS 経由でカーニングを実現する |
 | `apply_gsub(BLGlyphBuffer&, BLBitArray&)` / `apply_gpos(...)` | `Font::shape` / `Font::shape_into` 内で GSUB / GPOS を適用 | 差異あり: raden は個別 lookup 呼び出しを提供せず `FontFeatureSettings` 経由で制御 |
-| `get_glyph_outlines(...)` | `append_glyph_outline(glyph_id, offset_x, offset_y, &mut Path)` | 一致 |
-| `get_glyph_bounds(...)` | `FontFace::glyph_bounds(u16) -> Option<GlyphBounds>` / `Font::glyph_bounds(u16) -> Option<GlyphBounds>` | 未実装: グリフ境界ボックスの一括取得 |
+| `get_glyph_outlines(...)` | `append_glyph_outline(glyph_id, offset_x, offset_y, &mut Path)` | 差異あり: raden は単一グリフのアウトラインを Path に追加するのみ。ユーザー変換行列 / sink コールバック / GlyphRun 単位の取得は未対応 |
+| `get_glyph_bounds(...)` | `FontFace::glyph_bounds(u16) -> Option<GlyphBounds>` / `Font::glyph_bounds(u16) -> Option<GlyphBounds>` | 差異あり: Blend2D はグリフ列の一括取得、raden は単一グリフのみ対応 |
 | `get_glyph_advances(...)` | なし | 未実装: グリフ advance 幅の一括取得 |
 | `get_glyph_run_outlines(...)` | なし | 未実装: GlyphRun アウトラインの取得 |
 | `get_text_metrics(BLGlyphBuffer&, BLTextMetrics&)` | `Font::measure_text(&str)` -> `TextMetrics` | 差異あり: raden は `&str` 入力で `TextMetrics { advance, bounding_box, leading_bearing, trailing_bearing }` を返す個別取得 (`#[non_exhaustive]`)。Blend2D の `BLTextMetrics::advance` は `BLPoint` (水平垂直両対応) |
@@ -462,8 +462,8 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | Blend2D | raden | 状態 |
 |---------|-------|------|
 | `BLFontFeatureSettings` | `FontFeatureSettings` | 差異あり: raden は `liga` / `kern` / `clig` の ON/OFF フラグを個別に持つ Builder スタイル API。デフォルトは `liga=true, kern=true, clig=true` |
-| `addFeature(tag, value)` | `with_liga(bool)` / `with_kern(bool)` / `with_clig(bool)` | 差異あり: 現状は上記 3 タグのみ対応 |
-| `reset()` | `FontFeatureSettings::none()` | 一致: すべての feature を無効にした新しい設定を返す |
+| `set_value(tag, value)` / `get_value(tag)` / `has_value(tag)` / `remove_value(tag)` | `with_liga(bool)` / `with_kern(bool)` / `with_clig(bool)` | 差異あり: raden は現状上記 3 タグのみを個別メソッドで扱う。任意タグの設定は未対応 |
+| `clear()` / `reset()` | `FontFeatureSettings::none()` | 差異あり: Blend2D はコンテナをクリア・リセット、raden は全 feature OFF の新しいインスタンスを返す |
 
 ## 画像 API
 
