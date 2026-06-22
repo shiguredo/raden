@@ -1,3 +1,8 @@
+mod helpers;
+
+use helpers::font_fetch::{
+    fetch_source_sans_3_bytes, fetch_source_serif_4_bytes, verify_has_table,
+};
 use raden::{Font, FontData, FontFace};
 
 /// macOS の Arial.ttf を使ったフォント読み込みヘルパー。
@@ -226,4 +231,48 @@ fn font_fill_text_integration() {
         .chunks(4)
         .any(|px| px[0] != 0 || px[1] != 0 || px[2] != 0);
     assert!(has_nonzero, "fill_text は可視ピクセルを生成する必要がある");
+}
+
+// ---------------------------------------------------------------------------
+// テスト用フォントダウンロード機構のスモークテスト
+//
+// 全プラットフォームで実行されるテスト。Source Sans 3 / Source Serif 4 を
+// ネットワーク経由で取得し SHA-256 を検証したうえで、target テーブルの存在と
+// 既存公開 API への読み込みを最小限確認する。CFF 系 (Source Serif 4) は
+// 現状 raden 本体パーサが OTTO sfnt version を未受理のため、verify_has_table
+// による低レベル走査のみで検証する。
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fetch_source_sans_3_has_required_tables() {
+    let bytes = fetch_source_sans_3_bytes()
+        .unwrap_or_else(|e| panic!("Source Sans 3 をダウンロードできる必要がある: {e:?}"));
+    assert!(
+        verify_has_table(&bytes, *b"GSUB"),
+        "Source Sans 3 は GSUB テーブルを持つ必要がある"
+    );
+    assert!(
+        verify_has_table(&bytes, *b"GPOS"),
+        "Source Sans 3 は GPOS テーブルを持つ必要がある"
+    );
+    // 取得した bytes が現状の raden 公開 API でロード可能であることを確認する。
+    // (Source Sans 3 は TrueType アウトラインのため OTTO 非対応問題は発生しない)
+    let data = FontData::from_bytes(bytes);
+    let face = FontFace::from_data(&data, 0)
+        .expect("Source Sans 3 を FontFace としてロードできる必要がある");
+    assert!(
+        face.units_per_em() > 0,
+        "Source Sans 3 の units_per_em は正値である必要がある"
+    );
+}
+
+#[test]
+fn fetch_source_serif_4_has_cff_table() {
+    let bytes = fetch_source_serif_4_bytes()
+        .unwrap_or_else(|e| panic!("Source Serif 4 をダウンロードできる必要がある: {e:?}"));
+    // CFF テーブルの 4 文字 tag は末尾スペース padding が仕様。CFF2 と区別される。
+    assert!(
+        verify_has_table(&bytes, *b"CFF "),
+        "Source Serif 4 は CFF テーブルを持つ必要がある"
+    );
 }

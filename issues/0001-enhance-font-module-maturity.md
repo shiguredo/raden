@@ -106,6 +106,7 @@ raden 全体のバージョンは `Cargo.toml` で `2026.1.1` (CalVer) を採用
 | 0025 | `0025-add-font-kerning.md` | カーニング適用機能を追加する | open | Medium |
 | 0026 | `0026-add-opentype-basic-shaping.md` | OpenType 基本シェーピング機能を追加する | open | Medium |
 | 0027 | `0027-add-cff-cff2-outline-support.md` | CFF / CFF2 フォントアウトライン対応を追加する | open | Medium |
+| 0039 | `0039-add-test-font-downloader.md` | テスト用フォントのダウンロード機構を追加する | closed | High |
 
 状態列の用語は `shiguredo-issues` スキルに従う (`open` / `closed` / `pending`)。Polish 進捗は各 issue ファイルの `Polished:` フィールドで管理する。
 
@@ -117,7 +118,6 @@ raden 全体のバージョンは `Cargo.toml` で `2026.1.1` (CalVer) を採用
 |------|------|------|
 | 既存コード PBT | `tables.rs` / `glyph.rs` の既存パース関数群の PBT | open |
 | fuzzing 基盤と既存コード fuzz target | cargo-fuzz 初期化、CI 定期実行、`parse_all` 経由の fuzz target 追加 | open |
-| テスト用フォント選定 | 全プラットフォームで利用可能な配布許容フォントの選定とリポジトリ追加 | open。PBT への組み込みは 0021 並行ブロック内で実施。CFF / CFF2 フォントも選定対象に含める |
 | ベースライン benchmark 計測基盤 | font 関連 bench ファイルの作成と criterion 設定 | open |
 | Compound Glyph point-matching 実装 | `ARGS_ARE_XY_VALUES == 0` ケースの実装 (Bug カテゴリ) | open |
 | raden 全体 SemVer / 安定化方針確定 | font モジュール本格安定化の前提となる raden 全体方針 | open。本 issue close PR 内で別 issue として起票し、起票完了で本 tracked も完了扱い |
@@ -134,13 +134,6 @@ raden 全体のバージョンは `Cargo.toml` で `2026.1.1` (CalVer) を採用
 - **含まれる**: `fuzz/Cargo.toml` 作成、`fuzz/fuzz_targets/` 初期化、`.gitignore` に `fuzz/corpus/` `fuzz/artifacts/` 追加、CI cron 設定、`parse_all` 経由の既存コード fuzz target 1 個 (TTC / TableDirectory / 各種パーサに到達する入口) の追加
 - **含まれない**: 0021-0027 が追加するテーブルに対する個別 fuzz target (0021 / 0025 / 0026 / 0027 が自身のスコープで追加)
 - **完了基準**: `cargo fuzz run` が手動実行可能、CI cron 稼働、`cargo check --manifest-path fuzz/Cargo.toml` が CI に追加されコンパイル安全性が保たれる
-
-### tracked: テスト用フォント選定
-
-- **含まれる**: SIL OFL 等の配布許容ライセンスを持ち、各 concrete issue が必要とするテーブル (OS/2 / kern / GSUB / GPOS) を充足し、BMP 外文字および CJK 統合漢字のカバレッジを持つフォントの選定とリポジトリ追加 (置き場所決定を含む)
-- **含まれない**: `load_arial()` ヘルパー撤去、`pbt/tests/prop_font/main.rs` への組み込み (PBT 組み込みは 0021 並行ブロック内で行う)
-- **完了基準**: 全プラットフォームで利用可能なフォントがリポジトリに含まれる PR がマージ済み
-- **段階的選定**: 着手前準備で TTF アウトラインのみのフォントを先行選定。kern 付きフォントは 0025 着手時、GSUB / GPOS 付きフォントは 0026 着手時、CFF / CFF2 アウトラインのフォントは 0027 着手時に追加選定する
 
 ### tracked: ベースライン benchmark 計測基盤
 
@@ -164,12 +157,11 @@ raden 全体のバージョンは `Cargo.toml` で `2026.1.1` (CalVer) を採用
 
 ### 前提 concrete issue (0021 着手前に concrete issue 化して close)
 
-以下 4 件を concrete issue として **順次起票** (起票直後に SEQUENCE をインクリメントしてコミット。複数人で分担する場合は事前に担当順序を合意し、各担当は前担当の SEQUENCE インクリメントコミットを取り込んでから起票する):
+以下 3 件を concrete issue として **順次起票** (起票直後に SEQUENCE をインクリメントしてコミット。複数人で分担する場合は事前に担当順序を合意し、各担当は前担当の SEQUENCE インクリメントコミットを取り込んでから起票する):
 
-1. テスト用フォント選定 (TTF アウトラインのみのフォントを先行選定とリポジトリ追加)
-2. fuzzing 基盤と既存コード fuzz target
-3. ベースライン benchmark 計測基盤
-4. Compound Glyph point-matching 実装 (Bug カテゴリのため他と並行で close まで完了)
+1. fuzzing 基盤と既存コード fuzz target
+2. ベースライン benchmark 計測基盤
+3. Compound Glyph point-matching 実装 (Bug カテゴリのため他と並行で close まで完了)
 
 起票時に Concrete issue 一覧テーブルに新規行を追加し、Tracked items テーブルから対応行を削除する。
 
@@ -198,6 +190,8 @@ closed にする順序は 0024 → 0025 → 0026 → 0027 の直列を原則と�
 - ファイル名 `enhance-font-module-maturity` は作成時の命名を保持する (`git mv` は行わない。他ブランチや進行中 issue からの参照リンクを安定させるため)
 - 本 issue 内の各テーブル (Concrete issue 一覧 / Tracked items / Blend2D との対応表) は、対象 concrete issue を closed にする PR の中で同 PR で更新する。最終 PR (本 issue を closed にする PR) では `docs/BLEND2D.md` の確定状態化と raden 全体 SemVer 別 issue 起票・本備考への番号追記を行う
 - raden 全体 SemVer / 安定化方針別 issue 番号: (本 issue close PR で追記する)
+- CJK 統合漢字 / BMP 外文字のカバレッジは Source Sans 3 / Source Serif 4 では満たせない。必要になった時点で別 tracked / 別 issue を起票する
+- 0039 closed 後、0025 / 0026 / 0027 / 0037 を `/polish-issue` で個別に再 polish し、本文中の「リポジトリ同梱前提」を `fetch_source_sans_3_bytes` / `fetch_source_serif_4_bytes` 参照に書き換える。0025 polish では Source Sans 3 / Source Serif 4 のいずれも `kern` テーブルを持たない事実を踏まえ、kern fallback 動作確認 (`Font::kern() == 0`) に再定義するか、`kern` 付きフォント追加選定の別 issue を起票するかを確定する。0027 polish では `TableDirectory::parse` (`src/font/tables.rs:58-93`) の sfnt version 判定に `0x4F54544F` (`OTTO`) を追加する責務を含める。0037 polish では本 issue が新設した `tests/helpers/mod.rs` に `pub mod font;` 行を 1 行追加する流れを前提とする。Source Sans 3 のバージョン更新時は SHA-256 と同時に `kern` テーブル有無の再確認を必須とする
 
 ## 解決方法
 
@@ -211,7 +205,7 @@ closed にする順序は 0024 → 0025 → 0026 → 0027 の直列を原則と�
 
 - 0021 / 0022 / 0023 / 0024 / 0025 / 0026 / 0027 がすべて closed で、CI でテストがパス
 - 0025 を closed にした時点で「0024 完了済の `stroke_text` にカーニング適用済」が確認できる (本 issue を closed にする前提)
-- Tracked items のうち concrete issue 化対象 (fuzzing 基盤と既存コード fuzz target / テスト用フォント選定 / ベースライン benchmark 計測基盤 / Compound Glyph point-matching 実装) が、closed または `issues/pending/` 移動済み
+- Tracked items のうち concrete issue 化対象 (fuzzing 基盤と既存コード fuzz target / ベースライン benchmark 計測基盤 / Compound Glyph point-matching 実装) が、closed または `issues/pending/` 移動済み
 - raden 全体 SemVer / 安定化方針確定 tracked は別 issue 起票・本 issue 備考への番号追記で完了扱い
 
 ### BLEND2D.md 同期
@@ -224,7 +218,7 @@ closed にする順序は 0024 → 0025 → 0026 → 0027 の直列を原則と�
 
 ### パフォーマンス基準
 
-- ベースライン benchmark で測定: PPEM = 16 / N = 100 文字 / `Context::fill_text` 1 ループ所要時間が 1ms 未満、N = 1000 文字でも 10ms 未満 (線形性)。測定対象フォントはテスト用フォント選定で確定する
+- ベースライン benchmark で測定: PPEM = 16 / N = 100 文字 / `Context::fill_text` 1 ループ所要時間が 1ms 未満、N = 1000 文字でも 10ms 未満 (線形性)。測定対象フォントは `fetch_source_sans_3_bytes` で取得する Source Sans 3 を使う
 - 各 concrete issue の実装完了ごとにベースライン値を取得し、回帰がないことを確認
 
 ### テスト品質
@@ -236,10 +230,10 @@ closed にする順序は 0024 → 0025 → 0026 → 0027 の直列を原則と�
 
 - **対応** に確定。CFF / CFF2 パーサ実装の concrete issue として **0027** を起票済み
 - 0027 は本 issue の Concrete issue 一覧に追加済み。本 issue を closed にするには 0027 が closed である必要がある
-- テスト用フォント選定 tracked item には CFF / CFF2 フォントの選定を含める
+- CFF / CFF2 テストは `fetch_source_serif_4_bytes` で取得する Source Serif 4 を使う
 
 ### クロスプラットフォーム
 
 - `.github/workflows/ci.yml` の matrix 全構成 (`ubuntu-24.04` / `ubuntu-24.04-arm` / `ubuntu-22.04` / `ubuntu-22.04-arm` / `macos-26` / `macos-15` / `windows-2025`) で font テストがパス。GitHub Actions の現行 macOS ランナーはいずれも arm64 (x86_64 ランナーは現状提供されていない)
-- 全プラットフォームで利用可能なテスト用フォントバイナリがリポジトリに含まれる
+- `fetch_source_sans_3_bytes` / `fetch_source_serif_4_bytes` 経由で全プラットフォームのフォントテストが pass する
 - Arial.ttf への依存テストはリポジトリフォントへ切り替えるか、`load_arial()` ヘルパー撤去を別 concrete issue / PR で実施し、CI でスキップされないテスト構成にする
