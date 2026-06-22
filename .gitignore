@@ -4,6 +4,7 @@ target/
 .claude/
 .codex/
 .cursor/
+.kimi-code/
 
 # macOS
 .DS_Store
