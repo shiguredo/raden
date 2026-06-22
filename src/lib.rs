@@ -17,7 +17,10 @@ pub use api::matrix::Matrix2D;
 pub use api::path::{Path, PathCmd, Point};
 pub use api::pattern::{Pattern, PatternFilter};
 pub use api::style::{CompOp, FillRule, Rgba32, StrokeCap, StrokeJoin};
-pub use font::{Font, FontData, FontError, FontFace, GlyphBounds, TextMetrics};
+pub use font::{
+    Font, FontData, FontError, FontFace, FontFeatureSettings, GlyphBounds, GlyphBuffer,
+    GlyphBufferIter, GlyphPlacement, TextMetrics,
+};
 pub use pipeline::runtime::PipelineRuntime;
 pub use pixel::PixelFormat;
 pub use pixel::premultiply_rgba;

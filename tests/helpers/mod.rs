@@ -4,3 +4,4 @@
 // `tests/helpers/mod.rs` ディレクトリ形式にして実行対象から外す。
 
 pub mod font_fetch;
+pub mod font_local;

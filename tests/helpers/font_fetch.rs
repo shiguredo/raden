@@ -1,5 +1,10 @@
 //! テスト用フォントのダウンロード・キャッシュ・SHA-256 検証ヘルパー。
 //!
+//! 各 integration test ファイルから `mod helpers;` で読み込まれ、ソースレベルで
+//! 共有される。各 test binary では必ずしも全公開関数が使われるとは限らないため、
+//! モジュールレベルで `dead_code` を抑制する。
+#![expect(dead_code)]
+//!
 //! Source Sans 3 / Source Serif 4 を初回利用時に HTTPS 経由でダウンロードし、
 //! `<CARGO_TARGET_TMPDIR>/test-fonts/` にキャッシュする。実装は依存クレートを
 //! 一切追加せず、HTTPS 取得は `curl` の子プロセス呼び出し、SHA-256 検証は
@@ -61,10 +66,6 @@ static SEQ: AtomicU64 = AtomicU64::new(0);
 /// Rust の dead code 解析は derive された `Debug` 実装内の read を未使用扱いするため、
 /// この lint をここで抑制しないとビルドが警告で汚れる。
 #[derive(Debug)]
-#[expect(
-    dead_code,
-    reason = "各 variant のフィールドは Debug 経由でのみ read されるため dead code 解析では未使用扱いになる"
-)]
 pub enum FetchError {
     /// 取得に失敗した (curl 不在以外のネットワーク・HTTP・TLS 失敗)。
     NetworkFailure { url: String, last_error: String },
@@ -175,7 +176,7 @@ fn fetch_bytes_internal(spec: &FontSpec) -> Result<Vec<u8>, FetchError> {
             // ライセンス通知。`cargo test` の既定では capture されるが、
             // `--nocapture` 実行時とテスト失敗の panic 経路で表示される。
             eprintln!(
-                "テスト用フォントをダウンロードします: {} (SIL OFL 1.1) {}",
+                "Downloading test font: {} (SIL OFL 1.1) {}",
                 spec.name, spec.url
             );
         }
