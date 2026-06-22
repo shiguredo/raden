@@ -3,6 +3,7 @@
 - Priority: Medium
 - Category: add
 - Created: 2026-05-11
+- Completed: 2026-06-22
 - Model: Kimi K2.7 Code
 - Branch: feature/add-opentype-basic-shaping
 - Polished: 2026-06-22
@@ -295,7 +296,7 @@ fn compute_bounding_box(buffer: &GlyphBuffer, font: &Font) -> Option<GlyphBounds
 
 ### Fuzzing
 
-不正な GSUB / GPOS テーブル (Coverage Format 不正、ClassDef 不正、Lookup Type 不正、Extension の入れ子等) に対するクラッシュ耐性は、`parse_all` 経由の既存 fuzz target で自動的にカバーされる (`parse_all` 内から `parse_gsub` / `parse_gpos` が呼ばれるため、フォントファイル全体のバイト列を入力とする target に GSUB / GPOS バイトも含まれる)。GSUB / GPOS 個別の fuzz target は本 issue では追加しない (テーブル深部のカバレッジが薄い問題は 24 時間連続実行収束で対応、0001 メタ issue の完了条件で扱う。0025 の `parse_kern` fuzz が同じ方針を採った前例と整合)。
+fuzzing 基盤は現時点では未整備 (`fuzz/` ディレクトリは `.gitkeep` のみ) 。不正な GSUB / GPOS テーブル (Coverage Format 不正、ClassDef 不正、Lookup Type 不正、Extension の入れ子等) に対するクラッシュ耐性は、0001 メタ issue の fuzzing 基盤整備後に `parse_all` 経由の fuzz target でカバーする。GSUB / GPOS 個別の fuzz target は本 issue では追加しない (テーブル深部のカバレッジが薄い問題は 24 時間連続実行収束で対応、0001 メタ issue の完了条件で扱う。0025 の `parse_kern` fuzz が同じ方針を採った前例と整合)。
 
 ### 0001 メタ issue 更新責務
 

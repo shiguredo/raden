@@ -433,7 +433,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | Blend2D | raden | 状態 |
 |---------|-------|------|
 | `create_from_face(BLFontFace, float)` | `Font::from_face(&FontFace, f64)` | 一致 |
-| `create_from_face(BLFontFace, float, BLFontFeatureSettings)` | なし | 未実装: feature 付き生成 |
+| `create_from_face(BLFontFace, float, BLFontFeatureSettings)` | `Font::with_features(&FontFace, f64, FontFeatureSettings)` | 一致 |
 | `create_from_face(BLFontFace, float, BLFontFeatureSettings, BLFontVariationSettings)` | なし | 未実装: feature + variation 付き生成 |
 | `size()` / `set_size(float)` | `size()` のみ | 差異あり: `set_size()` がない |
 | `face()` | なし | 未実装: 元の FontFace への参照取得 |
@@ -441,19 +441,19 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `weight()` / `stretch()` / `style()` | なし | 未実装 |
 | `units_per_em()` | なし | 未実装: raden は `Font::scale()` で代替 |
 | `matrix()` / `metrics()` / `design_metrics()` | `ascent()` / `descent()` / `line_gap()` / `cap_height()` / `x_height()` | 差異あり: Blend2D は構造体で一括取得 |
-| `feature_settings()` / `set_feature_settings()` / `reset_feature_settings()` | なし | 未実装: OpenType feature 設定 |
+| `feature_settings()` / `set_feature_settings()` / `reset_feature_settings()` | `Font::feature_settings()` / `Font::set_feature_settings()` / `Font::clone_with_features()` | 差異あり: `reset_feature_settings()` は `FontFeatureSettings::none()` で代替 |
 | `variation_settings()` / `set_variation_settings()` / `reset_variation_settings()` | なし | 未実装: Variable Fonts 設定 |
-| `shape(BLGlyphBuffer&)` | なし | 未実装: OpenType シェーピング |
-| `map_text_to_glyphs(BLGlyphBuffer&)` | `map_char_to_glyph(char)` -> `u16` / `Font::glyph_run_for_text` (`pub(crate)`) | 差異あり: Blend2D はバッファ単位、raden は文字単位の公開 API と `pub(crate)` の内部ヘルパーで対応 |
-| `position_glyphs(BLGlyphBuffer&)` | `glyph_advance(u16)` -> `f64` / `Font::glyph_run_for_text` (`pub(crate)`) | 差異あり: Blend2D はバッファ内全グリフを一括配置、raden は文字単位の公開 API `glyph_advance` と `pub(crate)` の内部ヘルパーで対応 |
-| `apply_kerning(BLGlyphBuffer&)` | なし | 未実装: カーニング適用 |
-| `apply_gsub(BLGlyphBuffer&, BLBitArray&)` / `apply_gpos(...)` | なし | 未実装: 個別 OpenType lookup 適用 |
+| `shape(BLGlyphBuffer&)` | `Font::shape(&str) -> GlyphBuffer` / `Font::shape_into(&str, &mut GlyphBuffer)` | 差異あり: raden は `&str` 入力を内部で cmap → GSUB → GPOS の順に処理 |
+| `map_text_to_glyphs(BLGlyphBuffer&)` | `map_char_to_glyph(char)` -> `u16` / `Font::shape_into(&str, &mut GlyphBuffer)` | 差異あり: Blend2D はバッファ単位、raden は文字単位の公開 API と `shape_into` で対応 |
+| `position_glyphs(BLGlyphBuffer&)` | `glyph_advance(u16)` -> `f64` / `GlyphBuffer::placements` | 差異あり: Blend2D はバッファ内全グリフを一括配置、raden は文字単位の公開 API `glyph_advance` と `GlyphBuffer` の配置情報で対応 |
+| `apply_kerning(BLGlyphBuffer&)` | raden は対応しない (Microsoft OpenType `kern` テーブル v0 非対応。カーニングは GPOS Pair Adjustment を `Font::shape` / `Font::shape_into` 内で適用) | 対象外: `kern` v0 API は提供せず、GPOS 経由でカーニングを実現する |
+| `apply_gsub(BLGlyphBuffer&, BLBitArray&)` / `apply_gpos(...)` | `Font::shape` / `Font::shape_into` 内で GSUB / GPOS を適用 | 差異あり: raden は個別 lookup 呼び出しを提供せず `FontFeatureSettings` 経由で制御 |
 | `get_glyph_outlines(...)` | `append_glyph_outline(glyph_id, offset_x, offset_y, &mut Path)` | 一致 |
 | `get_glyph_bounds(...)` | `FontFace::glyph_bounds(u16) -> Option<GlyphBounds>` / `Font::glyph_bounds(u16) -> Option<GlyphBounds>` | 未実装: グリフ境界ボックスの一括取得 |
 | `get_glyph_advances(...)` | なし | 未実装: グリフ advance 幅の一括取得 |
 | `get_glyph_run_outlines(...)` | なし | 未実装: GlyphRun アウトラインの取得 |
-| `get_text_metrics(BLGlyphBuffer&, BLTextMetrics&)` | `Font::measure_text(&str)` -> `TextMetrics` | 差異あり: raden は `&str` 入力で `TextMetrics { advance: f64 }` を返す個別取得 (`#[non_exhaustive]`)。Blend2D の `BLTextMetrics` (`advance: BLPoint`, `leading_bearing` 等の 4 フィールド) には将来段階的に拡張予定 |
-| `BLGlyphBuffer` | なし | 未実装: グリフバッファ。raden は `fill_text` 内で 1 文字ずつ処理 |
+| `get_text_metrics(BLGlyphBuffer&, BLTextMetrics&)` | `Font::measure_text(&str)` -> `TextMetrics` | 差異あり: raden は `&str` 入力で `TextMetrics { advance, bounding_box, leading_bearing, trailing_bearing }` を返す個別取得 (`#[non_exhaustive]`)。Blend2D の `BLTextMetrics::advance` は `BLPoint` (水平垂直両対応) |
+| `BLGlyphBuffer` | `GlyphBuffer` | 差異あり: raden の `GlyphBuffer` は glyph_ids / placements / clusters の 3 配列構成。フィールドは `pub(crate)` で、クレート外からは `iter()` / `glyph_id()` / `placement()` / `cluster()` 経由でアクセスする |
 | なし | `Font::scale()` -> `f64` | raden 独自: スケール係数取得 (size / units_per_em) |
 
 ## 画像 API
@@ -519,10 +519,13 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 
 5. ~~**画像転送 (`blit_image`) が未実装**~~ → **`blit_image_rect` / `blit_image_at` を実装済み**（合成モード・フォーマットに制限あり）
 
-6. **OpenType シェーピングが未実装**
-   - `shape()` / `applyKerning()` / `applyGSub()` / `applyGPos()` がない
-   - Variable Fonts も未対応
-   - `BLGlyphBuffer` 相当がなく、raden は 1 文字ずつ処理
+6. ~~**OpenType シェーピングが未実装**~~ → **実装済み**
+   - OpenType 基本シェーピング対応済み
+   - `Font::shape` / `Font::shape_into` / `GlyphBuffer` / `GlyphPlacement` を追加
+   - GSUB Lookup Type 1 (Single Substitution) / Type 4 (Ligature Substitution) 対応
+   - GPOS Single Adjustment / Pair Adjustment によるカーニング対応
+   - Variable Fonts は未対応
+   - Microsoft 形式の古い `kern` テーブル (v0) には非対応 (GPOS Pair Adjustment のみ)
 
 7. **Path の高度な操作が一部未実装**
    - 実装済み: `translate` / `transform` / `add_path` / `add_path_translated` / `add_path_transformed` / `bounding_box` / `control_box`

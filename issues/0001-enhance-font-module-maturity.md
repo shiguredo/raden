@@ -50,14 +50,14 @@ raden の存在意義は Blend2D 互換のため、`docs/BLEND2D.md` のフォ�
 |---|---|---|---|
 | L418 (部分) | `design_metrics()` | 0021 | `FontFace::cap_height()` / `x_height()` (OS/2 テーブル `sCapHeight` / `sxHeight` から取得。`line_gap` / `ascent` / `descent` は hhea 由来で既存) |
 | L443 (部分) | `metrics()` / `design_metrics()` の line_gap / cap_height / x_height | 0021 | `Font::line_gap()`, `FontFace::cap_height()` / `x_height()`, `Font::cap_height()` / `x_height()` |
-| L447 (部分) | `map_text_to_glyphs(BLGlyphBuffer&)` | 0022 (間接) / 0026 (完全) | `Font::glyph_run_for_text()` (`pub(crate)`) → `Font::shape()` |
-| L448 (部分) | `position_glyphs(BLGlyphBuffer&)` | 0022 (間接) / 0026 (完全) | 同上 |
-| L455 | `get_text_metrics(BLGlyphBuffer&, BLTextMetrics&)` | 0022 | `Font::measure_text()`, `TextMetrics` |
+| L447 (部分) | `map_text_to_glyphs(BLGlyphBuffer&)` | 0022 (間接) / 0026 (完全) | `Font::shape_into(&str, &mut GlyphBuffer)` / `map_char_to_glyph(char)` |
+| L448 (部分) | `position_glyphs(BLGlyphBuffer&)` | 0022 (間接) / 0026 (完全) | `GlyphBuffer::placements` / `glyph_advance(u16)` |
+| L455 | `get_text_metrics(BLGlyphBuffer&, BLTextMetrics&)` | 0022 / 0026 | `Font::measure_text()`, `TextMetrics { advance, bounding_box, leading_bearing, trailing_bearing }` |
 | L452 | `get_glyph_bounds(...)` | 0023 | `FontFace::glyph_bounds()`, `Font::glyph_bounds()`, `GlyphBounds` |
 | L175 (部分) | `stroke_utf8_text(...)` | 0024 | `Context::stroke_text()` (UTF-16 / UTF-32 / `stroke_glyph_run` は対象外) |
-| L449 | `apply_kerning(BLGlyphBuffer&)` | 0025 | `FontFace::kern()`, `Font::kern()` |
+| L449 | `apply_kerning(BLGlyphBuffer&)` | 0026 | `Font::shape` / `Font::shape_into` 内で GPOS Pair Adjustment を `kern` feature 有効時に適用 |
 | L446 | `shape(BLGlyphBuffer&)` | 0026 | `Font::shape()`, `GlyphBuffer` |
-| L444 | `feature_settings()` / `set_feature_settings()` | 0026 | `FontFeatureSettings`、`Font::from_face` のシグネチャ拡張または別メソッド (具体は 0026 で確定) |
+| L444 | `feature_settings()` / `set_feature_settings()` | 0026 | `FontFeatureSettings`、`Font::with_features()` / `Font::clone_with_features()` / `Font::set_feature_settings()` / `Font::feature_settings()` |
 | L450 (部分) | `apply_gsub` / `apply_gpos` | 0026 (基本のみ) | (`shape()` 内部) |
 | L456 | `BLGlyphBuffer` | 0026 | `GlyphBuffer` |
 | L420 | `outline_type()` | 0027 | `FontFace::outline_type()`, `OutlineType` |
@@ -79,19 +79,18 @@ raden 全体のバージョンは `Cargo.toml` で `2026.1.1` (CalVer) を採用
 - 描画結果の微差 (差分テストで `tolerance ≤ 1/255` で pass、変更率 1% 未満) を伴う内部実装リファクタリングは `## develop` の `### misc` 直下に `UPDATE` 種別で記載する。判定が難しい場合は対応 concrete issue の polish で確定する
 - 純粋に内部実装のみで描画結果が変わらない変更は CHANGES.md に記載しない
 - 新規追加される公開型は `src/lib.rs` 末尾付近の `pub use font::{Font, FontData, FontError, FontFace, TextMetrics};` 行に alphabetical 順で追加する
-- 将来フィールド追加で破壊的変更を避けたい公開構造体には `#[non_exhaustive]` を付与する (`TextMetrics`, `GlyphBounds`, `GlyphBuffer`, `FontFeatureSettings` が該当)
+- 将来フィールド追加で破壊的変更を避けたい公開構造体には `#[non_exhaustive]` を付与する (`TextMetrics`, `GlyphBounds`, `GlyphBuffer`, `GlyphPlacement`, `FontFeatureSettings` が該当)
 - font モジュールの本格安定化は raden 全体 SemVer / 安定化方針 (別 issue。tracked items 参照) の確定後に再評価する
 
 ### 段階拡張で意味が変わる API
 
-| API | 0022 時点 (close) | 0025 時点 (close) | 0026 時点 (close) | 追加責務を持つ concrete issue |
-|---|---|---|---|---|
-| `TextMetrics.advance` | f64 (カーニング非適用の単体 advance 総和) | f64 (カーニング適用済み) | f64 (シェーピング適用済み。GSUB + GPOS / Pair Adjustment 含む。`kern` テーブルは GPOS 不在フォントへのフォールバックとして残るかは 0026 で確定) | 0022 / 0025 / 0026 で意味が変化 |
-| `TextMetrics` フィールド | `advance` のみ | 同上 | `bounding_box` 追加 | `bounding_box` の追加責務は 0023 |
-| `TextMetrics` フィールド (追加) | (未追加) | (未追加) | `leading_bearing` / `trailing_bearing` 追加 | 0026 |
-| `Font::glyph_run_for_text()` | `pub(crate) fn(&str, &mut Vec<(u16, f64)>)` | 同上 | `Font::shape()` に置換し本メソッドは削除。`fill_text` / `measure_text` / `stroke_text` の呼び出し元は全て `shape()` 経由に置換 | 0026 |
-| `Font::from_face` シグネチャ | `(&FontFace, f64) -> Self` | 同上 | `FontFeatureSettings` 対応 (`from_face` 拡張または `Font::with_features` 等の別メソッド) | 0026 |
-| `GlyphBuffer` レイアウト | (未追加) | (未追加) | 0026 で初出。SoA / AoS、placement / advance の整数 / 浮動小数点、`cluster` 配列の有無を 0026 で確定 (確定時に本行を更新) | 0026 |
+| API | 0022 時点 (close) | 0026 時点 (close) | 追加責務を持つ concrete issue |
+|---|---|---|---|
+| `TextMetrics.advance` | f64 (カーニング非適用の単体 advance 総和) | f64 (シェーピング適用済み。GSUB + GPOS / Pair Adjustment 含む。raden は Microsoft 形式 `kern` テーブル v0 に非対応) | 0022 / 0026 で意味が変化 |
+| `TextMetrics` フィールド | `advance` のみ | `advance` / `bounding_box` / `leading_bearing` / `trailing_bearing` | `bounding_box` の追加責務は 0023、`leading_bearing` / `trailing_bearing` は 0026 |
+| `Font::glyph_run_for_text()` | `pub(crate) fn(&str, &mut Vec<(u16, f64)>)` | 削除。`fill_text` / `measure_text` / `stroke_text` は `Font::shape()` / `Font::shape_into()` 経由 | 0026 |
+| `Font::from_face` シグネチャ | `(&FontFace, f64) -> Self` | `Font::from_face(&FontFace, f64)` はデフォルト `FontFeatureSettings` で動作。`Font::with_features(&FontFace, f64, FontFeatureSettings)` を追加 | 0026 |
+| `GlyphBuffer` レイアウト | (未追加) | SoA: `glyph_ids: Vec<u16>`, `placements: Vec<GlyphPlacement>`, `clusters: Vec<u32>`。フィールドは `pub(crate)` で、`iter()` / `glyph_id()` / `placement()` / `cluster()` 経由でアクセスする。`GlyphPlacement` は `offset_x` / `offset_y` / `advance` の f64 3 フィールド | 0026 |
 
 `BLTextMetrics` 互換の `Point` 化、`BLGlyphBuffer` 互換 SoA レイアウト化、`BLGlyphPlacement` 互換の整数化は本 issue のスコープ外で、font モジュール安定化前に別 issue で確定させる (該当 tracked item は本 issue では持たない。raden 全体安定化方針別 issue と並行で起票判断)。
 
@@ -103,8 +102,8 @@ raden 全体のバージョンは `Cargo.toml` で `2026.1.1` (CalVer) を採用
 | 0022 | `0022-add-text-measurement.md` | テキストサイズ計測機能を追加する | closed | High |
 | 0023 | `0023-add-glyph-bounds.md` | グリフ境界ボックス取得機能を追加する | open | High |
 | 0024 | `0024-add-stroke-text.md` | ストロークテキスト描画機能を追加する | open | High |
-| 0025 | `0025-add-font-kerning.md` | カーニング適用機能を追加する | open | Medium |
-| 0026 | `0026-add-opentype-basic-shaping.md` | OpenType 基本シェーピング機能を追加する | open | Medium |
+| 0025 | `0025-add-font-kerning.md` | カーニング適用機能を追加する | closed | Medium |
+| 0026 | `0026-add-opentype-basic-shaping.md` | OpenType 基本シェーピング機能を追加する | closed | Medium |
 | 0027 | `0027-add-cff-cff2-outline-support.md` | CFF / CFF2 フォントアウトライン対応を追加する | open | Medium |
 | 0039 | `0039-add-test-font-downloader.md` | テスト用フォントのダウンロード機構を追加する | closed | High |
 
@@ -174,11 +173,10 @@ raden 全体 SemVer / 安定化方針確定 tracked は本 issue close PR の中
 ### 依存関係 (0024 / 0025 / 0026 / 0027、部分並行可)
 
 - 0024 → 0022 (`glyph_run_for_text` を使用)
-- 0025 → 0022, 0024 (`fill_text` / `measure_text` / `stroke_text` 3 者にカーニング適用)
-- 0026 → 0022, 0025 (`glyph_run_for_text` を `shape()` で置換、GPOS Pair Adjustment で `kern` テーブルを置換)
+- 0026 → 0022, 0023, 0024 (`glyph_run_for_text` を `shape()` / `shape_into()` で置換。GPOS Pair Adjustment 経路のカーニングを `shape()` 内で実装)
 - 0027 → 0026 (CFF / CFF2 対応は TrueType 前提のカーニング・シェーピングパイプラインが安定した後に着手するのが自然。`shape()` 経路を流用するため)
 
-closed にする順序は 0024 → 0025 → 0026 → 0027 の直列を原則とする。ただし 0025 は `stroke_text` 以外 (`fill_text` / `measure_text`) について 0024 と並行着手可能。0024 で書かれた `stroke_text` は 0025 完了時にカーニング適用へ改修する必要があり、この後追い改修は **0025 のスコープに含む** (本 issue を closed にするためには 0025 を closed にする必要があるため、0025 polish 時に 0025 解決方法へ反映される)。
+closed にする順序は 0024 → 0026 → 0027 の直列を原則とする。0025 は `kern` テーブル v0 非対応として closed しており、カーニング適用は 0026 のスコープに含まれる。
 
 ### 最終 PR (本 issue を closed にする PR)
 
@@ -191,7 +189,7 @@ closed にする順序は 0024 → 0025 → 0026 → 0027 の直列を原則と�
 - 本 issue 内の各テーブル (Concrete issue 一覧 / Tracked items / Blend2D との対応表) は、対象 concrete issue を closed にする PR の中で同 PR で更新する。最終 PR (本 issue を closed にする PR) では `docs/BLEND2D.md` の確定状態化と raden 全体 SemVer 別 issue 起票・本備考への番号追記を行う
 - raden 全体 SemVer / 安定化方針別 issue 番号: (本 issue close PR で追記する)
 - CJK 統合漢字 / BMP 外文字のカバレッジは Source Sans 3 / Source Serif 4 では満たせない。必要になった時点で別 tracked / 別 issue を起票する
-- 0039 closed 後、0025 / 0026 / 0027 / 0037 を `/polish-issue` で個別に再 polish し、本文中の「リポジトリ同梱前提」を `fetch_source_sans_3_bytes` / `fetch_source_serif_4_bytes` 参照に書き換える。0025 polish では Source Sans 3 / Source Serif 4 のいずれも `kern` テーブルを持たない事実を踏まえ、kern fallback 動作確認 (`Font::kern() == 0`) に再定義するか、`kern` 付きフォント追加選定の別 issue を起票するかを確定する。0027 polish では `TableDirectory::parse` (`src/font/tables.rs:58-93`) の sfnt version 判定に `0x4F54544F` (`OTTO`) を追加する責務を含める。0037 polish では本 issue が新設した `tests/helpers/mod.rs` に `pub mod font;` 行を 1 行追加する流れを前提とする。Source Sans 3 のバージョン更新時は SHA-256 と同時に `kern` テーブル有無の再確認を必須とする
+- 0039 closed 後、0027 / 0037 を `/polish-issue` で個別に再 polish し、本文中の「リポジトリ同梱前提」を `fetch_source_sans_3_bytes` / `fetch_source_serif_4_bytes` 参照に書き換える。0027 polish では `TableDirectory::parse` (`src/font/tables.rs:58-93`) の sfnt version 判定に `0x4F54544F` (`OTTO`) を追加する責務を含める。0037 polish では本 issue が新設した `tests/helpers/mod.rs` に `pub mod font;` 行を 1 行追加する流れを前提とする。Source Sans 3 のバージョン更新時は SHA-256 と同時に `kern` テーブル有無の再確認を必須とする
 
 ## 解決方法
 
