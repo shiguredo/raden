@@ -532,3 +532,40 @@ fn font_with_features_and_set() {
     let text = "ff";
     assert_eq!(font_with.shape(text).len(), font_set.shape(text).len());
 }
+
+#[test]
+fn from_file_accepts_path_like_types() {
+    // `AsRef<Path>` を実装する主要 4 型を `FontData::from_file` に渡せることを検証する。
+    // `String` / `PathBuf` は所有を保ったまま参照渡しで検証する。
+    // エラー経路が動くことだけ確認し、エラー種別は固定しない（将来のバリデーション追加で
+    // `FontError::Io` 以外に変わっても本テストの目的は変わらない）。
+    const MISSING: &str = "definitely_not_existing_font_file";
+    assert!(
+        !std::path::Path::new(MISSING).exists(),
+        "前提: テスト用パスは存在しない必要がある"
+    );
+
+    let s: &str = MISSING;
+    assert!(
+        FontData::from_file(s).is_err(),
+        "&str 経路で Err を返す必要がある"
+    );
+
+    let p: &std::path::Path = std::path::Path::new(MISSING);
+    assert!(
+        FontData::from_file(p).is_err(),
+        "&Path 経路で Err を返す必要がある"
+    );
+
+    let buf: std::path::PathBuf = std::path::PathBuf::from(MISSING);
+    assert!(
+        FontData::from_file(&buf).is_err(),
+        "&PathBuf 経路で Err を返す必要がある"
+    );
+
+    let owned: String = String::from(MISSING);
+    assert!(
+        FontData::from_file(&owned).is_err(),
+        "&String 経路で Err を返す必要がある"
+    );
+}

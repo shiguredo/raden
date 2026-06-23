@@ -11,12 +11,6 @@
 
 ## develop
 
-- [ADD] `examples/font_shaping.rs` を追加する
-  - @voluntas
-- [UPDATE] `README.md` のフォント機能説明を最新の実装に合わせて更新する
-  - @voluntas
-- [UPDATE] `docs/BLEND2D.md` のフォント機能比較を最新の実装に合わせて更新する
-  - @voluntas
 - [CHANGE] `Font::measure_text` の戻り値 `advance` を OpenType GSUB / GPOS シェーピング適用済みに変更する
   - @voluntas
 - [CHANGE] `Font::measure_text` の戻り値 `TextMetrics.bounding_box` を OpenType GSUB / GPOS シェーピング適用済みの bbox に変更する
@@ -24,6 +18,8 @@
 - [CHANGE] `Context::fill_text` の描画結果のグリフ列・位置を OpenType GSUB / GPOS シェーピング適用済みに変更する
   - @voluntas
 - [CHANGE] `Context::stroke_text` の描画結果のグリフ列・位置を OpenType GSUB / GPOS シェーピング適用済みに変更する
+  - @voluntas
+- [ADD] `examples/font_shaping.rs` を追加する
   - @voluntas
 - [ADD] `Font` に `Clone` 実装を追加する
   - @voluntas
@@ -73,6 +69,16 @@
   - @voluntas
 - [ADD] `Context::stroke_text` を追加する
   - @voluntas
+- [UPDATE] `README.md` のフォント機能説明を最新の実装に合わせて更新する
+  - @voluntas
+- [UPDATE] `docs/BLEND2D.md` のフォント機能比較を最新の実装に合わせて更新する
+  - @voluntas
+- [UPDATE] `FontData::from_file` の引数を `<P: AsRef<Path>>(path: P)` 形式に変更する
+  - @sile
+- [UPDATE] `codec::bmp::write_bmp` の引数を `<P: AsRef<Path>>(path: P)` 形式に変更する
+  - @sile
+- [UPDATE] `Image::write_to_file` の引数を `<P: AsRef<Path>>(path: P)` 形式に変更する
+  - @sile
 - [FIX] `cmap` format 4 の glyph_id_array オフセット境界判定を修正する
   - @voluntas
 

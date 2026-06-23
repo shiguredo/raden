@@ -59,7 +59,7 @@ impl Image {
         self.data.as_mut_ptr()
     }
 
-    pub fn write_to_file(&self, path: impl AsRef<Path>) -> std::io::Result<()> {
+    pub fn write_to_file<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()> {
         bmp::write_bmp(path, self.width, self.height, self.stride, &self.data)
     }
 }

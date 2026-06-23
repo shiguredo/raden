@@ -49,7 +49,9 @@ pub struct FontData {
 
 impl FontData {
     /// ファイルからフォントデータを読み込む。
-    pub fn from_file(path: &str) -> Result<Self, FontError> {
+    // `std::path::Path` を fully-qualified で書くのは、本ファイル冒頭の
+    // `use crate::api::path::Path;` (raden ドメイン型) との同名衝突を避けるため。
+    pub fn from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self, FontError> {
         let data = std::fs::read(path)?;
         Ok(Self { data })
     }

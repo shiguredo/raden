@@ -7,8 +7,8 @@ use std::path::Path;
 /// - negative height で top-down 格納（行反転不要）
 /// - PRGB32 のバイト列をそのまま書き出す（LE 環境前提）
 /// - カラーマスク: R=0x00FF0000, G=0x0000FF00, B=0x000000FF
-pub fn write_bmp(
-    path: impl AsRef<Path>,
+pub fn write_bmp<P: AsRef<Path>>(
+    path: P,
     width: u32,
     height: u32,
     stride: usize,
