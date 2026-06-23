@@ -117,8 +117,7 @@ impl FontData {
 - `src/font/mod.rs` の他箇所（`outline_glyph` 等の `&mut Path` 参照）が壊れていない
 - `src/codec/bmp.rs:10` の `write_bmp` のシグネチャが `pub fn write_bmp<P: AsRef<Path>>(path: P, width: u32, height: u32, stride: usize, data: &[u8]) -> std::io::Result<()>` になっている
 - `src/api/image.rs:62` の `Image::write_to_file` のシグネチャが `pub fn write_to_file<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()>` になっている
-- `tests/test_font.rs` 先頭の `use raden::{...};` に `FontError` が追加されている
-- `tests/test_font.rs` に `&str` / `&Path` / `&PathBuf` / `&String` の 4 種を渡してコンパイルが通り、いずれも `Err(FontError::Io(_))` が返ることを確認するテストが 1 件追加されている
+- `tests/test_font.rs` に `&str` / `&Path` / `&PathBuf` / `&String` の 4 種を渡してコンパイルが通り、いずれも `Err` が返ることを確認するテストが 1 件追加されている（エラー種別は固定しない）
 - `CHANGES.md` の `## develop` セクションに `[UPDATE]` エントリ 3 件（3 関数分）が `shiguredo-changelog` 規約の 2 行構造（変更内容 + 担当者）で追加されている（具体的な追記テキストは「解決方法 5」参照）
 - CI と同じ 3 コマンド（`cargo fmt --all --check` / `cargo test --workspace` / `cargo clippy --workspace -- -D warnings`、`.github/workflows/ci.yml:47-49`）がローカルで通る
 
@@ -132,27 +131,47 @@ impl FontData {
 
 4. `tests/test_font.rs` に受け入れ型の網羅テストを追加する。
 
-   - L7 の `use raden::{...};` に `FontError` を追加する（現状: `use raden::{Font, FontData, FontFace, FontFeatureSettings, GlyphBuffer};` → 追加後: `use raden::{Font, FontData, FontError, FontFace, FontFeatureSettings, GlyphBuffer};`。アルファベット順で `FontData` と `FontFace` の間に挿入する）
    - 追加テストはフォント実体を必要としないため、既存テストとの位置依存はない。`tests/test_font.rs` の末尾に追加する
-   - テストの意図は「シグネチャ一般化で 4 種類の型を渡してもコンパイルが通ること（受け入れ型の網羅）」と「いずれの型でも存在しないパスに対して `FontError::Io(_)` を返すこと（エラーパスの一貫性）」の 2 点
+   - テストの意図は「シグネチャ一般化で 4 種類の型を渡してもコンパイルが通ること（受け入れ型の網羅）」と「いずれの型でも存在しないパスに対して `Err` が返ること（エラー経路一貫性）」の 2 点
+   - エラー種別は固定しない。`is_err()` のみ確認することで、将来のバリデーション追加（`FontError::InvalidData` 等）で本テストが意図せず壊れることを防ぐ
+   - assert メッセージはケース別に日本語で明示し、失敗時にどの型ケースが落ちたか即特定できるようにする
 
    ```rust
    #[test]
    fn from_file_accepts_path_like_types() {
-       // 4 種類のパス型を渡し、いずれもコンパイルが通り `FontError::Io` で返ることを確認する。
-       // フォント実体は必要とせず、CI 環境でも実行できる。
-       // 所有権を保持し続ける典型ユースケースに合わせて、`String` / `PathBuf` も参照渡しで検証する。
-       let s: &str = "definitely_not_existing_font_file";
-       assert!(matches!(FontData::from_file(s), Err(FontError::Io(_))));
+       // `AsRef<Path>` を実装する主要 4 型を `FontData::from_file` に渡せることを検証する。
+       // `String` / `PathBuf` は所有を保ったまま参照渡しで検証する。
+       // エラー経路が動くことだけ確認し、エラー種別は固定しない（将来のバリデーション追加で
+       // `FontError::Io` 以外に変わっても本テストの目的は変わらない）。
+       const MISSING: &str = "definitely_not_existing_font_file";
+       assert!(
+           !std::path::Path::new(MISSING).exists(),
+           "前提: テスト用パスは存在しない必要がある"
+       );
 
-       let p: &std::path::Path = std::path::Path::new("definitely_not_existing_font_file");
-       assert!(matches!(FontData::from_file(p), Err(FontError::Io(_))));
+       let s: &str = MISSING;
+       assert!(
+           FontData::from_file(s).is_err(),
+           "&str 経路で Err を返す必要がある"
+       );
 
-       let buf: std::path::PathBuf = std::path::PathBuf::from("definitely_not_existing_font_file");
-       assert!(matches!(FontData::from_file(&buf), Err(FontError::Io(_))));
+       let p: &std::path::Path = std::path::Path::new(MISSING);
+       assert!(
+           FontData::from_file(p).is_err(),
+           "&Path 経路で Err を返す必要がある"
+       );
 
-       let owned: String = String::from("definitely_not_existing_font_file");
-       assert!(matches!(FontData::from_file(&owned), Err(FontError::Io(_))));
+       let buf: std::path::PathBuf = std::path::PathBuf::from(MISSING);
+       assert!(
+           FontData::from_file(&buf).is_err(),
+           "&PathBuf 経路で Err を返す必要がある"
+       );
+
+       let owned: String = String::from(MISSING);
+       assert!(
+           FontData::from_file(&owned).is_err(),
+           "&String 経路で Err を返す必要がある"
+       );
    }
    ```
 

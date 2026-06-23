@@ -4,7 +4,7 @@ use helpers::font_fetch::{
     fetch_source_sans_3_bytes, fetch_source_serif_4_bytes, verify_has_table,
 };
 use helpers::font_local::load_arial;
-use raden::{Font, FontData, FontError, FontFace, FontFeatureSettings, GlyphBuffer};
+use raden::{Font, FontData, FontFace, FontFeatureSettings, GlyphBuffer};
 
 /// Source Sans 3 Regular をダウンロードして FontFace を返す。
 /// ネットワーク取得や SHA-256 検証に失敗した場合は panic してテストを失敗させる。
@@ -535,16 +535,37 @@ fn font_with_features_and_set() {
 
 #[test]
 fn from_file_accepts_path_like_types() {
-    // 所有権を保持し続ける典型ユースケースに合わせて、`String` / `PathBuf` も参照渡しで検証する。
-    let s: &str = "definitely_not_existing_font_file";
-    assert!(matches!(FontData::from_file(s), Err(FontError::Io(_))));
+    // `AsRef<Path>` を実装する主要 4 型を `FontData::from_file` に渡せることを検証する。
+    // `String` / `PathBuf` は所有を保ったまま参照渡しで検証する。
+    // エラー経路が動くことだけ確認し、エラー種別は固定しない（将来のバリデーション追加で
+    // `FontError::Io` 以外に変わっても本テストの目的は変わらない）。
+    const MISSING: &str = "definitely_not_existing_font_file";
+    assert!(
+        !std::path::Path::new(MISSING).exists(),
+        "前提: テスト用パスは存在しない必要がある"
+    );
 
-    let p: &std::path::Path = std::path::Path::new("definitely_not_existing_font_file");
-    assert!(matches!(FontData::from_file(p), Err(FontError::Io(_))));
+    let s: &str = MISSING;
+    assert!(
+        FontData::from_file(s).is_err(),
+        "&str 経路で Err を返す必要がある"
+    );
 
-    let buf: std::path::PathBuf = std::path::PathBuf::from("definitely_not_existing_font_file");
-    assert!(matches!(FontData::from_file(&buf), Err(FontError::Io(_))));
+    let p: &std::path::Path = std::path::Path::new(MISSING);
+    assert!(
+        FontData::from_file(p).is_err(),
+        "&Path 経路で Err を返す必要がある"
+    );
 
-    let owned: String = String::from("definitely_not_existing_font_file");
-    assert!(matches!(FontData::from_file(&owned), Err(FontError::Io(_))));
+    let buf: std::path::PathBuf = std::path::PathBuf::from(MISSING);
+    assert!(
+        FontData::from_file(&buf).is_err(),
+        "&PathBuf 経路で Err を返す必要がある"
+    );
+
+    let owned: String = String::from(MISSING);
+    assert!(
+        FontData::from_file(&owned).is_err(),
+        "&String 経路で Err を返す必要がある"
+    );
 }
