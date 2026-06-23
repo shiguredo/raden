@@ -535,8 +535,6 @@ fn font_with_features_and_set() {
 
 #[test]
 fn from_file_accepts_path_like_types() {
-    // 4 種類のパス型を渡し、いずれもコンパイルが通り `FontError::Io` で返ることを確認する。
-    // フォント実体は必要とせず、CI 環境でも実行できる。
     // 所有権を保持し続ける典型ユースケースに合わせて、`String` / `PathBuf` も参照渡しで検証する。
     let s: &str = "definitely_not_existing_font_file";
     assert!(matches!(FontData::from_file(s), Err(FontError::Io(_))));

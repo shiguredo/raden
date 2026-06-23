@@ -77,8 +77,6 @@ impl FontData {
 
 `bmp::write_bmp` の外部からの直接呼び出しは現状なし（`Image::write_to_file` 内部のみ）。`Image::write_to_file` も同様に外部からの利用は examples / tests には見当たらない。
 
-`pbt/` は `Cargo.toml:15` の `members = ["pbt"]` で workspace member。検証コマンドは `--workspace` 必須。
-
 ### ドキュメント記述の現状
 
 `README.md:201` / `docs/BLEND2D.md:406` / `skills/raden/SKILL.md:228` はいずれも `from_file(path)` の表記で型まで踏み込んでおらず、本変更で書き換え不要。
@@ -110,7 +108,6 @@ impl FontData {
 厳密には非互換となる稀ケース（raden の利用パターンとして想定しない）:
 
 - `FontData::from_file` の関数ポインタ取得: `let f: fn(&str) -> _ = FontData::from_file;` はジェネリック関数化により壊れる
-- `impl Trait` 形式から `<P: ...>` 形式への変更は、`bmp::write_bmp::<&Path>(...)` のようなターボフィッシュ呼び出しが可能になる方向の拡張（壊れる方向ではない）
 
 `shiguredo-changelog` の分類では、通常呼び出しが無変更で通るため `[CHANGE]` ではなく `[UPDATE]` で扱う。
 
@@ -122,15 +119,7 @@ impl FontData {
 - `src/api/image.rs:62` の `Image::write_to_file` のシグネチャが `pub fn write_to_file<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()>` になっている
 - `tests/test_font.rs` 先頭の `use raden::{...};` に `FontError` が追加されている
 - `tests/test_font.rs` に `&str` / `&Path` / `&PathBuf` / `&String` の 4 種を渡してコンパイルが通り、いずれも `Err(FontError::Io(_))` が返ることを確認するテストが 1 件追加されている
-- `CHANGES.md` の `## develop` セクション末尾に以下 3 件 6 行（各エントリ 2 行 = 変更内容 + 担当者）が追加されている
-  ```
-  - [UPDATE] `FontData::from_file` の引数を `<P: AsRef<Path>>(path: P)` 形式に変更する
-    - @sile
-  - [UPDATE] `codec::bmp::write_bmp` の引数を `<P: AsRef<Path>>(path: P)` 形式に変更する
-    - @sile
-  - [UPDATE] `Image::write_to_file` の引数を `<P: AsRef<Path>>(path: P)` 形式に変更する
-    - @sile
-  ```
+- `CHANGES.md` の `## develop` セクションに `[UPDATE]` エントリ 3 件（3 関数分）が `shiguredo-changelog` 規約の 2 行構造（変更内容 + 担当者）で追加されている（具体的な追記テキストは「解決方法 5」参照）
 - CI と同じ 3 コマンド（`cargo fmt --all --check` / `cargo test --workspace` / `cargo clippy --workspace -- -D warnings`、`.github/workflows/ci.yml:47-49`）がローカルで通る
 
 ## 解決方法
@@ -189,7 +178,3 @@ impl FontData {
 - `src/api/image.rs`: 解決方法 3
 - `tests/test_font.rs`: 解決方法 4
 - `CHANGES.md`: 解決方法 5
-
-## 将来の拡張（本 issue のスコープ外）
-
-- `raden::Path`（`crate::api::path::Path`）と `std::path::Path` の同名衝突は、ファイル系の公開 API を追加するたびに `src/font/mod.rs` 系で同じ罠を引く構造。本変更で fully-qualified の `std::path::Path` を使う回避策が定着するが、根本的には raden 側の公開シンボル名 `Path` のリネーム可否を別途検討する余地がある。必要が確定した時点で `create-issue` 経由で別 issue として起票する
