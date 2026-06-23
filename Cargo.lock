@@ -904,7 +904,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "raden"
-version = "2026.1.1"
+version = "2026.2.0-canary.0"
 dependencies = [
  "cranelift-codegen",
  "cranelift-frontend",
