@@ -49,7 +49,7 @@ pub struct FontData {
 
 impl FontData {
     /// ファイルからフォントデータを読み込む。
-    pub fn from_file(path: &str) -> Result<Self, FontError> {
+    pub fn from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self, FontError> {
         let data = std::fs::read(path)?;
         Ok(Self { data })
     }

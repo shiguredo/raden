@@ -4,7 +4,7 @@ use helpers::font_fetch::{
     fetch_source_sans_3_bytes, fetch_source_serif_4_bytes, verify_has_table,
 };
 use helpers::font_local::load_arial;
-use raden::{Font, FontData, FontFace, FontFeatureSettings, GlyphBuffer};
+use raden::{Font, FontData, FontError, FontFace, FontFeatureSettings, GlyphBuffer};
 
 /// Source Sans 3 Regular をダウンロードして FontFace を返す。
 /// ネットワーク取得や SHA-256 検証に失敗した場合は panic してテストを失敗させる。
@@ -531,4 +531,22 @@ fn font_with_features_and_set() {
     // 同じ feature 設定なら shape 結果も一致する。
     let text = "ff";
     assert_eq!(font_with.shape(text).len(), font_set.shape(text).len());
+}
+
+#[test]
+fn from_file_accepts_path_like_types() {
+    // 4 種類のパス型を渡し、いずれもコンパイルが通り `FontError::Io` で返ることを確認する。
+    // フォント実体は必要とせず、CI 環境でも実行できる。
+    // 所有権を保持し続ける典型ユースケースに合わせて、`String` / `PathBuf` も参照渡しで検証する。
+    let s: &str = "definitely_not_existing_font_file";
+    assert!(matches!(FontData::from_file(s), Err(FontError::Io(_))));
+
+    let p: &std::path::Path = std::path::Path::new("definitely_not_existing_font_file");
+    assert!(matches!(FontData::from_file(p), Err(FontError::Io(_))));
+
+    let buf: std::path::PathBuf = std::path::PathBuf::from("definitely_not_existing_font_file");
+    assert!(matches!(FontData::from_file(&buf), Err(FontError::Io(_))));
+
+    let owned: String = String::from("definitely_not_existing_font_file");
+    assert!(matches!(FontData::from_file(&owned), Err(FontError::Io(_))));
 }

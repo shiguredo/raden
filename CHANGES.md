@@ -75,6 +75,12 @@
   - @voluntas
 - [FIX] `cmap` format 4 の glyph_id_array オフセット境界判定を修正する
   - @voluntas
+- [UPDATE] `FontData::from_file` の引数を `<P: AsRef<Path>>(path: P)` 形式に変更する
+  - @sile
+- [UPDATE] `codec::bmp::write_bmp` の引数を `<P: AsRef<Path>>(path: P)` 形式に変更する
+  - @sile
+- [UPDATE] `Image::write_to_file` の引数を `<P: AsRef<Path>>(path: P)` 形式に変更する
+  - @sile
 
 ## 2026.1.1
 
