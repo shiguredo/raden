@@ -1,6 +1,6 @@
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::types;
-use cranelift_codegen::ir::{InstBuilder, MemFlags, Type};
+use cranelift_codegen::ir::{InstBuilder, MemFlagsData, Type};
 use cranelift_frontend::FunctionBuilder;
 
 use super::block_args;
@@ -138,7 +138,7 @@ pub(super) fn build_src_over_box(mut bcx: FunctionBuilder, ptr_type: Type) {
     let unroll_i = bcx.block_params(unroll_loop)[1];
 
     // チャンク 0: offset 0
-    let px0 = bcx.ins().load(vec_type, MemFlags::new(), x_dst, 0);
+    let px0 = bcx.ins().load(vec_type, MemFlagsData::new(), x_dst, 0);
     let r0 = emit_src_over_ag_rb_simd(
         &mut bcx,
         px0,
@@ -147,10 +147,10 @@ pub(super) fn build_src_over_box(mut bcx: FunctionBuilder, ptr_type: Type) {
         inv_alpha_vec,
         mask_vec,
     );
-    bcx.ins().store(MemFlags::new(), r0, x_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), r0, x_dst, 0);
 
     // チャンク 1: offset 16
-    let px1 = bcx.ins().load(vec_type, MemFlags::new(), x_dst, 16);
+    let px1 = bcx.ins().load(vec_type, MemFlagsData::new(), x_dst, 16);
     let r1 = emit_src_over_ag_rb_simd(
         &mut bcx,
         px1,
@@ -159,10 +159,10 @@ pub(super) fn build_src_over_box(mut bcx: FunctionBuilder, ptr_type: Type) {
         inv_alpha_vec,
         mask_vec,
     );
-    bcx.ins().store(MemFlags::new(), r1, x_dst, 16);
+    bcx.ins().store(MemFlagsData::new(), r1, x_dst, 16);
 
     // チャンク 2: offset 32
-    let px2 = bcx.ins().load(vec_type, MemFlags::new(), x_dst, 32);
+    let px2 = bcx.ins().load(vec_type, MemFlagsData::new(), x_dst, 32);
     let r2 = emit_src_over_ag_rb_simd(
         &mut bcx,
         px2,
@@ -171,10 +171,10 @@ pub(super) fn build_src_over_box(mut bcx: FunctionBuilder, ptr_type: Type) {
         inv_alpha_vec,
         mask_vec,
     );
-    bcx.ins().store(MemFlags::new(), r2, x_dst, 32);
+    bcx.ins().store(MemFlagsData::new(), r2, x_dst, 32);
 
     // チャンク 3: offset 48
-    let px3 = bcx.ins().load(vec_type, MemFlags::new(), x_dst, 48);
+    let px3 = bcx.ins().load(vec_type, MemFlagsData::new(), x_dst, 48);
     let r3 = emit_src_over_ag_rb_simd(
         &mut bcx,
         px3,
@@ -183,7 +183,7 @@ pub(super) fn build_src_over_box(mut bcx: FunctionBuilder, ptr_type: Type) {
         inv_alpha_vec,
         mask_vec,
     );
-    bcx.ins().store(MemFlags::new(), r3, x_dst, 48);
+    bcx.ins().store(MemFlagsData::new(), r3, x_dst, 48);
 
     let sixty_four = bcx.ins().iconst(ptr_type, 64);
     let next_x_dst = bcx.ins().iadd(x_dst, sixty_four);
@@ -218,7 +218,7 @@ pub(super) fn build_src_over_box(mut bcx: FunctionBuilder, ptr_type: Type) {
     let x_dst = bcx.block_params(tail_loop)[0];
     let tail_i = bcx.block_params(tail_loop)[1];
 
-    let px = bcx.ins().load(vec_type, MemFlags::new(), x_dst, 0);
+    let px = bcx.ins().load(vec_type, MemFlagsData::new(), x_dst, 0);
     let r = emit_src_over_ag_rb_simd(
         &mut bcx,
         px,
@@ -227,7 +227,7 @@ pub(super) fn build_src_over_box(mut bcx: FunctionBuilder, ptr_type: Type) {
         inv_alpha_vec,
         mask_vec,
     );
-    bcx.ins().store(MemFlags::new(), r, x_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), r, x_dst, 0);
 
     let sixteen = bcx.ins().iconst(ptr_type, 16);
     let next_x_dst = bcx.ins().iadd(x_dst, sixteen);
@@ -262,7 +262,7 @@ pub(super) fn build_src_over_box(mut bcx: FunctionBuilder, ptr_type: Type) {
     let x_dst = bcx.block_params(scalar_loop)[0];
     let scalar_i = bcx.block_params(scalar_loop)[1];
 
-    let dst_pixel = bcx.ins().load(types::I32, MemFlags::new(), x_dst, 0);
+    let dst_pixel = bcx.ins().load(types::I32, MemFlagsData::new(), x_dst, 0);
     let dst_ag = bcx.ins().ushr_imm(dst_pixel, 8);
     let dst_ag = bcx.ins().band(dst_ag, mask_00ff00ff);
     let dst_rb = bcx.ins().band(dst_pixel, mask_00ff00ff);
@@ -280,7 +280,7 @@ pub(super) fn build_src_over_box(mut bcx: FunctionBuilder, ptr_type: Type) {
     let result = bcx.ins().ishl_imm(out_ag, 8);
     let result = bcx.ins().bor(result, out_rb);
 
-    bcx.ins().store(MemFlags::new(), result, x_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, x_dst, 0);
 
     let four = bcx.ins().iconst(ptr_type, 4);
     let next_x_dst = bcx.ins().iadd(x_dst, four);
@@ -382,10 +382,10 @@ pub(super) fn build_src_copy_box(mut bcx: FunctionBuilder, ptr_type: Type) {
     let x_dst = bcx.block_params(unroll_loop)[0];
     let unroll_i = bcx.block_params(unroll_loop)[1];
 
-    bcx.ins().store(MemFlags::new(), src_vec, x_dst, 0);
-    bcx.ins().store(MemFlags::new(), src_vec, x_dst, 16);
-    bcx.ins().store(MemFlags::new(), src_vec, x_dst, 32);
-    bcx.ins().store(MemFlags::new(), src_vec, x_dst, 48);
+    bcx.ins().store(MemFlagsData::new(), src_vec, x_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), src_vec, x_dst, 16);
+    bcx.ins().store(MemFlagsData::new(), src_vec, x_dst, 32);
+    bcx.ins().store(MemFlagsData::new(), src_vec, x_dst, 48);
 
     let sixty_four = bcx.ins().iconst(ptr_type, 64);
     let next_x_dst = bcx.ins().iadd(x_dst, sixty_four);
@@ -420,7 +420,7 @@ pub(super) fn build_src_copy_box(mut bcx: FunctionBuilder, ptr_type: Type) {
     let x_dst = bcx.block_params(tail_loop)[0];
     let tail_i = bcx.block_params(tail_loop)[1];
 
-    bcx.ins().store(MemFlags::new(), src_vec, x_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), src_vec, x_dst, 0);
 
     let sixteen = bcx.ins().iconst(ptr_type, 16);
     let next_x_dst = bcx.ins().iadd(x_dst, sixteen);
@@ -455,7 +455,7 @@ pub(super) fn build_src_copy_box(mut bcx: FunctionBuilder, ptr_type: Type) {
     let x_dst = bcx.block_params(scalar_loop)[0];
     let scalar_i = bcx.block_params(scalar_loop)[1];
 
-    bcx.ins().store(MemFlags::new(), src_solid, x_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), src_solid, x_dst, 0);
 
     let four = bcx.ins().iconst(ptr_type, 4);
     let next_x_dst = bcx.ins().iadd(x_dst, four);

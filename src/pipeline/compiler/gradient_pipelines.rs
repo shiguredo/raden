@@ -7,7 +7,7 @@
 
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::types;
-use cranelift_codegen::ir::{InstBuilder, MemFlags, Type, Value};
+use cranelift_codegen::ir::{InstBuilder, MemFlagsData, Type, Value};
 use cranelift_frontend::FunctionBuilder;
 
 use super::{
@@ -31,7 +31,7 @@ fn emit_lut_lookup(
     };
     let off = bcx.ins().imul(ext_idx, four);
     let addr = bcx.ins().iadd(lut, off);
-    bcx.ins().load(types::I32, MemFlags::new(), addr, 0)
+    bcx.ins().load(types::I32, MemFlagsData::new(), addr, 0)
 }
 
 /// Radial グラデーション行描画の SIMD パイプラインを構築する (不透明 LUT 専用)。
@@ -187,7 +187,7 @@ pub(super) fn build_radial_row_opaque(mut bcx: FunctionBuilder, ptr_type: Type) 
     let result = bcx.ins().insertlane(result, p1, 1);
     let result = bcx.ins().insertlane(result, p2, 2);
     let result = bcx.ins().insertlane(result, p3, 3);
-    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
 
     // ポインタとベクトルを更新
     let sixteen = bcx.ins().iconst(ptr_type, 16);
@@ -249,7 +249,7 @@ pub(super) fn build_radial_row_opaque(mut bcx: FunctionBuilder, ptr_type: Type) 
     let idx = bcx.ins().fcvt_to_sint_sat(types::I32, t);
     let four_s = bcx.ins().iconst(ptr_type, 4);
     let pixel = emit_lut_lookup(&mut bcx, lut, idx, four_s, ptr_type);
-    bcx.ins().store(MemFlags::new(), pixel, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), pixel, current_dst, 0);
 
     let four_bytes = bcx.ins().iconst(ptr_type, 4);
     let next_dst = bcx.ins().iadd(current_dst, four_bytes);
@@ -367,7 +367,9 @@ pub(super) fn build_linear_gradient_cov_opaque(mut bcx: FunctionBuilder, ptr_typ
     let src_pixels = bcx.ins().insertlane(src_pixels, p3, 3);
 
     // カバレッジ判定: 全 0xFF なら高速パス
-    let packed_cov = bcx.ins().load(types::I32, MemFlags::new(), current_cov, 0);
+    let packed_cov = bcx
+        .ins()
+        .load(types::I32, MemFlagsData::new(), current_cov, 0);
     let is_all_ff = bcx.ins().icmp(IntCC::Equal, packed_cov, all_ff);
     bcx.ins().brif(is_all_ff, simd_fast, &[], simd_slow, &[]);
 
@@ -380,7 +382,7 @@ pub(super) fn build_linear_gradient_cov_opaque(mut bcx: FunctionBuilder, ptr_typ
 
     let dst_pixels = bcx
         .ins()
-        .load(types::I32X4, MemFlags::new(), current_dst, 0);
+        .load(types::I32X4, MemFlagsData::new(), current_dst, 0);
     let (dst_a, dst_r, dst_g, dst_b) =
         emit_extract_channels_simd(&mut bcx, dst_pixels, mask_0xff_vec);
 
@@ -398,7 +400,7 @@ pub(super) fn build_linear_gradient_cov_opaque(mut bcx: FunctionBuilder, ptr_typ
     let ob = bcx.ins().iadd(src_b, tmp);
 
     let result = emit_pack_channels_simd(&mut bcx, oa, or, og, ob);
-    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
     bcx.ins().jump(simd_next, &[]);
 
     // === simd_slow ブロック (通常カバレッジ) ===
@@ -416,7 +418,7 @@ pub(super) fn build_linear_gradient_cov_opaque(mut bcx: FunctionBuilder, ptr_typ
     let inv_alpha_v = bcx.ins().isub(c256_vec, cov_src_a);
     let dst_pixels = bcx
         .ins()
-        .load(types::I32X4, MemFlags::new(), current_dst, 0);
+        .load(types::I32X4, MemFlagsData::new(), current_dst, 0);
     let (dst_a, dst_r, dst_g, dst_b) =
         emit_extract_channels_simd(&mut bcx, dst_pixels, mask_0xff_vec);
 
@@ -434,7 +436,7 @@ pub(super) fn build_linear_gradient_cov_opaque(mut bcx: FunctionBuilder, ptr_typ
     let ob = bcx.ins().iadd(cov_src_b, tmp);
 
     let result = emit_pack_channels_simd(&mut bcx, oa, or, og, ob);
-    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
     bcx.ins().jump(simd_next, &[]);
 
     // === simd_next ブロック ===
@@ -484,7 +486,9 @@ pub(super) fn build_linear_gradient_cov_opaque(mut bcx: FunctionBuilder, ptr_typ
     let src = emit_lut_lookup(&mut bcx, lut, idx, four_s, ptr_type);
 
     // カバレッジ
-    let cov_u8 = bcx.ins().load(types::I8, MemFlags::new(), current_cov, 0);
+    let cov_u8 = bcx
+        .ins()
+        .load(types::I8, MemFlagsData::new(), current_cov, 0);
     let cov = bcx.ins().uextend(types::I32, cov_u8);
 
     // src チャネル分解
@@ -504,7 +508,9 @@ pub(super) fn build_linear_gradient_cov_opaque(mut bcx: FunctionBuilder, ptr_typ
 
     // SrcOver blend
     let inv_a = bcx.ins().isub(c256_scalar, csa);
-    let dst_pixel = bcx.ins().load(types::I32, MemFlags::new(), current_dst, 0);
+    let dst_pixel = bcx
+        .ins()
+        .load(types::I32, MemFlagsData::new(), current_dst, 0);
     let tmp = bcx.ins().ushr_imm(dst_pixel, 24);
     let da = bcx.ins().band_imm(tmp, 0xFF);
     let tmp = bcx.ins().ushr_imm(dst_pixel, 16);
@@ -532,7 +538,7 @@ pub(super) fn build_linear_gradient_cov_opaque(mut bcx: FunctionBuilder, ptr_typ
     let tmp = bcx.ins().ishl_imm(og, 8);
     let result = bcx.ins().bor(result, tmp);
     let result = bcx.ins().bor(result, ob);
-    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
 
     // ポインタ更新
     let four_bytes = bcx.ins().iconst(ptr_type, 4);

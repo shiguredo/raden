@@ -73,7 +73,7 @@ mod transform;
 
 use cranelift_codegen::ir::instructions::BlockArg;
 use cranelift_codegen::ir::types;
-use cranelift_codegen::ir::{AbiParam, Endianness, InstBuilder, MemFlags, Value};
+use cranelift_codegen::ir::{AbiParam, Endianness, InstBuilder, MemFlagsData, Value};
 use cranelift_codegen::isa::OwnedTargetIsa;
 use cranelift_codegen::settings;
 use cranelift_codegen::settings::Configurable;
@@ -813,7 +813,7 @@ pub(super) fn emit_expand_packed_coverage_i32x4(
     // i32 → I32X4 の lane 0 に配置 (他レーンはゼロ)
     let vec = bcx.ins().scalar_to_vector(types::I32X4, packed_i32);
     // I32X4 → I8X16 にビット再解釈 (LE フラグ必須)
-    let le_flags = MemFlags::new().with_endianness(Endianness::Little);
+    let le_flags = MemFlagsData::new().with_endianness(Endianness::Little);
     let vec_i8 = bcx.ins().bitcast(types::I8X16, le_flags, vec);
     // I8X16 → I16X8 → I32X4 の 2 段階ゼロ拡張
     let vec_i16 = bcx.ins().uwiden_low(vec_i8);

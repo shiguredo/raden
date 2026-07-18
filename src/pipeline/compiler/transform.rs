@@ -1,6 +1,6 @@
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::types;
-use cranelift_codegen::ir::{InstBuilder, MemFlags, Type};
+use cranelift_codegen::ir::{InstBuilder, MemFlagsData, Type};
 use cranelift_frontend::FunctionBuilder;
 
 use super::block_args;
@@ -69,7 +69,7 @@ pub(super) fn build_transform_edges(mut bcx: FunctionBuilder, ptr_type: Type) {
     let ptr = bcx.block_params(loop_body)[0];
     let remaining = bcx.block_params(loop_body)[1];
 
-    let mem = MemFlags::trusted();
+    let mem = MemFlagsData::trusted();
 
     // 点 (x0, y0) をロード: load F64X2 from ptr+0
     let p0 = bcx.ins().load(types::F64X2, mem, ptr, 0);
