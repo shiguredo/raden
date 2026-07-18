@@ -1,6 +1,6 @@
 [package]
 name = "raden"
-version = "2026.2.0-canary.0"
+version = "2026.2.0-canary.1"
 edition = "2024"
 rust-version = "1.94"
 description = "2D Vector Graphics Library"
