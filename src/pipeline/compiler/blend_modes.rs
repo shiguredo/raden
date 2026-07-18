@@ -1,7 +1,7 @@
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::immediates::Ieee32;
 use cranelift_codegen::ir::types;
-use cranelift_codegen::ir::{Endianness, InstBuilder, MemFlags, Value};
+use cranelift_codegen::ir::{Endianness, InstBuilder, MemFlagsData, Value};
 use cranelift_frontend::FunctionBuilder;
 
 // =============================================================================
@@ -1421,7 +1421,7 @@ pub(super) fn emit_soft_light_blend_f32x4(
     let diff_inner = bcx.ins().fsub(dst_a_f, four_dc);
     let diff_inner_i = bcx.ins().bitcast(
         types::I32X4,
-        MemFlags::new().with_endianness(Endianness::Little),
+        MemFlagsData::new().with_endianness(Endianness::Little),
         diff_inner,
     );
     let zero_i = bcx.ins().iconst(types::I32, 0);
@@ -1431,18 +1431,18 @@ pub(super) fn emit_soft_light_blend_f32x4(
         .icmp(IntCC::SignedGreaterThanOrEqual, diff_inner_i, zero_iv);
     let d2_da_i = bcx.ins().bitcast(
         types::I32X4,
-        MemFlags::new().with_endianness(Endianness::Little),
+        MemFlagsData::new().with_endianness(Endianness::Little),
         d2_da,
     );
     let d3_da_i = bcx.ins().bitcast(
         types::I32X4,
-        MemFlags::new().with_endianness(Endianness::Little),
+        MemFlagsData::new().with_endianness(Endianness::Little),
         d3_da,
     );
     let d_da_i = bcx.ins().bitselect(cond_inner, d2_da_i, d3_da_i);
     let d_da = bcx.ins().bitcast(
         types::F32X4,
-        MemFlags::new().with_endianness(Endianness::Little),
+        MemFlagsData::new().with_endianness(Endianness::Little),
         d_da_i,
     );
 
@@ -1456,7 +1456,7 @@ pub(super) fn emit_soft_light_blend_f32x4(
     let diff_outer = bcx.ins().fsub(src_a_f, two_sc);
     let diff_outer_i = bcx.ins().bitcast(
         types::I32X4,
-        MemFlags::new().with_endianness(Endianness::Little),
+        MemFlagsData::new().with_endianness(Endianness::Little),
         diff_outer,
     );
     let cond_outer = bcx
@@ -1464,18 +1464,18 @@ pub(super) fn emit_soft_light_blend_f32x4(
         .icmp(IntCC::SignedGreaterThanOrEqual, diff_outer_i, zero_iv);
     let blend1_i = bcx.ins().bitcast(
         types::I32X4,
-        MemFlags::new().with_endianness(Endianness::Little),
+        MemFlagsData::new().with_endianness(Endianness::Little),
         blend1,
     );
     let blend23_i = bcx.ins().bitcast(
         types::I32X4,
-        MemFlags::new().with_endianness(Endianness::Little),
+        MemFlagsData::new().with_endianness(Endianness::Little),
         blend23,
     );
     let blend_i = bcx.ins().bitselect(cond_outer, blend1_i, blend23_i);
     let blend = bcx.ins().bitcast(
         types::F32X4,
-        MemFlags::new().with_endianness(Endianness::Little),
+        MemFlagsData::new().with_endianness(Endianness::Little),
         blend_i,
     );
 

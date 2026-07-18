@@ -1,6 +1,6 @@
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::types;
-use cranelift_codegen::ir::{InstBuilder, MemFlags, Type, Value};
+use cranelift_codegen::ir::{InstBuilder, MemFlagsData, Type, Value};
 use cranelift_frontend::FunctionBuilder;
 
 use super::{
@@ -101,7 +101,8 @@ pub(super) fn build_src_copy(mut bcx: FunctionBuilder, ptr_type: Type) {
     let simd_i = bcx.block_params(simd_loop)[1];
 
     // 128-bit ストア: 4 ピクセルを一括書き込み
-    bcx.ins().store(MemFlags::new(), src_vec, current_dst, 0);
+    bcx.ins()
+        .store(MemFlagsData::new(), src_vec, current_dst, 0);
 
     // ポインタを 16 バイト (4 ピクセル) 進める
     let sixteen = bcx.ins().iconst(ptr_type, 16);
@@ -133,7 +134,8 @@ pub(super) fn build_src_copy(mut bcx: FunctionBuilder, ptr_type: Type) {
     let scalar_i = bcx.block_params(scalar_loop)[1];
 
     // 32-bit ストア: 1 ピクセル書き込み
-    bcx.ins().store(MemFlags::new(), src_solid, current_dst, 0);
+    bcx.ins()
+        .store(MemFlagsData::new(), src_solid, current_dst, 0);
 
     let four = bcx.ins().iconst(ptr_type, 4);
     let next_dst = bcx.ins().iadd(current_dst, four);
@@ -258,14 +260,17 @@ pub(super) fn build_src_copy_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
 
     // 4 バイトのカバレッジを 1 つの i32 としてロード。
     // 全バイトが 0xFF なら 0xFFFFFFFF = -1 (i32) になる。
-    let packed_cov = bcx.ins().load(types::I32, MemFlags::new(), current_cov, 0);
+    let packed_cov = bcx
+        .ins()
+        .load(types::I32, MemFlagsData::new(), current_cov, 0);
     let is_all_ff = bcx.ins().icmp(IntCC::Equal, packed_cov, all_ff);
     bcx.ins().brif(is_all_ff, simd_fast, &[], simd_slow, &[]);
 
     // === simd_fast ブロック (cov=0xFF 高速パス) ===
     // cov=0xFF: src_solid を 128-bit ストアするだけ (1 命令)。
     bcx.switch_to_block(simd_fast);
-    bcx.ins().store(MemFlags::new(), src_vec, current_dst, 0);
+    bcx.ins()
+        .store(MemFlagsData::new(), src_vec, current_dst, 0);
     bcx.ins().jump(simd_next, &[]);
 
     // === simd_slow ブロック (通常カバレッジ計算) ===
@@ -302,7 +307,7 @@ pub(super) fn build_src_copy_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     let out_b = bcx.ins().ushr_imm(cb, 16);
 
     let result = emit_pack_channels_simd(&mut bcx, out_a, out_r, out_g, out_b);
-    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
     bcx.ins().jump(simd_next, &[]);
 
     // === simd_next ブロック (高速・通常パス合流) ===
@@ -342,7 +347,9 @@ pub(super) fn build_src_copy_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     let scalar_i = bcx.block_params(scalar_loop)[2];
 
     // 1 バイトのカバレッジをロードして I32 にゼロ拡張
-    let cov_u8 = bcx.ins().load(types::I8, MemFlags::new(), current_cov, 0);
+    let cov_u8 = bcx
+        .ins()
+        .load(types::I8, MemFlagsData::new(), current_cov, 0);
     let cov = bcx.ins().uextend(types::I32, cov_u8);
 
     // out_c = (src_c * cov * 257 + 257) >> 16 (スカラ版)
@@ -374,7 +381,7 @@ pub(super) fn build_src_copy_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     let result = bcx.ins().bor(result, tmp);
     let result = bcx.ins().bor(result, out_b);
 
-    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
 
     // ポインタ更新: dst += 4, cov += 1
     let four = bcx.ins().iconst(ptr_type, 4);
@@ -516,7 +523,9 @@ pub(super) fn build_src_over_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
 
     // 4 バイトのカバレッジを 1 つの i32 としてロード。
     // 全バイトが 0xFF なら 0xFFFFFFFF = -1 (i32) になる。
-    let packed_cov = bcx.ins().load(types::I32, MemFlags::new(), current_cov, 0);
+    let packed_cov = bcx
+        .ins()
+        .load(types::I32, MemFlagsData::new(), current_cov, 0);
     let is_all_ff = bcx.ins().icmp(IntCC::Equal, packed_cov, all_ff);
     bcx.ins().brif(is_all_ff, simd_fast, &[], simd_slow, &[]);
 
@@ -526,7 +535,7 @@ pub(super) fn build_src_over_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     bcx.switch_to_block(simd_fast);
     let dst_pixels = bcx
         .ins()
-        .load(types::I32X4, MemFlags::new(), current_dst, 0);
+        .load(types::I32X4, MemFlagsData::new(), current_dst, 0);
     let (dst_a_v, dst_r_v, dst_g_v, dst_b_v) =
         emit_extract_channels_simd(&mut bcx, dst_pixels, mask_0xff_vec);
 
@@ -548,7 +557,7 @@ pub(super) fn build_src_over_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     let out_b = bcx.ins().iadd(src_b_vec, db);
 
     let result = emit_pack_channels_simd(&mut bcx, out_a, out_r, out_g, out_b);
-    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
     bcx.ins().jump(simd_next, &[]);
 
     // === simd_slow ブロック (通常カバレッジ + SrcOver 合成) ===
@@ -582,7 +591,7 @@ pub(super) fn build_src_over_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     // --- ステップ 3: dst ロード + SrcOver 合成 ---
     let dst_pixels = bcx
         .ins()
-        .load(types::I32X4, MemFlags::new(), current_dst, 0);
+        .load(types::I32X4, MemFlagsData::new(), current_dst, 0);
     let (dst_a_v, dst_r_v, dst_g_v, dst_b_v) =
         emit_extract_channels_simd(&mut bcx, dst_pixels, mask_0xff_vec);
 
@@ -604,7 +613,7 @@ pub(super) fn build_src_over_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     let out_b = bcx.ins().iadd(cov_src_b, db);
 
     let result = emit_pack_channels_simd(&mut bcx, out_a, out_r, out_g, out_b);
-    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
     bcx.ins().jump(simd_next, &[]);
 
     // === simd_next ブロック (高速・通常パス合流) ===
@@ -643,7 +652,9 @@ pub(super) fn build_src_over_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     let scalar_i = bcx.block_params(scalar_loop)[2];
 
     // カバレッジ 1 バイトロード
-    let cov_u8 = bcx.ins().load(types::I8, MemFlags::new(), current_cov, 0);
+    let cov_u8 = bcx
+        .ins()
+        .load(types::I8, MemFlagsData::new(), current_cov, 0);
     let cov = bcx.ins().uextend(types::I32, cov_u8);
 
     // ステップ 1: cov_src_c = div255(src_c * cov) (スカラ版)
@@ -671,7 +682,9 @@ pub(super) fn build_src_over_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     let inv_alpha = bcx.ins().isub(c256_scalar, cov_src_a);
 
     // ステップ 3: SrcOver 合成 (スカラ版)
-    let dst_pixel = bcx.ins().load(types::I32, MemFlags::new(), current_dst, 0);
+    let dst_pixel = bcx
+        .ins()
+        .load(types::I32, MemFlagsData::new(), current_dst, 0);
 
     let dst_a_s = bcx.ins().ushr_imm(dst_pixel, 24);
     let dst_a_s = bcx.ins().band_imm(dst_a_s, 0xFF);
@@ -706,7 +719,7 @@ pub(super) fn build_src_over_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     let result = bcx.ins().bor(result, tmp);
     let result = bcx.ins().bor(result, out_b);
 
-    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
 
     // ポインタ更新
     let four = bcx.ins().iconst(ptr_type, 4);
@@ -824,7 +837,7 @@ pub(super) fn build_src_over(mut bcx: FunctionBuilder, ptr_type: Type) {
     // チャンク 0: offset 0
     let px0 = bcx
         .ins()
-        .load(types::I32X4, MemFlags::new(), current_dst, 0);
+        .load(types::I32X4, MemFlagsData::new(), current_dst, 0);
     let r0 = emit_src_over_ag_rb_simd(
         &mut bcx,
         px0,
@@ -833,12 +846,12 @@ pub(super) fn build_src_over(mut bcx: FunctionBuilder, ptr_type: Type) {
         inv_alpha_vec,
         mask_vec,
     );
-    bcx.ins().store(MemFlags::new(), r0, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), r0, current_dst, 0);
 
     // チャンク 1: offset 16
     let px1 = bcx
         .ins()
-        .load(types::I32X4, MemFlags::new(), current_dst, 16);
+        .load(types::I32X4, MemFlagsData::new(), current_dst, 16);
     let r1 = emit_src_over_ag_rb_simd(
         &mut bcx,
         px1,
@@ -847,12 +860,12 @@ pub(super) fn build_src_over(mut bcx: FunctionBuilder, ptr_type: Type) {
         inv_alpha_vec,
         mask_vec,
     );
-    bcx.ins().store(MemFlags::new(), r1, current_dst, 16);
+    bcx.ins().store(MemFlagsData::new(), r1, current_dst, 16);
 
     // チャンク 2: offset 32
     let px2 = bcx
         .ins()
-        .load(types::I32X4, MemFlags::new(), current_dst, 32);
+        .load(types::I32X4, MemFlagsData::new(), current_dst, 32);
     let r2 = emit_src_over_ag_rb_simd(
         &mut bcx,
         px2,
@@ -861,12 +874,12 @@ pub(super) fn build_src_over(mut bcx: FunctionBuilder, ptr_type: Type) {
         inv_alpha_vec,
         mask_vec,
     );
-    bcx.ins().store(MemFlags::new(), r2, current_dst, 32);
+    bcx.ins().store(MemFlagsData::new(), r2, current_dst, 32);
 
     // チャンク 3: offset 48
     let px3 = bcx
         .ins()
-        .load(types::I32X4, MemFlags::new(), current_dst, 48);
+        .load(types::I32X4, MemFlagsData::new(), current_dst, 48);
     let r3 = emit_src_over_ag_rb_simd(
         &mut bcx,
         px3,
@@ -875,7 +888,7 @@ pub(super) fn build_src_over(mut bcx: FunctionBuilder, ptr_type: Type) {
         inv_alpha_vec,
         mask_vec,
     );
-    bcx.ins().store(MemFlags::new(), r3, current_dst, 48);
+    bcx.ins().store(MemFlagsData::new(), r3, current_dst, 48);
 
     let sixty_four = bcx.ins().iconst(ptr_type, 64);
     let next_dst = bcx.ins().iadd(current_dst, sixty_four);
@@ -912,7 +925,7 @@ pub(super) fn build_src_over(mut bcx: FunctionBuilder, ptr_type: Type) {
 
     let px = bcx
         .ins()
-        .load(types::I32X4, MemFlags::new(), current_dst, 0);
+        .load(types::I32X4, MemFlagsData::new(), current_dst, 0);
     let r = emit_src_over_ag_rb_simd(
         &mut bcx,
         px,
@@ -921,7 +934,7 @@ pub(super) fn build_src_over(mut bcx: FunctionBuilder, ptr_type: Type) {
         inv_alpha_vec,
         mask_vec,
     );
-    bcx.ins().store(MemFlags::new(), r, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), r, current_dst, 0);
 
     let sixteen = bcx.ins().iconst(ptr_type, 16);
     let next_dst = bcx.ins().iadd(current_dst, sixteen);
@@ -956,7 +969,9 @@ pub(super) fn build_src_over(mut bcx: FunctionBuilder, ptr_type: Type) {
     let current_dst = bcx.block_params(scalar_loop)[0];
     let scalar_i = bcx.block_params(scalar_loop)[1];
 
-    let dst_pixel = bcx.ins().load(types::I32, MemFlags::new(), current_dst, 0);
+    let dst_pixel = bcx
+        .ins()
+        .load(types::I32, MemFlagsData::new(), current_dst, 0);
 
     // AG/RB 分解 → 合成 → パック (スカラ版)
     let dst_ag = bcx.ins().ushr_imm(dst_pixel, 8);
@@ -976,7 +991,7 @@ pub(super) fn build_src_over(mut bcx: FunctionBuilder, ptr_type: Type) {
     let result = bcx.ins().ishl_imm(out_ag, 8);
     let result = bcx.ins().bor(result, out_rb);
 
-    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
 
     let four = bcx.ins().iconst(ptr_type, 4);
     let next_dst = bcx.ins().iadd(current_dst, four);

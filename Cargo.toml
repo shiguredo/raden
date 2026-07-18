@@ -2,7 +2,7 @@
 name = "raden"
 version = "2026.2.0-canary.0"
 edition = "2024"
-rust-version = "1.91"
+rust-version = "1.94"
 description = "2D Vector Graphics Library"
 readme = "README.md"
 homepage = "https://github.com/shiguredo/raden"
@@ -59,11 +59,11 @@ harness = false
 name = "matrix"
 
 [dependencies]
-cranelift-codegen = "~0.132"
-cranelift-frontend = "~0.132"
-cranelift-jit = "~0.132"
-cranelift-module = "~0.132"
-cranelift-native = "~0.132"
+cranelift-codegen = "~0.133"
+cranelift-frontend = "~0.133"
+cranelift-jit = "~0.133"
+cranelift-module = "~0.133"
+cranelift-native = "~0.133"
 
 [dev-dependencies]
 # ベンチマークフレームワーク
