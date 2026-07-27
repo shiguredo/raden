@@ -46,7 +46,7 @@ GPU を利用できない CI 環境において、CPU のみを利用して 1080
 | `fill_triangle(&Triangle)` | 三角形塗りつぶし |
 | `fill_polygon(&[Point])` | ポリゴン塗りつぶし (3 点未満は no-op) |
 | `fill_pie(&Arc)` | 扇形塗りつぶし。中心から弧を経由して中心に戻る閉じた領域 |
-| `fill_text(x, y, &Font, text)` | テキスト描画。全グリフを 1 つの Path に結合して `fill_path` で一括描画 |
+| `fill_text(x, y, &Font, text)` | テキスト描画。OpenType GSUB / GPOS シェーピング適用後、全グリフを 1 つの Path に結合して `fill_path` で一括描画 |
 
 ### ストローク描画 API (`Context`)
 
@@ -61,7 +61,7 @@ GPU を利用できない CI 環境において、CPU のみを利用して 1080
 | `stroke_polygon(&[Point])` | ポリゴンのストローク描画 (閉じる) |
 | `stroke_polyline(&[Point])` | 折れ線のストローク描画 (閉じない) |
 | `stroke_path(&Path)` | 任意パスのストローク描画。stroke-to-fill 変換後 `fill_path` で描画 |
-| `stroke_text(x, y, &Font, text)` | テキストの輪郭をストローク描画 |
+| `stroke_text(x, y, &Font, text)` | テキストの輪郭をストローク描画。シェーピング適用は `fill_text` と同じ |
 
 ### クリア / Blit (`Context`)
 
@@ -198,13 +198,15 @@ Porter-Duff 基本セット + Clear + Plus の 13 種類と、ブレンドモー
 
 | 型 | 説明 |
 |---|---|
-| `FontData` | フォントファイルのバイトデータ。`from_file(path)` または `from_bytes(bytes)` で作成 |
-| `FontFace` | パース済みフォントフェイス。TrueType / OpenType テーブル (head, maxp, hhea, hmtx, cmap, loca, glyf, OS/2, GSUB, GPOS) を解析 |
-| `Font` | サイズ指定済みフォント。`from_face(&FontFace, size)` で作成し `fill_text` / `stroke_text` に渡す。`clone_with_features(...)` で liga / kern / clig 等の feature 設定を切り替え可能 |
-| `FontFeatureSettings` | liga / kern / clig 等の OpenType Layout feature ON/OFF 設定 |
-| `GlyphBuffer` | `Font::shape` / `Font::shape_into` の結果。glyph ID、配置 (`GlyphPlacement`)、クラスタを保持 |
-| `GlyphPlacement` | 1 グリフの配置情報。advance / offset_x / offset_y |
-| `TextMetrics` | `Font::measure_text` の結果。advance / bounding_box / leading_bearing / trailing_bearing |
+| `FontData` | フォントファイルのバイトデータ。`from_file(path)` (`AsRef<Path>`) または `from_bytes(bytes)` で作成 |
+| `FontFace` | パース済みフォントフェイス。TrueType / OpenType テーブル (head, maxp, hhea, hmtx, cmap, loca, glyf, OS/2, GSUB, GPOS) を解析。`units_per_em` / `ascent` / `descent` / `line_gap` / `cap_height` / `x_height` / `glyph_bounds` を提供 |
+| `Font` | サイズ指定済みフォント。`from_face` / `with_features` で作成し `fill_text` / `stroke_text` に渡す。`shape` / `shape_into` / `measure_text`、スケール済みメトリクス (`ascent` / `descent` / `line_gap` / `cap_height` / `x_height` / `glyph_bounds`)、`clone_with_features` / `set_feature_settings` で liga / kern / clig を切り替え可能 |
+| `FontFeatureSettings` | liga / kern / clig の OpenType Layout feature ON/OFF 設定。デフォルトは全 ON。`none()` / `with_kern` / `with_liga` / `with_clig` |
+| `GlyphBuffer` | `Font::shape` / `Font::shape_into` の結果。glyph ID、配置 (`GlyphPlacement`)、クラスタを保持。`iter()` で走査 |
+| `GlyphBufferIter` | `GlyphBuffer::iter` が返すイテレータ。`(glyph_id, GlyphPlacement, cluster)` |
+| `GlyphPlacement` | 1 グリフの配置情報。advance / offset_x / offset_y (ピクセル単位、offset は Y up) |
+| `GlyphBounds` | グリフ境界ボックス (x_min / y_min / x_max / y_max)。Y up、baseline 原点。描画時の Y 反転は適用しない |
+| `TextMetrics` | `Font::measure_text` の結果。advance / bounding_box / leading_bearing / trailing_bearing (いずれもシェーピング適用済み) |
 
 ### パス (`Path`)
 

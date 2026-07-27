@@ -11,6 +11,10 @@
 
 ## develop
 
+## 2026.2.0
+
+**リリース日**: 2026-07-27
+
 - [CHANGE] `Font::measure_text` の戻り値 `advance` を OpenType GSUB / GPOS シェーピング適用済みに変更する
   - @voluntas
 - [CHANGE] `Font::measure_text` の戻り値 `TextMetrics.bounding_box` を OpenType GSUB / GPOS シェーピング適用済みの bbox に変更する
