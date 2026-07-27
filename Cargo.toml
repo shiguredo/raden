@@ -71,4 +71,4 @@ criterion = { version = "0.8", features = ["html_reports"] }
 # ベンチマークの乱数生成
 rand = { version = "0.10", features = ["chacha"] }
 # サンプルの SDL3 ウィンドウ表示
-raw_player = "2026.1"
+raw_player = "2026.2"
