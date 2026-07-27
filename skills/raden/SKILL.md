@@ -1,6 +1,6 @@
 ---
 name: raden
-description: 時雨堂の 2D ベクターグラフィックスライブラリ raden の使い方・API リファレンス。Cranelift JIT による CPU 専用ラスタライズ、Blend2D 互換 API (Context / Path / Gradient / Pattern / Font / Matrix2D)、29 種類の合成モード (Porter-Duff + ブレンド)、フィル・ストローク・Blit 描画、PixelFormat (Prgb32 / Xrgb32 / A8)、BMP 出力に関する質問時に使用。CI 環境で GPU を使わず 1080p 120fps のダミー映像を生成したい場面で参照。
+description: 時雨堂の 2D ベクターグラフィックスライブラリ raden の使い方・API リファレンス。Cranelift JIT による CPU 専用ラスタライズ、Blend2D 互換 API (Context / Path / Gradient / Pattern / Font / Matrix2D)、OpenType 基本シェーピング (GSUB / GPOS、liga / kern / clig)、29 種類の合成モード (Porter-Duff + ブレンド)、フィル・ストローク・Blit 描画、PixelFormat (Prgb32 / Xrgb32 / A8)、BMP 出力に関する質問時に使用。CI 環境で GPU を使わず 1080p 120fps のダミー映像を生成したい場面で参照。
 license: Apache-2.0
 ---
 
@@ -17,6 +17,7 @@ license: Apache-2.0
 ## 依存関係
 
 - cranelift-codegen / cranelift-frontend / cranelift-jit / cranelift-module / cranelift-native (~0.133)
+- Rust edition 2024 / rust-version 1.94
 
 ## 公開型
 
@@ -28,7 +29,8 @@ Gradient, GradientStop, GradientValues, ExtendMode
 LinearGradientValues, RadialGradientValues, ConicGradientValues
 Pattern, PatternFilter
 CompOp, FillRule, Rgba32, StrokeCap, StrokeJoin
-Font, FontData, FontFace, FontError
+Font, FontData, FontFace, FontError, FontFeatureSettings
+GlyphBounds, GlyphBuffer, GlyphBufferIter, GlyphPlacement, TextMetrics
 PipelineRuntime, PixelFormat, premultiply_rgba
 ```
 
@@ -64,7 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 | メソッド | 説明 |
 |---|---|
-| `fill_all()` | 現在のクリップ領域をフィルスタイルで塗りつぶす |
+| `fill_all()` | 画像全体をフィルスタイルで塗りつぶす (内部で全画像矩形の `fill_rect`。クリップ適用) |
 | `fill_rect(&Rect)` | 矩形塗りつぶし (クリッピング付き) |
 | `fill_path(&Path)` | 任意パス塗りつぶし (ベジェ平坦化 + ラスタライズ) |
 | `fill_circle(&Circle)` | 円塗りつぶし |
@@ -73,7 +75,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 | `fill_triangle(&Triangle)` | 三角形塗りつぶし |
 | `fill_polygon(&[Point])` | ポリゴン塗りつぶし (3 点未満は no-op) |
 | `fill_pie(&Arc)` | 扇形塗りつぶし |
-| `fill_text(x, y, &Font, text)` | テキスト描画 (全グリフを 1 つの Path に結合して `fill_path`) |
+| `fill_text(x, y, &Font, text)` | テキスト描画。OpenType GSUB / GPOS シェーピング適用後、全グリフを 1 つの Path に結合して `fill_path` |
 
 ### ストローク描画 (Context)
 
@@ -88,6 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 | `stroke_polygon(&[Point])` | ポリゴン (閉じる) |
 | `stroke_polyline(&[Point])` | 折れ線 (閉じない) |
 | `stroke_path(&Path)` | 任意パス (stroke-to-fill 変換後 `fill_path`) |
+| `stroke_text(x, y, &Font, text)` | テキスト輪郭のストローク。シェーピング適用は `fill_text` と同じ |
 
 ### クリア / Blit (Context)
 
@@ -113,6 +116,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 | `post_translate` / `post_scale` / `post_rotate` / `post_skew` / `post_transform` | 前乗算版 |
 | `reset_matrix()` | 単位行列にリセット |
 | `user_to_meta()` | Blend2D 互換エントリポイント (raden はユーザ行列をリセットするのみ) |
+| `matrix()` | 現在の変換行列への参照 |
 
 ### 状態管理 / クリッピング (Context)
 
@@ -138,6 +142,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 | `set_global_alpha(a)` | 全描画に乗算されるグローバルアルファ ([0, 1]) |
 | `set_fill_alpha(a)` | フィル個別アルファ ([0, 1]) |
 | `set_stroke_alpha(a)` | ストローク個別アルファ ([0, 1]) |
+
+ゲッター: `comp_op` / `fill_rule` / `fill_color_prgb32` / `fill_gradient` / `fill_pattern` / `stroke_color_prgb32` / `stroke_gradient` / `stroke_pattern` / `stroke_width` / `stroke_miter_limit` / `stroke_join` / `stroke_start_cap` / `stroke_end_cap` / `stroke_dash_array` / `stroke_dash_offset` / `global_alpha` / `fill_alpha` / `stroke_alpha`。
 
 ### ストロークパラメータ
 
@@ -225,9 +231,31 @@ Porter-Duff 基本セット + Clear + Plus の 13 種類とブレンド 16 種�
 
 | 型 | 説明 |
 |---|---|
-| `FontData` | フォントファイルのバイトデータ。`from_file(path)` / `from_bytes(bytes)` で作成 |
-| `FontFace` | パース済みフォントフェイス。TrueType テーブル (head / hhea / hmtx / cmap / loca / glyf) を解析 |
-| `Font` | サイズ指定済みフォント。`Font::from_face(&FontFace, size)` を `fill_text` に渡す |
+| `FontData` | フォントファイルのバイトデータ。`from_file(path)` (`AsRef<Path>`) / `from_bytes(bytes)` |
+| `FontFace` | パース済みフォントフェイス。テーブル: head / maxp / hhea / hmtx / cmap / loca / glyf / OS/2 / GSUB / GPOS。`units_per_em` / `ascent` / `descent` / `line_gap` / `cap_height` / `x_height` / `glyph_bounds` |
+| `Font` | サイズ指定済み。`from_face` / `with_features` で作成。`fill_text` / `stroke_text` に渡す |
+| `FontFeatureSettings` | liga / kern / clig の ON/OFF。デフォルトは全 ON。`none()` / `with_kern` / `with_liga` / `with_clig` |
+| `GlyphBuffer` | `shape` / `shape_into` の結果。`glyph_id` / `placement` / `cluster` / `iter` |
+| `GlyphBufferIter` | `GlyphBuffer::iter` の戻り値。`(glyph_id, GlyphPlacement, cluster)` |
+| `GlyphPlacement` | advance / offset_x / offset_y (ピクセル単位、offset は Y up) |
+| `GlyphBounds` | x_min / y_min / x_max / y_max。Y up、baseline 原点。描画時の Y 反転は適用しない |
+| `TextMetrics` | `measure_text` の結果。advance / bounding_box / leading_bearing / trailing_bearing (シェーピング適用済み) |
+
+### Font の主なメソッド
+
+| メソッド | 説明 |
+|---|---|
+| `from_face(&FontFace, size)` | デフォルト feature (全 ON) で作成 |
+| `with_features(&FontFace, size, FontFeatureSettings)` | feature 指定で作成 |
+| `clone_with_features(FontFeatureSettings)` | face / size を維持して feature だけ変えた複製 |
+| `set_feature_settings` / `feature_settings` | feature の変更・参照 |
+| `shape(&str) -> GlyphBuffer` | cmap → GSUB → GPOS (kern 有効時) でシェーピング |
+| `shape_into(&str, &mut GlyphBuffer)` | 既存バッファを再利用して shape |
+| `measure_text(&str) -> TextMetrics` | シェーピング適用済みの advance / bbox / bearing |
+| `map_char_to_glyph` / `glyph_advance` / `append_glyph_outline` | 単一グリフ操作 |
+| `ascent` / `descent` / `line_gap` / `cap_height` / `x_height` / `glyph_bounds` | スケール済みメトリクス (ピクセル) |
+
+シェーピング対応範囲: GSUB Single / Ligature (Type 1/4)、GPOS Single / Pair (Type 1/2)。`kern` は GPOS Pair Adjustment。Microsoft `kern` テーブル v0 と可変フォントは未対応。
 
 ## パス (Path)
 
@@ -257,7 +285,7 @@ Porter-Duff 基本セット + Clear + Plus の 13 種類とブレンド 16 種�
 
 - `Image::new(width, height, PixelFormat)` で生成
 - `data()` / `data_mut()` でバイト列参照
-- `write_to_file(path)` で BI_BITFIELDS 形式 top-down BMP 出力
+- `write_to_file(path)` (`AsRef<Path>`) で BI_BITFIELDS 形式 top-down BMP 出力
 
 | 形式 | 説明 |
 |---|---|
@@ -279,7 +307,7 @@ Porter-Duff 基本セット + Clear + Plus の 13 種類とブレンド 16 種�
 ## 現状の制約
 
 - `PixelFormat::A8`: 単色 `fill_rect` とスカラ合成 (`SrcOver` / `SrcCopy` / `Clear`) のみ。`fill_path` / グラデ / パターンは未対応
-- フォント: TrueType アウトライン (glyf / loca) のみ。CFF / OpenType Layout / カーニング / シェーピングは未対応
+- フォント: TrueType アウトライン (glyf / loca) に対応。OpenType Layout のうち GSUB Single/Ligature (Type 1/4) と GPOS Single/Pair (Type 1/2) による基本シェーピング (liga / kern / clig) に対応。CFF / CFF2 アウトライン、Microsoft `kern` テーブル v0、可変フォントは未対応
 - クリッピング: 矩形のみ。パスクリッピングは未対応
 - `blit_image_*`: Nearest 補間のみ、`CompOp` は `SrcOver` / `SrcCopy` のみ
 - `fill_rect` + グラデ: `CompOp` を無視して SrcOver 相当で合成
@@ -329,6 +357,32 @@ ctx.stroke_path(&path);
 ctx.end();
 ```
 
+### テキスト描画と feature 切り替え
+
+```rust
+use raden::{
+    CompOp, Context, Font, FontData, FontFace, FontFeatureSettings, Image, PipelineRuntime,
+    PixelFormat, Rgba32,
+};
+
+let font_data = FontData::from_file("path/to/font.ttf")?;
+let face = FontFace::from_data(&font_data, 0)?;
+let font = Font::from_face(&face, 32.0); // liga / kern / clig はデフォルト ON
+let font_plain = font.clone_with_features(FontFeatureSettings::none());
+
+let metrics = font.measure_text("ffi AV");
+let shaped = font.shape("ffi AV");
+
+let mut image = Image::new(640, 200, PixelFormat::Prgb32);
+let mut runtime = PipelineRuntime::new();
+let mut ctx = Context::new(&mut image, &mut runtime);
+ctx.set_comp_op(CompOp::SrcOver);
+ctx.set_fill_style(Rgba32::rgb(0x00, 0x00, 0x00));
+ctx.fill_text(20.0, 80.0, &font, "ffi AV");
+ctx.fill_text(20.0, 160.0, &font_plain, "ffi AV");
+ctx.end();
+```
+
 ### 状態の保存・復元でサブシーンを分離
 
 ```rust
@@ -354,3 +408,16 @@ for frame in 0..120 {
 ```
 
 `PipelineRuntime` を毎フレーム作り直すと JIT コンパイルが走り直すので性能が落ちる。フレームループの外側で 1 つだけ保持する。
+
+## サンプル
+
+| 例 | 説明 |
+|---|---|
+| `basic_drawing` | 矩形描画、BMP 出力、raw_player 表示 |
+| `animation` | 円の大量描画アニメーション。`--width` / `--height` / `--fps` / `--duration` |
+| `gradient_drawing` | Linear / Radial / Conic グラデーション |
+| `stroke_drawing` | キャップ・ジョイン・パスストローク |
+| `font_shaping` | liga / kern / clig ON/OFF の比較描画 |
+| `tiger` | AmanithVG tiger (240+ パス) |
+| `raden_player` | raw_player 相当アニメーション |
+| `blit_clip_pattern_paths` | blit / clip / pattern / 拡張パス / 行列 |
