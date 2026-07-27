@@ -1,6 +1,20 @@
 use raden::{
-    CompOp, Context, FillRule, Image, Matrix2D, PipelineRuntime, PixelFormat, StrokeCap, StrokeJoin,
+    CompOp, Context, FillRule, FontData, FontFace, Image, Matrix2D, PipelineRuntime, PixelFormat,
+    StrokeCap, StrokeJoin,
 };
+
+mod helpers;
+use helpers::font_fetch::fetch_source_sans_3_bytes;
+use helpers::font_local::load_arial;
+
+/// Source Sans 3 Regular をダウンロードして FontFace を返す。
+/// ネットワーク取得や SHA-256 検証に失敗した場合は panic してテストを失敗させる。
+fn load_source_sans_3() -> FontFace {
+    let bytes = fetch_source_sans_3_bytes()
+        .unwrap_or_else(|e| panic!("Source Sans 3 をダウンロードできる必要がある: {e:?}"));
+    let data = FontData::from_bytes(bytes);
+    FontFace::from_data(&data, 0).expect("Source Sans 3 を FontFace としてロードできる必要がある")
+}
 
 #[test]
 fn context_getters_match_setters() {
@@ -486,5 +500,323 @@ mod alpha {
         ctx.set_fill_alpha(-1.0);
         assert_eq!(ctx.global_alpha(), 1.0);
         assert_eq!(ctx.fill_alpha(), 0.0);
+    }
+}
+
+mod fill_text {
+    use raden::{
+        Context, Font, FontFeatureSettings, Image, Path, PipelineRuntime, PixelFormat, Rgba32,
+    };
+
+    use super::{load_arial, load_source_sans_3};
+
+    /// `fill_text` の描画結果が、手動で組み立てた `append_glyph_outline` + `fill_path`
+    /// の結果とピクセル単位で完全一致することを確認する (内部実装の正当性検証)。
+    /// 手動側は `Font::shape` で得たグリフ列と配置情報を利用し、自動側と同じ
+    /// シェーピング経路を再現する。
+    /// "ABC" は Arial cmap に確実に含まれ各文字とも空でない Path を生成するため、
+    /// 複数文字 advance 加算をロックする最短文字列として選んでいる。
+    #[test]
+    fn matches_manual_path() {
+        let Some(face) = load_arial() else {
+            return;
+        };
+        let font = Font::from_face(&face, 32.0);
+
+        let baseline_y = 48.0;
+        let baseline_x = 10.0;
+
+        let mut img_auto = Image::new(200, 64, PixelFormat::Prgb32);
+        {
+            let mut runtime = PipelineRuntime::new();
+            let mut ctx = Context::new(&mut img_auto, &mut runtime);
+            ctx.set_fill_style(Rgba32::rgb(255, 255, 255));
+            ctx.fill_text(baseline_x, baseline_y, &font, "ABC");
+            ctx.end();
+        }
+
+        let mut img_manual = Image::new(200, 64, PixelFormat::Prgb32);
+        {
+            let mut runtime = PipelineRuntime::new();
+            let mut ctx = Context::new(&mut img_manual, &mut runtime);
+            ctx.set_fill_style(Rgba32::rgb(255, 255, 255));
+
+            let mut path = Path::new();
+            let mut cursor_x = baseline_x;
+            let buffer = font.shape("ABC");
+            for (glyph_id, placement, _cluster) in buffer.iter() {
+                if glyph_id != 0 {
+                    // GlyphPlacement::offset_y はフォント設計座標系 (Y up) 、
+                    // append_glyph_outline は画面座標系 (Y down) を前提としているため、
+                    // 符号を反転して渡す。
+                    let _ = font.append_glyph_outline(
+                        glyph_id,
+                        cursor_x + placement.offset_x,
+                        baseline_y - placement.offset_y,
+                        &mut path,
+                    );
+                }
+                cursor_x += placement.advance;
+            }
+            if !path.is_empty() {
+                ctx.fill_path(&path);
+            }
+            ctx.end();
+        }
+
+        assert_eq!(
+            img_auto.data(),
+            img_manual.data(),
+            "fill_text の結果は手動再構築と完全一致する必要がある"
+        );
+    }
+
+    /// `fill_text` が `FontFeatureSettings` (liga / kern) を考慮して描画していることを、
+    /// default features (liga ON / kern ON) と全 feature OFF の画像差分で検出する。
+    /// Source Sans 3 の "ffi" は liga 有効時に 2 グリフ、無効時に 3 グリフとなるため、
+    /// ピクセルレベルで差分が出る。
+    #[test]
+    fn feature_settings_affect_fill_text() {
+        let face = load_source_sans_3();
+        let font_default = Font::from_face(&face, 48.0);
+        let font_no_features =
+            Font::from_face(&face, 48.0).clone_with_features(FontFeatureSettings::none());
+
+        let mut img_default = Image::new(256, 96, PixelFormat::Prgb32);
+        {
+            let mut runtime = PipelineRuntime::new();
+            let mut ctx = Context::new(&mut img_default, &mut runtime);
+            ctx.set_fill_style(Rgba32::rgb(255, 255, 255));
+            ctx.fill_text(10.0, 64.0, &font_default, "ffi");
+            ctx.end();
+        }
+
+        let mut img_no_features = Image::new(256, 96, PixelFormat::Prgb32);
+        {
+            let mut runtime = PipelineRuntime::new();
+            let mut ctx = Context::new(&mut img_no_features, &mut runtime);
+            ctx.set_fill_style(Rgba32::rgb(255, 255, 255));
+            ctx.fill_text(10.0, 64.0, &font_no_features, "ffi");
+            ctx.end();
+        }
+
+        assert_ne!(
+            img_default.data(),
+            img_no_features.data(),
+            "liga ON/OFF で fill_text の描画結果が変化する必要がある"
+        );
+    }
+
+    /// `fill_text` が `kern` feature を考慮して描画していることを、
+    /// liga / clig を固定 OFF にした上で kern のみ ON/OFF した画像差分で検出する。
+    /// Source Sans 3 の "AV" は kern 有効時に負のカーニングが適用されるため、
+    /// ピクセルレベルで差分が出る。
+    #[test]
+    fn kern_affects_fill_text() {
+        let face = load_source_sans_3();
+        let font_kern = Font::from_face(&face, 48.0)
+            .clone_with_features(FontFeatureSettings::none().with_kern(true));
+        let font_no_kern = Font::from_face(&face, 48.0)
+            .clone_with_features(FontFeatureSettings::none().with_kern(false));
+
+        let mut img_kern = Image::new(256, 96, PixelFormat::Prgb32);
+        {
+            let mut runtime = PipelineRuntime::new();
+            let mut ctx = Context::new(&mut img_kern, &mut runtime);
+            ctx.set_fill_style(Rgba32::rgb(255, 255, 255));
+            ctx.fill_text(10.0, 64.0, &font_kern, "AV");
+            ctx.end();
+        }
+
+        let mut img_no_kern = Image::new(256, 96, PixelFormat::Prgb32);
+        {
+            let mut runtime = PipelineRuntime::new();
+            let mut ctx = Context::new(&mut img_no_kern, &mut runtime);
+            ctx.set_fill_style(Rgba32::rgb(255, 255, 255));
+            ctx.fill_text(10.0, 64.0, &font_no_kern, "AV");
+            ctx.end();
+        }
+
+        assert_ne!(
+            img_kern.data(),
+            img_no_kern.data(),
+            "kern ON/OFF で fill_text の描画結果が変化する必要がある"
+        );
+    }
+}
+
+mod stroke_text {
+    use raden::{Context, Font, Image, Path, PipelineRuntime, PixelFormat, Rgba32};
+
+    use super::load_arial;
+
+    /// Arial 環境で `stroke_text` 実行後に非ゼロピクセルが存在することを確認する。
+    #[test]
+    fn renders_visible_pixels() {
+        let Some(face) = load_arial() else {
+            return;
+        };
+        let font = Font::from_face(&face, 48.0);
+
+        let mut img = Image::new(256, 96, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+
+        ctx.set_stroke_style(Rgba32::rgb(255, 255, 255));
+        ctx.set_stroke_width(2.0);
+        ctx.stroke_text(10.0, 64.0, &font, "Hello");
+        ctx.end();
+
+        let has_nonzero = img
+            .data()
+            .chunks(4)
+            .any(|px| px[0] != 0 || px[1] != 0 || px[2] != 0);
+        assert!(
+            has_nonzero,
+            "stroke_text は可視ピクセルを生成する必要がある"
+        );
+    }
+
+    /// `stroke_text` の描画結果が、手動で組み立てた `append_glyph_outline` + `stroke_path`
+    /// の結果とピクセル単位で完全一致することを確認する (内部実装の正当性検証)。
+    /// 手動側は `Font::shape` で得たグリフ列と配置情報を利用し、自動側と同じ
+    /// シェーピング経路を再現する。
+    /// "ABC" は Arial cmap に確実に含まれ各文字とも空でない Path を生成するため、
+    /// 複数文字 advance 加算をロックする最短文字列として選んでいる。
+    #[test]
+    fn matches_manual_path() {
+        let Some(face) = load_arial() else {
+            return;
+        };
+        let font = Font::from_face(&face, 32.0);
+
+        let baseline_y = 48.0;
+        let baseline_x = 10.0;
+        let stroke_width = 1.5;
+
+        let mut img_auto = Image::new(200, 64, PixelFormat::Prgb32);
+        {
+            let mut runtime = PipelineRuntime::new();
+            let mut ctx = Context::new(&mut img_auto, &mut runtime);
+            ctx.set_stroke_style(Rgba32::rgb(255, 255, 255));
+            ctx.set_stroke_width(stroke_width);
+            ctx.stroke_text(baseline_x, baseline_y, &font, "ABC");
+            ctx.end();
+        }
+
+        let mut img_manual = Image::new(200, 64, PixelFormat::Prgb32);
+        {
+            let mut runtime = PipelineRuntime::new();
+            let mut ctx = Context::new(&mut img_manual, &mut runtime);
+            ctx.set_stroke_style(Rgba32::rgb(255, 255, 255));
+            ctx.set_stroke_width(stroke_width);
+
+            let mut path = Path::new();
+            let mut cursor_x = baseline_x;
+            let buffer = font.shape("ABC");
+            for (glyph_id, placement, _cluster) in buffer.iter() {
+                if glyph_id != 0 {
+                    // GlyphPlacement::offset_y はフォント設計座標系 (Y up) 、
+                    // append_glyph_outline は画面座標系 (Y down) を前提としているため、
+                    // 符号を反転して渡す。
+                    let _ = font.append_glyph_outline(
+                        glyph_id,
+                        cursor_x + placement.offset_x,
+                        baseline_y - placement.offset_y,
+                        &mut path,
+                    );
+                }
+                cursor_x += placement.advance;
+            }
+            if !path.is_empty() {
+                ctx.stroke_path(&path);
+            }
+            ctx.end();
+        }
+
+        assert_eq!(
+            img_auto.data(),
+            img_manual.data(),
+            "stroke_text の結果は手動再構築と完全一致する必要がある"
+        );
+    }
+
+    /// 空文字列に対する `stroke_text` は何も描画せず panic しないことを固定する。
+    #[test]
+    fn empty_string_renders_nothing() {
+        let Some(face) = load_arial() else {
+            return;
+        };
+        let font = Font::from_face(&face, 48.0);
+
+        let mut img = Image::new(64, 32, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+        ctx.set_stroke_style(Rgba32::rgb(255, 255, 255));
+        ctx.set_stroke_width(2.0);
+        ctx.stroke_text(10.0, 24.0, &font, "");
+        ctx.end();
+
+        // 空文字列では全ピクセルが 0 のままである必要がある。
+        assert!(
+            img.data().iter().all(|b| *b == 0),
+            "空文字列の stroke_text は描画を行わない必要がある"
+        );
+    }
+
+    /// `size == 0` の `Font` に対する `stroke_text` は scale == 0 経由で
+    /// 全 advance / アウトラインが 0 になるが、 panic せず空キャンバスを保つことを固定する。
+    #[test]
+    fn zero_size_font_does_not_panic() {
+        let Some(face) = load_arial() else {
+            return;
+        };
+        let font = Font::from_face(&face, 0.0);
+
+        let mut img = Image::new(64, 32, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+        ctx.set_stroke_style(Rgba32::rgb(255, 255, 255));
+        ctx.set_stroke_width(2.0);
+        ctx.stroke_text(10.0, 24.0, &font, "Hello");
+        ctx.end();
+    }
+
+    /// cmap 未マッピング文字 (Arial の Private Use Area 等) を含む文字列で、
+    /// 未マッピング文字のアウトラインがスキップされて他の文字が正常描画されることを固定する。
+    #[test]
+    fn unmapped_char_is_skipped() {
+        let Some(face) = load_arial() else {
+            return;
+        };
+        let font = Font::from_face(&face, 32.0);
+
+        // Arial cmap 未収録の Private Use Area の文字を選ぶ。
+        let unmapped = '\u{E000}';
+        // 未マッピング前提を確認しておく (前提が崩れたらこのテスト自体を見直す)。
+        assert_eq!(
+            font.map_char_to_glyph(unmapped),
+            0,
+            "テスト前提: U+E000 は Arial cmap に含まれない"
+        );
+
+        let mut img = Image::new(128, 64, PixelFormat::Prgb32);
+        let mut runtime = PipelineRuntime::new();
+        let mut ctx = Context::new(&mut img, &mut runtime);
+        ctx.set_stroke_style(Rgba32::rgb(255, 255, 255));
+        ctx.set_stroke_width(1.5);
+        let mixed: String = format!("A{unmapped}B");
+        ctx.stroke_text(10.0, 48.0, &font, &mixed);
+        ctx.end();
+
+        // 'A' と 'B' は描画されるため非ゼロピクセルが残る。
+        let has_nonzero = img
+            .data()
+            .chunks(4)
+            .any(|px| px[0] != 0 || px[1] != 0 || px[2] != 0);
+        assert!(
+            has_nonzero,
+            "stroke_text は未マッピング文字をスキップしても他の文字を描画する必要がある"
+        );
     }
 }

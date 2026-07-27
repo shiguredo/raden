@@ -8,7 +8,7 @@
 
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::types;
-use cranelift_codegen::ir::{InstBuilder, MemFlags, Type};
+use cranelift_codegen::ir::{InstBuilder, MemFlagsData, Type};
 use cranelift_frontend::FunctionBuilder;
 
 use super::{
@@ -72,7 +72,7 @@ pub(super) fn build_src_over_span(mut bcx: FunctionBuilder, ptr_type: Type) {
     // ソース 4 ピクセルをロード
     let src_pixels = bcx
         .ins()
-        .load(types::I32X4, MemFlags::new(), current_src, 0);
+        .load(types::I32X4, MemFlagsData::new(), current_src, 0);
     let (src_a_vec, src_r_vec, src_g_vec, src_b_vec) =
         emit_extract_channels_simd(&mut bcx, src_pixels, mask_0xff_vec);
 
@@ -82,7 +82,7 @@ pub(super) fn build_src_over_span(mut bcx: FunctionBuilder, ptr_type: Type) {
     // デスティネーション 4 ピクセルをロード
     let dst_pixels = bcx
         .ins()
-        .load(types::I32X4, MemFlags::new(), current_dst, 0);
+        .load(types::I32X4, MemFlagsData::new(), current_dst, 0);
     let (dst_a_v, dst_r_v, dst_g_v, dst_b_v) =
         emit_extract_channels_simd(&mut bcx, dst_pixels, mask_0xff_vec);
 
@@ -104,7 +104,7 @@ pub(super) fn build_src_over_span(mut bcx: FunctionBuilder, ptr_type: Type) {
     let out_b = bcx.ins().iadd(src_b_vec, db);
 
     let result = emit_pack_channels_simd(&mut bcx, out_a, out_r, out_g, out_b);
-    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
 
     // ポインタ更新
     let sixteen = bcx.ins().iconst(ptr_type, 16);
@@ -139,7 +139,9 @@ pub(super) fn build_src_over_span(mut bcx: FunctionBuilder, ptr_type: Type) {
     let scalar_i = bcx.block_params(scalar_loop)[2];
 
     // ソース 1 ピクセルをロード
-    let src_pixel = bcx.ins().load(types::I32, MemFlags::new(), current_src, 0);
+    let src_pixel = bcx
+        .ins()
+        .load(types::I32, MemFlagsData::new(), current_src, 0);
     let src_a = bcx.ins().ushr_imm(src_pixel, 24);
     let src_a = bcx.ins().band_imm(src_a, 0xFF);
     let src_r = bcx.ins().ushr_imm(src_pixel, 16);
@@ -150,7 +152,9 @@ pub(super) fn build_src_over_span(mut bcx: FunctionBuilder, ptr_type: Type) {
 
     let inv_alpha = bcx.ins().isub(c256_scalar, src_a);
 
-    let dst_pixel = bcx.ins().load(types::I32, MemFlags::new(), current_dst, 0);
+    let dst_pixel = bcx
+        .ins()
+        .load(types::I32, MemFlagsData::new(), current_dst, 0);
     let dst_a_s = bcx.ins().ushr_imm(dst_pixel, 24);
     let dst_a_s = bcx.ins().band_imm(dst_a_s, 0xFF);
     let dst_r_s = bcx.ins().ushr_imm(dst_pixel, 16);
@@ -181,7 +185,7 @@ pub(super) fn build_src_over_span(mut bcx: FunctionBuilder, ptr_type: Type) {
     let tmp = bcx.ins().ishl_imm(out_g, 8);
     let result = bcx.ins().bor(result, tmp);
     let result = bcx.ins().bor(result, out_b);
-    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
 
     let four = bcx.ins().iconst(ptr_type, 4);
     let next_dst = bcx.ins().iadd(current_dst, four);
@@ -254,7 +258,9 @@ pub(super) fn build_src_over_span_cov(mut bcx: FunctionBuilder, ptr_type: Type) 
     let current_cov = bcx.block_params(simd_loop)[2];
     let simd_i = bcx.block_params(simd_loop)[3];
 
-    let packed_cov = bcx.ins().load(types::I32, MemFlags::new(), current_cov, 0);
+    let packed_cov = bcx
+        .ins()
+        .load(types::I32, MemFlagsData::new(), current_cov, 0);
     let is_all_ff = bcx.ins().icmp(IntCC::Equal, packed_cov, all_ff);
     bcx.ins().brif(is_all_ff, simd_fast, &[], simd_slow, &[]);
 
@@ -263,7 +269,7 @@ pub(super) fn build_src_over_span_cov(mut bcx: FunctionBuilder, ptr_type: Type) 
     bcx.switch_to_block(simd_fast);
     let src_pixels = bcx
         .ins()
-        .load(types::I32X4, MemFlags::new(), current_src, 0);
+        .load(types::I32X4, MemFlagsData::new(), current_src, 0);
     let (src_a_vec, src_r_vec, src_g_vec, src_b_vec) =
         emit_extract_channels_simd(&mut bcx, src_pixels, mask_0xff_vec);
 
@@ -271,7 +277,7 @@ pub(super) fn build_src_over_span_cov(mut bcx: FunctionBuilder, ptr_type: Type) 
 
     let dst_pixels = bcx
         .ins()
-        .load(types::I32X4, MemFlags::new(), current_dst, 0);
+        .load(types::I32X4, MemFlagsData::new(), current_dst, 0);
     let (dst_a_v, dst_r_v, dst_g_v, dst_b_v) =
         emit_extract_channels_simd(&mut bcx, dst_pixels, mask_0xff_vec);
 
@@ -292,7 +298,7 @@ pub(super) fn build_src_over_span_cov(mut bcx: FunctionBuilder, ptr_type: Type) 
     let out_b = bcx.ins().iadd(src_b_vec, db);
 
     let result = emit_pack_channels_simd(&mut bcx, out_a, out_r, out_g, out_b);
-    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
     bcx.ins().jump(simd_next, &[]);
 
     // === simd_slow ブロック (通常カバレッジ) ===
@@ -301,7 +307,7 @@ pub(super) fn build_src_over_span_cov(mut bcx: FunctionBuilder, ptr_type: Type) 
 
     let src_pixels = bcx
         .ins()
-        .load(types::I32X4, MemFlags::new(), current_src, 0);
+        .load(types::I32X4, MemFlagsData::new(), current_src, 0);
     let (src_a_vec, src_r_vec, src_g_vec, src_b_vec) =
         emit_extract_channels_simd(&mut bcx, src_pixels, mask_0xff_vec);
 
@@ -330,7 +336,7 @@ pub(super) fn build_src_over_span_cov(mut bcx: FunctionBuilder, ptr_type: Type) 
 
     let dst_pixels = bcx
         .ins()
-        .load(types::I32X4, MemFlags::new(), current_dst, 0);
+        .load(types::I32X4, MemFlagsData::new(), current_dst, 0);
     let (dst_a_v, dst_r_v, dst_g_v, dst_b_v) =
         emit_extract_channels_simd(&mut bcx, dst_pixels, mask_0xff_vec);
 
@@ -351,7 +357,7 @@ pub(super) fn build_src_over_span_cov(mut bcx: FunctionBuilder, ptr_type: Type) 
     let out_b = bcx.ins().iadd(cov_src_b, db);
 
     let result = emit_pack_channels_simd(&mut bcx, out_a, out_r, out_g, out_b);
-    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
     bcx.ins().jump(simd_next, &[]);
 
     // === simd_next ブロック ===
@@ -394,7 +400,9 @@ pub(super) fn build_src_over_span_cov(mut bcx: FunctionBuilder, ptr_type: Type) 
     let scalar_i = bcx.block_params(scalar_loop)[3];
 
     // ソース 1 ピクセルをロード
-    let src_pixel = bcx.ins().load(types::I32, MemFlags::new(), current_src, 0);
+    let src_pixel = bcx
+        .ins()
+        .load(types::I32, MemFlagsData::new(), current_src, 0);
     let src_a = bcx.ins().ushr_imm(src_pixel, 24);
     let src_a = bcx.ins().band_imm(src_a, 0xFF);
     let src_r = bcx.ins().ushr_imm(src_pixel, 16);
@@ -404,7 +412,9 @@ pub(super) fn build_src_over_span_cov(mut bcx: FunctionBuilder, ptr_type: Type) 
     let src_b = bcx.ins().band_imm(src_pixel, 0xFF);
 
     // カバレッジ 1 バイトロード
-    let cov_u8 = bcx.ins().load(types::I8, MemFlags::new(), current_cov, 0);
+    let cov_u8 = bcx
+        .ins()
+        .load(types::I8, MemFlagsData::new(), current_cov, 0);
     let cov = bcx.ins().uextend(types::I32, cov_u8);
 
     // cov_src_c = div255(src_c * cov)
@@ -430,7 +440,9 @@ pub(super) fn build_src_over_span_cov(mut bcx: FunctionBuilder, ptr_type: Type) 
 
     let inv_alpha = bcx.ins().isub(c256_scalar, cov_src_a);
 
-    let dst_pixel = bcx.ins().load(types::I32, MemFlags::new(), current_dst, 0);
+    let dst_pixel = bcx
+        .ins()
+        .load(types::I32, MemFlagsData::new(), current_dst, 0);
     let dst_a_s = bcx.ins().ushr_imm(dst_pixel, 24);
     let dst_a_s = bcx.ins().band_imm(dst_a_s, 0xFF);
     let dst_r_s = bcx.ins().ushr_imm(dst_pixel, 16);
@@ -461,7 +473,7 @@ pub(super) fn build_src_over_span_cov(mut bcx: FunctionBuilder, ptr_type: Type) 
     let tmp = bcx.ins().ishl_imm(out_g, 8);
     let result = bcx.ins().bor(result, tmp);
     let result = bcx.ins().bor(result, out_b);
-    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
 
     let four = bcx.ins().iconst(ptr_type, 4);
     let next_dst = bcx.ins().iadd(current_dst, four);

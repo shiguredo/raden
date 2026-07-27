@@ -6,7 +6,7 @@ use crate::api::path::{Path, Point};
 use crate::api::pattern::Pattern;
 use crate::api::stroke::{StrokeOptions, StrokeWorkspace, stroke_to_fill_with_workspace};
 use crate::api::style::{CompOp, FillRule, Rgba32, StrokeCap, StrokeJoin};
-use crate::font::Font;
+use crate::font::{Font, GlyphBuffer};
 use crate::pipeline::key::{FetchType, FillType};
 use crate::pipeline::runtime::PipelineRuntime;
 use crate::pixel::PixelFormat;
@@ -312,6 +312,9 @@ pub struct Context<'a> {
     clip_box: BoxI,
     state_stack: Vec<ContextState>,
     tmp_path: Path,
+    /// テキスト描画用の一時バッファ。
+    /// `Font::shape_into` の出力先。`Context` 描画時に繰り返し `clear` して使う。
+    tmp_shape_buffer: GlyphBuffer,
     stroke_path_buf: Path,
     stroke_workspace: StrokeWorkspace,
     edge_buf: Vec<(f64, f64, f64, f64)>,
@@ -354,6 +357,7 @@ impl<'a> Context<'a> {
             clip_box: meta_clip_box,
             state_stack: Vec::new(),
             tmp_path: Path::new(),
+            tmp_shape_buffer: GlyphBuffer::default(),
             stroke_path_buf: Path::new(),
             stroke_workspace: StrokeWorkspace::new(),
             edge_buf: Vec::new(),
@@ -1137,34 +1141,59 @@ impl<'a> Context<'a> {
         self.tmp_path = path;
     }
 
+    /// テキストを 1 つの `Path` に展開する共通処理。
+    ///
+    /// `tmp_path` / `tmp_shape_buffer` を一時的に奪い、展開後に返却する。
+    /// glyph_id == 0 はアウトラインを構築せず advance のみ加算する。
+    /// append_glyph_outline のエラーは let _ で黙殺し、外部入力に対する
+    /// クラッシュ耐性を優先する (部分欠落を許容)。
+    fn build_text_path(&mut self, x: f64, y: f64, font: &Font, text: &str) -> Path {
+        let mut path = std::mem::take(&mut self.tmp_path);
+        path.clear();
+        self.tmp_shape_buffer.clear();
+
+        font.shape_into(text, &mut self.tmp_shape_buffer);
+
+        let mut cursor_x = x;
+        for (glyph_id, placement, _cluster) in self.tmp_shape_buffer.iter() {
+            if glyph_id != 0 {
+                // GlyphPlacement::offset_y はフォント設計座標系 (Y up) 、
+                // append_glyph_outline は画面座標系 (Y down) を前提としているため、
+                // 符号を反転して渡す。
+                let _ = font.append_glyph_outline(
+                    glyph_id,
+                    cursor_x + placement.offset_x,
+                    y - placement.offset_y,
+                    &mut path,
+                );
+            }
+            cursor_x += placement.advance;
+        }
+
+        path
+    }
+
     /// テキストを塗りつぶし描画する。
     ///
     /// (x, y) はベースライン左端の位置。全グリフを 1 つの Path に結合し、
     /// `fill_path` 1 回で一括描画する (Blend2D と同じアプローチ)。
     pub fn fill_text(&mut self, x: f64, y: f64, font: &Font, text: &str) {
-        let mut path = std::mem::take(&mut self.tmp_path);
-        path.clear();
-
-        let mut cursor_x = x;
-        let baseline_y = y;
-
-        for ch in text.chars() {
-            let glyph_id = font.map_char_to_glyph(ch);
-            if glyph_id == 0 {
-                // 未定義グリフはスキップ (スペースは glyph_id != 0 だがアウトラインなし)
-                cursor_x += font.glyph_advance(glyph_id);
-                continue;
-            }
-
-            // アウトラインを Path に追加 (エラーは無視してスキップ)
-            let _ = font.append_glyph_outline(glyph_id, cursor_x, baseline_y, &mut path);
-            cursor_x += font.glyph_advance(glyph_id);
-        }
-
+        let path = self.build_text_path(x, y, font, text);
         if !path.is_empty() {
             self.fill_path(&path);
         }
+        self.tmp_path = path;
+    }
 
+    /// 文字列を現在の stroke 設定で描画する。
+    ///
+    /// (x, y) はベースライン左端の位置。全グリフを 1 つの Path に結合し、
+    /// `stroke_path` 1 回で一括描画する (`fill_text` と同じアプローチ)。
+    pub fn stroke_text(&mut self, x: f64, y: f64, font: &Font, text: &str) {
+        let path = self.build_text_path(x, y, font, text);
+        if !path.is_empty() {
+            self.stroke_path(&path);
+        }
         self.tmp_path = path;
     }
 

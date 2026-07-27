@@ -1,8 +1,8 @@
 [package]
 name = "raden"
-version = "2026.1.1"
+version = "2026.2.0"
 edition = "2024"
-rust-version = "1.91"
+rust-version = "1.94"
 description = "2D Vector Graphics Library"
 readme = "README.md"
 homepage = "https://github.com/shiguredo/raden"
@@ -59,11 +59,11 @@ harness = false
 name = "matrix"
 
 [dependencies]
-cranelift-codegen = "=0.130.1"
-cranelift-frontend = "=0.130.1"
-cranelift-jit = "=0.130.1"
-cranelift-module = "=0.130.1"
-cranelift-native = "=0.130.1"
+cranelift-codegen = "~0.133"
+cranelift-frontend = "~0.133"
+cranelift-jit = "~0.133"
+cranelift-module = "~0.133"
+cranelift-native = "~0.133"
 
 [dev-dependencies]
 # ベンチマークフレームワーク
@@ -71,4 +71,4 @@ criterion = { version = "0.8", features = ["html_reports"] }
 # ベンチマークの乱数生成
 rand = { version = "0.10", features = ["chacha"] }
 # サンプルの SDL3 ウィンドウ表示
-raw_player = "2026.1.0"
+raw_player = "2026.2"

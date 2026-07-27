@@ -78,19 +78,17 @@ pub(crate) fn append_glyph_outline(
     append_glyph_recursive(glyph_id, xform, tables, data, path, 0)
 }
 
-/// 再帰的にグリフアウトラインを追加する (Compound 対応)。
-fn append_glyph_recursive(
+/// glyf テーブルから glyph_id のグリフデータスライスを取得する。
+///
+/// 戻り値:
+/// - `Ok(Some(&[u8]))`: アウトライン入りグリフのスライス ( 10 バイト以上のヘッダを含む ) 。
+/// - `Ok(None)`: 空グリフ ( `glyf_start == glyf_end` ) 。
+/// - `Err(_)`: glyph_id 範囲外 / glyf 範囲外 / ヘッダ不足 ( `glyph_data.len() < 10` ) 。
+pub(crate) fn glyph_entry_slice<'a>(
     glyph_id: u16,
-    xform: GlyphTransform,
     tables: &ParsedTables,
-    data: &[u8],
-    path: &mut Path,
-    depth: u32,
-) -> Result<(), FontError> {
-    if depth > MAX_COMPOUND_DEPTH {
-        return Err(FontError::InvalidData("compound glyph recursion too deep"));
-    }
-
+    data: &'a [u8],
+) -> Result<Option<&'a [u8]>, FontError> {
     let gid = glyph_id as usize;
     if gid + 1 >= tables.loca_offsets.len() {
         return Err(FontError::InvalidData("glyph id out of range"));
@@ -99,9 +97,9 @@ fn append_glyph_recursive(
     let glyf_start = tables.loca_offsets[gid];
     let glyf_end = tables.loca_offsets[gid + 1];
 
-    // Empty glyph (スペース等)
+    // 空グリフ (スペース等) は loca offset が等しい。
     if glyf_start == glyf_end {
-        return Ok(());
+        return Ok(None);
     }
 
     let abs_start = tables.glyf_offset as usize + glyf_start as usize;
@@ -116,6 +114,48 @@ fn append_glyph_recursive(
     if glyph_data.len() < 10 {
         return Err(FontError::InvalidData("glyph header too short"));
     }
+
+    Ok(Some(glyph_data))
+}
+
+/// グリフヘッダ 10 バイトから bbox を読み出す。
+///
+/// 戻り値: `(x_min, y_min, x_max, y_max)` の i16 4 値。
+/// Compound Glyph (`number_of_contours < 0`) で bbox が `(0, 0, 0, 0)` のときは
+/// `None` を返す (未計算のまま埋められた違反フォントを有効値と区別できないため)。
+/// Simple Glyph では `(0, 0, 0, 0)` も有効値として `Some` を返す。
+/// `glyph_data` の長さは `glyph_entry_slice` が 10 バイト以上を保証する。
+pub(crate) fn glyph_bbox_raw(glyph_data: &[u8]) -> Option<(i16, i16, i16, i16)> {
+    let number_of_contours = i16::from_be_bytes([glyph_data[0], glyph_data[1]]);
+    let x_min = i16::from_be_bytes([glyph_data[2], glyph_data[3]]);
+    let y_min = i16::from_be_bytes([glyph_data[4], glyph_data[5]]);
+    let x_max = i16::from_be_bytes([glyph_data[6], glyph_data[7]]);
+    let y_max = i16::from_be_bytes([glyph_data[8], glyph_data[9]]);
+    if number_of_contours < 0 && x_min == 0 && y_min == 0 && x_max == 0 && y_max == 0 {
+        return None;
+    }
+    Some((x_min, y_min, x_max, y_max))
+}
+
+/// 再帰的にグリフアウトラインを追加する (Compound 対応)。
+fn append_glyph_recursive(
+    glyph_id: u16,
+    xform: GlyphTransform,
+    tables: &ParsedTables,
+    data: &[u8],
+    path: &mut Path,
+    depth: u32,
+) -> Result<(), FontError> {
+    if depth > MAX_COMPOUND_DEPTH {
+        return Err(FontError::InvalidData("compound glyph recursion too deep"));
+    }
+
+    // glyph_id 範囲外 / glyf 範囲外 / ヘッダ不足のチェックは glyph_entry_slice 側に集約する。
+    let glyph_data = match glyph_entry_slice(glyph_id, tables, data)? {
+        Some(slice) => slice,
+        // 空グリフ (スペース等) はアウトラインを追加せず Ok(()) を返す。
+        None => return Ok(()),
+    };
 
     let number_of_contours = be_i16(glyph_data, 0)?;
 

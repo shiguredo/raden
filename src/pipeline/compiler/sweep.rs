@@ -1,6 +1,6 @@
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::types;
-use cranelift_codegen::ir::{Endianness, InstBuilder, MemFlags, Type, Value};
+use cranelift_codegen::ir::{Endianness, InstBuilder, MemFlagsData, Type, Value};
 use cranelift_frontend::FunctionBuilder;
 
 use super::block_args;
@@ -144,15 +144,16 @@ pub(super) fn build_sweep(mut bcx: FunctionBuilder, ptr_type: Type, fill_rule: F
     let zero_vec_loop = bcx.block_params(main_loop)[5];
 
     // 4 セルを個別にロードする (prefix sum の逐次依存のため I32X4 一括ロードは不可)
-    let c0 = bcx.ins().load(types::I32, MemFlags::new(), cells_p, 0);
-    let c1 = bcx.ins().load(types::I32, MemFlags::new(), cells_p, 4);
-    let c2 = bcx.ins().load(types::I32, MemFlags::new(), cells_p, 8);
-    let c3 = bcx.ins().load(types::I32, MemFlags::new(), cells_p, 12);
+    let c0 = bcx.ins().load(types::I32, MemFlagsData::new(), cells_p, 0);
+    let c1 = bcx.ins().load(types::I32, MemFlagsData::new(), cells_p, 4);
+    let c2 = bcx.ins().load(types::I32, MemFlagsData::new(), cells_p, 8);
+    let c3 = bcx.ins().load(types::I32, MemFlagsData::new(), cells_p, 12);
 
     // セルを読み取った直後にゼロクリアする (Blend2D 方式)。
     // これによりラスタライザ側での fill(0) が不要になる。
     // zero_vec_loop はブロックパラメータのループ不変値を再利用する。
-    bcx.ins().store(MemFlags::new(), zero_vec_loop, cells_p, 0);
+    bcx.ins()
+        .store(MemFlagsData::new(), zero_vec_loop, cells_p, 0);
 
     // スカラー prefix sum: 逐次依存のためスカラーで計算
     let cover0 = bcx.ins().iadd(cover, c0);
@@ -172,7 +173,7 @@ pub(super) fn build_sweep(mut bcx: FunctionBuilder, ptr_type: Type, fill_rule: F
 
     // I32X4 → 4 バイトにパック: unarrow で段階的にナロウイングする
     // (値は 0-255 なので unsigned saturating narrowing で損失なし)
-    let le_flags = MemFlags::new().with_endianness(Endianness::Little);
+    let le_flags = MemFlagsData::new().with_endianness(Endianness::Little);
     // I32X4 → I16X8 (上位半分はゼロ)
     let narrow16 = bcx.ins().unarrow(cov_vec, zero_vec_loop);
     // I16X8 → I8X16 (上位部分はゼロ)
@@ -183,7 +184,7 @@ pub(super) fn build_sweep(mut bcx: FunctionBuilder, ptr_type: Type, fill_rule: F
     let packed = bcx.ins().extractlane(packed_i32x4, 0);
 
     // 4 バイト一括ストア
-    bcx.ins().store(MemFlags::new(), packed, cov_p, 0);
+    bcx.ins().store(MemFlagsData::new(), packed, cov_p, 0);
 
     // ポインタ更新: cells_p += 16 (4 * i32), cov_p += 4
     let sixteen = bcx.ins().iconst(ptr_type, 16);
@@ -229,14 +230,14 @@ pub(super) fn build_sweep(mut bcx: FunctionBuilder, ptr_type: Type, fill_rule: F
     let j = bcx.block_params(scalar_loop)[2];
     let cover = bcx.block_params(scalar_loop)[3];
 
-    let cell_val = bcx.ins().load(types::I32, MemFlags::new(), cells_p, 0);
+    let cell_val = bcx.ins().load(types::I32, MemFlagsData::new(), cells_p, 0);
     // セルを読み取った直後にゼロクリアする
     let i32_zero_s = bcx.ins().iconst(types::I32, 0);
-    bcx.ins().store(MemFlags::new(), i32_zero_s, cells_p, 0);
+    bcx.ins().store(MemFlagsData::new(), i32_zero_s, cells_p, 0);
     let cover = bcx.ins().iadd(cover, cell_val);
     let shifted = bcx.ins().sshr_imm(cover, 9);
     let clamped = emit_fill_rule_convert(&mut bcx, shifted, c255, fill_rule);
-    bcx.ins().istore8(MemFlags::new(), clamped, cov_p, 0);
+    bcx.ins().istore8(MemFlagsData::new(), clamped, cov_p, 0);
 
     let four_bytes = bcx.ins().iconst(ptr_type, 4);
     let next_cells_p = bcx.ins().iadd(cells_p, four_bytes);

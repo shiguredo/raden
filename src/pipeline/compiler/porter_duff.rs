@@ -1,6 +1,6 @@
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::types;
-use cranelift_codegen::ir::{InstBuilder, MemFlags, Type, Value};
+use cranelift_codegen::ir::{InstBuilder, MemFlagsData, Type, Value};
 use cranelift_frontend::FunctionBuilder;
 
 use super::{
@@ -45,7 +45,7 @@ pub(super) fn build_clear(mut bcx: FunctionBuilder, ptr_type: Type) {
     bcx.switch_to_block(simd_loop);
     let cur = bcx.block_params(simd_loop)[0];
     let si = bcx.block_params(simd_loop)[1];
-    bcx.ins().store(MemFlags::new(), zero_vec, cur, 0);
+    bcx.ins().store(MemFlagsData::new(), zero_vec, cur, 0);
     let sixteen = bcx.ins().iconst(ptr_type, 16);
     let next = bcx.ins().iadd(cur, sixteen);
     let one = bcx.ins().iconst(ptr_type, 1);
@@ -71,7 +71,7 @@ pub(super) fn build_clear(mut bcx: FunctionBuilder, ptr_type: Type) {
     bcx.switch_to_block(scalar_loop);
     let cur = bcx.block_params(scalar_loop)[0];
     let si = bcx.block_params(scalar_loop)[1];
-    bcx.ins().store(MemFlags::new(), zero_i32, cur, 0);
+    bcx.ins().store(MemFlagsData::new(), zero_i32, cur, 0);
     let four = bcx.ins().iconst(ptr_type, 4);
     let next = bcx.ins().iadd(cur, four);
     let one = bcx.ins().iconst(ptr_type, 1);
@@ -174,7 +174,9 @@ pub(super) fn build_generic_compose(
     let cur_dst = bcx.block_params(simd_loop)[0];
     let si = bcx.block_params(simd_loop)[1];
 
-    let dst_px = bcx.ins().load(types::I32X4, MemFlags::new(), cur_dst, 0);
+    let dst_px = bcx
+        .ins()
+        .load(types::I32X4, MemFlagsData::new(), cur_dst, 0);
     let (da, dr, dg, db) = emit_extract_channels_simd(&mut bcx, dst_px, mask_0xff_vec);
     let (oa, or, og, ob) = compose_simd(
         &mut bcx,
@@ -190,7 +192,7 @@ pub(super) fn build_generic_compose(
         mask_0xff_vec,
     );
     let result = emit_pack_channels_simd(&mut bcx, oa, or, og, ob);
-    bcx.ins().store(MemFlags::new(), result, cur_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, cur_dst, 0);
 
     let sixteen = bcx.ins().iconst(ptr_type, 16);
     let next = bcx.ins().iadd(cur_dst, sixteen);
@@ -223,7 +225,7 @@ pub(super) fn build_generic_compose(
     let cur_dst = bcx.block_params(scalar_loop)[0];
     let si = bcx.block_params(scalar_loop)[1];
 
-    let dst_px = bcx.ins().load(types::I32, MemFlags::new(), cur_dst, 0);
+    let dst_px = bcx.ins().load(types::I32, MemFlagsData::new(), cur_dst, 0);
     let da = bcx.ins().ushr_imm(dst_px, 24);
     let da = bcx.ins().band_imm(da, 0xFF);
     let dr = bcx.ins().ushr_imm(dst_px, 16);
@@ -249,7 +251,7 @@ pub(super) fn build_generic_compose(
     let tmp = bcx.ins().ishl_imm(og, 8);
     let result = bcx.ins().bor(result, tmp);
     let result = bcx.ins().bor(result, ob);
-    bcx.ins().store(MemFlags::new(), result, cur_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, cur_dst, 0);
 
     let four = bcx.ins().iconst(ptr_type, 4);
     let next = bcx.ins().iadd(cur_dst, four);
@@ -903,7 +905,7 @@ pub(super) fn build_plus(mut bcx: FunctionBuilder, ptr_type: Type) {
     bcx.switch_to_block(simd_loop);
     let cur = bcx.block_params(simd_loop)[0];
     let si = bcx.block_params(simd_loop)[1];
-    let dp = bcx.ins().load(types::I32X4, MemFlags::new(), cur, 0);
+    let dp = bcx.ins().load(types::I32X4, MemFlagsData::new(), cur, 0);
     let (da, dr, dg, db) = emit_extract_channels_simd(&mut bcx, dp, c255_vec);
     let oa = bcx.ins().iadd(sa_v, da);
     let oa = bcx.ins().umin(oa, c255_vec);
@@ -914,7 +916,7 @@ pub(super) fn build_plus(mut bcx: FunctionBuilder, ptr_type: Type) {
     let ob = bcx.ins().iadd(sb_v, db);
     let ob = bcx.ins().umin(ob, c255_vec);
     let result = emit_pack_channels_simd(&mut bcx, oa, or, og, ob);
-    bcx.ins().store(MemFlags::new(), result, cur, 0);
+    bcx.ins().store(MemFlagsData::new(), result, cur, 0);
     let sixteen = bcx.ins().iconst(ptr_type, 16);
     let next = bcx.ins().iadd(cur, sixteen);
     let one = bcx.ins().iconst(ptr_type, 1);
@@ -940,7 +942,7 @@ pub(super) fn build_plus(mut bcx: FunctionBuilder, ptr_type: Type) {
     bcx.switch_to_block(scalar_loop);
     let cur = bcx.block_params(scalar_loop)[0];
     let si = bcx.block_params(scalar_loop)[1];
-    let dp = bcx.ins().load(types::I32, MemFlags::new(), cur, 0);
+    let dp = bcx.ins().load(types::I32, MemFlagsData::new(), cur, 0);
     let da = bcx.ins().ushr_imm(dp, 24);
     let da = bcx.ins().band_imm(da, 0xFF);
     let dr = bcx.ins().ushr_imm(dp, 16);
@@ -962,7 +964,7 @@ pub(super) fn build_plus(mut bcx: FunctionBuilder, ptr_type: Type) {
     let tmp = bcx.ins().ishl_imm(og, 8);
     let result = bcx.ins().bor(result, tmp);
     let result = bcx.ins().bor(result, ob);
-    bcx.ins().store(MemFlags::new(), result, cur, 0);
+    bcx.ins().store(MemFlagsData::new(), result, cur, 0);
     let four = bcx.ins().iconst(ptr_type, 4);
     let next = bcx.ins().iadd(cur, four);
     let one = bcx.ins().iconst(ptr_type, 1);
@@ -1037,13 +1039,16 @@ pub(super) fn build_clear_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     let current_cov = bcx.block_params(simd_loop)[1];
     let simd_i = bcx.block_params(simd_loop)[2];
 
-    let packed_cov = bcx.ins().load(types::I32, MemFlags::new(), current_cov, 0);
+    let packed_cov = bcx
+        .ins()
+        .load(types::I32, MemFlagsData::new(), current_cov, 0);
     let is_all_ff = bcx.ins().icmp(IntCC::Equal, packed_cov, all_ff);
     bcx.ins().brif(is_all_ff, simd_fast, &[], simd_slow, &[]);
 
     // === simd_fast ブロック (cov=0xFF → out=0) ===
     bcx.switch_to_block(simd_fast);
-    bcx.ins().store(MemFlags::new(), zero_vec, current_dst, 0);
+    bcx.ins()
+        .store(MemFlagsData::new(), zero_vec, current_dst, 0);
     bcx.ins().jump(simd_next, &[]);
 
     // === simd_slow ブロック (out = dst * (256 - cov) >> 8) ===
@@ -1053,7 +1058,7 @@ pub(super) fn build_clear_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
 
     let dst_pixels = bcx
         .ins()
-        .load(types::I32X4, MemFlags::new(), current_dst, 0);
+        .load(types::I32X4, MemFlagsData::new(), current_dst, 0);
     let (dst_a_v, dst_r_v, dst_g_v, dst_b_v) =
         emit_extract_channels_simd(&mut bcx, dst_pixels, mask_0xff_vec);
 
@@ -1067,7 +1072,7 @@ pub(super) fn build_clear_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     let out_b = bcx.ins().ushr_imm(out_b, 8);
 
     let result = emit_pack_channels_simd(&mut bcx, out_a, out_r, out_g, out_b);
-    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
     bcx.ins().jump(simd_next, &[]);
 
     // === simd_next ブロック ===
@@ -1104,11 +1109,11 @@ pub(super) fn build_clear_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     let cur_cov = bcx.block_params(scalar_loop)[1];
     let scalar_i = bcx.block_params(scalar_loop)[2];
 
-    let cov_u8 = bcx.ins().load(types::I8, MemFlags::new(), cur_cov, 0);
+    let cov_u8 = bcx.ins().load(types::I8, MemFlagsData::new(), cur_cov, 0);
     let cov = bcx.ins().uextend(types::I32, cov_u8);
     let inv_cov = bcx.ins().isub(c256_scalar, cov);
 
-    let dp = bcx.ins().load(types::I32, MemFlags::new(), cur_dst, 0);
+    let dp = bcx.ins().load(types::I32, MemFlagsData::new(), cur_dst, 0);
     let da = bcx.ins().ushr_imm(dp, 24);
     let da = bcx.ins().band_imm(da, 0xFF);
     let dr = bcx.ins().ushr_imm(dp, 16);
@@ -1132,7 +1137,7 @@ pub(super) fn build_clear_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     let tmp = bcx.ins().ishl_imm(og, 8);
     let result = bcx.ins().bor(result, tmp);
     let result = bcx.ins().bor(result, ob);
-    bcx.ins().store(MemFlags::new(), result, cur_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, cur_dst, 0);
 
     let four = bcx.ins().iconst(ptr_type, 4);
     let next_dst = bcx.ins().iadd(cur_dst, four);
@@ -1260,7 +1265,9 @@ pub(super) fn build_generic_compose_cov(
     let current_cov = bcx.block_params(simd_loop)[1];
     let simd_i = bcx.block_params(simd_loop)[2];
 
-    let packed_cov = bcx.ins().load(types::I32, MemFlags::new(), current_cov, 0);
+    let packed_cov = bcx
+        .ins()
+        .load(types::I32, MemFlagsData::new(), current_cov, 0);
     let is_all_ff = bcx.ins().icmp(IntCC::Equal, packed_cov, all_ff);
     bcx.ins().brif(is_all_ff, simd_fast, &[], simd_slow, &[]);
 
@@ -1268,7 +1275,7 @@ pub(super) fn build_generic_compose_cov(
     bcx.switch_to_block(simd_fast);
     let dst_pixels = bcx
         .ins()
-        .load(types::I32X4, MemFlags::new(), current_dst, 0);
+        .load(types::I32X4, MemFlagsData::new(), current_dst, 0);
     let (dst_a_v, dst_r_v, dst_g_v, dst_b_v) =
         emit_extract_channels_simd(&mut bcx, dst_pixels, mask_0xff_vec);
     let (oa, or, og, ob) = compose_simd(
@@ -1285,7 +1292,7 @@ pub(super) fn build_generic_compose_cov(
         mask_0xff_vec,
     );
     let result = emit_pack_channels_simd(&mut bcx, oa, or, og, ob);
-    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
     bcx.ins().jump(simd_next, &[]);
 
     // === simd_slow ブロック (cov!=0xFF: div255(src * cov) を計算して使用) ===
@@ -1315,7 +1322,7 @@ pub(super) fn build_generic_compose_cov(
 
     let dst_pixels = bcx
         .ins()
-        .load(types::I32X4, MemFlags::new(), current_dst, 0);
+        .load(types::I32X4, MemFlagsData::new(), current_dst, 0);
     let (dst_a_v, dst_r_v, dst_g_v, dst_b_v) =
         emit_extract_channels_simd(&mut bcx, dst_pixels, mask_0xff_vec);
     let (oa, or, og, ob) = compose_simd(
@@ -1332,7 +1339,7 @@ pub(super) fn build_generic_compose_cov(
         mask_0xff_vec,
     );
     let result = emit_pack_channels_simd(&mut bcx, oa, or, og, ob);
-    bcx.ins().store(MemFlags::new(), result, current_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
     bcx.ins().jump(simd_next, &[]);
 
     // === simd_next ブロック (高速・通常パス合流) ===
@@ -1369,7 +1376,7 @@ pub(super) fn build_generic_compose_cov(
     let cur_cov = bcx.block_params(scalar_loop)[1];
     let scalar_i = bcx.block_params(scalar_loop)[2];
 
-    let cov_u8 = bcx.ins().load(types::I8, MemFlags::new(), cur_cov, 0);
+    let cov_u8 = bcx.ins().load(types::I8, MemFlagsData::new(), cur_cov, 0);
     let cov = bcx.ins().uextend(types::I32, cov_u8);
 
     // cov_src_c = div255(src_c * cov) = (src_c * cov * 257 + 257) >> 16
@@ -1393,7 +1400,7 @@ pub(super) fn build_generic_compose_cov(
     let cb = bcx.ins().iadd(cb, c257_scalar);
     let cov_sb = bcx.ins().ushr_imm(cb, 16);
 
-    let dp = bcx.ins().load(types::I32, MemFlags::new(), cur_dst, 0);
+    let dp = bcx.ins().load(types::I32, MemFlagsData::new(), cur_dst, 0);
     let da = bcx.ins().ushr_imm(dp, 24);
     let da = bcx.ins().band_imm(da, 0xFF);
     let dr = bcx.ins().ushr_imm(dp, 16);
@@ -1421,7 +1428,7 @@ pub(super) fn build_generic_compose_cov(
     let tmp = bcx.ins().ishl_imm(og, 8);
     let result = bcx.ins().bor(result, tmp);
     let result = bcx.ins().bor(result, ob);
-    bcx.ins().store(MemFlags::new(), result, cur_dst, 0);
+    bcx.ins().store(MemFlagsData::new(), result, cur_dst, 0);
 
     let four = bcx.ins().iconst(ptr_type, 4);
     let next_dst = bcx.ins().iadd(cur_dst, four);
