@@ -124,7 +124,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | Blend2D | raden | 状態 |
 |---------|-------|------|
 | `fill_all()` | `fill_all()` | 一致 |
-| `fill_rect(BLRectI/BLRect/x,y,w,h)` | `fill_rect(&Rect)` | 差異あり: 単色は `comp_op` を参照。パターン `fill_rect` は `SrcOver`/`SrcCopy` のみ（他は panic）。グラデーションの `fill_rect` 高速パスは `Context::comp_op` を渡さず `PreparedGradient::fill_rect` が内部融合（`gradient.rs` コメントの SrcOver 融合）。**グラデーションの `fill_path` は `comp_op` を `span_cov` に渡して参照する**（経路が異なるので注意） |
+| `fill_rect(BLRectI/BLRect/x,y,w,h)` | `fill_rect(&Rect)` | 差異あり: 単色は `comp_op` を参照。パターン / グラデーションの **高速パス** (変換行列が identity かつ実効フィルアルファが 1.0) では、パターンは `SrcOver`/`SrcCopy` のみ (他は panic)、グラデーションは `Context::comp_op` を渡さず内部 SrcOver 融合。行列が非 identity、または実効アルファが 1.0 未満のときは `fill_path` にフォールバックし `comp_op` をパイプラインで参照する |
 | `fill_box(BLBoxI/BLBox/x0,y0,x1,y1)` | なし | 未実装: 2 点指定の矩形塗りつぶし |
 | `fill_round_rect(BLRoundRect/...)` | `fill_round_rect(&RoundRect)` | 一致 |
 | `fill_circle(BLCircle/cx,cy,r)` | `fill_circle(&Circle)` | 一致 |
@@ -179,7 +179,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 
 | Blend2D | raden | 状態 |
 |---------|-------|------|
-| `blit_image(BLPointI/BLPoint, BLImage)` | `blit_image_at(x, y, &Image)` | 差異あり: `CompOp` は `SrcOver` / `SrcCopy` のみ。Nearest のみ |
+| `blit_image(BLPointI/BLPoint, BLImage)` | `blit_image_at(x, y, &Image)` | 差異あり: `CompOp` は `SrcOver` / `SrcCopy` のみ。Nearest のみ。ソースは `Prgb32` / `Xrgb32`、宛先は `Prgb32` / `Xrgb32` / `A8`。`global_alpha` は未適用 |
 | `blit_image(BLPointI/BLPoint, BLImage, BLRectI)` | `blit_image_rect` で `src_rect` 指定 | 同上 |
 | `blit_image(BLRectI/BLRect, BLImage)` | `blit_image_rect(&Rect, &Image, None)` | 同上 |
 | `blit_image(BLRectI/BLRect, BLImage, BLRectI)` | `blit_image_rect(&Rect, &Image, Some(Rect))` | 同上 |
@@ -416,9 +416,8 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `BLFontFace::create_from_file(path, flags)` | なし | 未実装: raden は FontData 経由の 2 段階設計 |
 | `BLFontFace::create_from_data(BLFontData, face_index)` | `FontFace::from_data(&FontData, index)` | 一致 |
 | `design_metrics()` | `units_per_em()` / `ascent()` / `descent()` / `line_gap()` / `cap_height()` / `x_height()` | 差異あり: Blend2D は構造体で一括取得、raden は個別メソッド |
-| `outline_type()` | なし | 未実装: raden は現状 TrueType アウトライン (glyf/loca) のみをサポート。CFF / CFF2 は未対応 |
+| `outline_type()` / `diag_flags()` | なし | 未実装: raden は現状 TrueType アウトライン (glyf/loca) のみをサポート (CFF / CFF2 未対応)。`diag_flags` 相当の診断フラグも未公開 |
 | `face_type()` / `face_flags()` / `face_index()` / `face_info()` | なし | 未実装 |
-| `outline_type()` / `diag_flags()` | なし | 未実装 |
 | `unique_id()` | なし | 未実装 |
 | `weight()` / `stretch()` / `style()` | なし | 未実装: フォントのウェイト/幅/スタイル |
 | `units_per_em()` / `glyph_count()` | `units_per_em()` のみ | 差異あり: `glyph_count()` がない |
@@ -446,7 +445,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `variation_settings()` / `set_variation_settings()` / `reset_variation_settings()` | なし | 未実装: Variable Fonts 設定 |
 | `shape(BLGlyphBuffer&)` | `Font::shape(&str) -> GlyphBuffer` / `Font::shape_into(&str, &mut GlyphBuffer)` | 差異あり: raden は `&str` 入力を内部で cmap → GSUB → GPOS の順に処理 |
 | `map_text_to_glyphs(BLGlyphBuffer&)` | `map_char_to_glyph(char)` -> `u16` / `Font::shape_into(&str, &mut GlyphBuffer)` | 差異あり: Blend2D はバッファ単位、raden は文字単位の公開 API と `shape_into` で対応 |
-| `position_glyphs(BLGlyphBuffer&)` | `glyph_advance(u16)` -> `f64` / `GlyphBuffer::placements` | 差異あり: Blend2D はバッファ内全グリフを一括配置、raden は文字単位の公開 API `glyph_advance` と `GlyphBuffer` の配置情報で対応 |
+| `position_glyphs(BLGlyphBuffer&)` | `glyph_advance(u16)` -> `f64` / `GlyphBuffer::placement()` / `GlyphBuffer::iter()` | 差異あり: Blend2D はバッファ内全グリフを一括配置、raden は文字単位の公開 API `glyph_advance` と `GlyphBuffer` の配置アクセサで対応。`placements` フィールド自体は `pub(crate)` |
 | `apply_kerning(BLGlyphBuffer&)` | raden は対応しない (Microsoft OpenType `kern` テーブル v0 非対応。カーニングは GPOS Pair Adjustment を `Font::shape` / `Font::shape_into` 内で適用) | 対象外: `kern` v0 API は提供せず、GPOS 経由でカーニングを実現する |
 | `apply_gsub(BLGlyphBuffer&, BLBitArray&)` / `apply_gpos(...)` | `Font::shape` / `Font::shape_into` 内で GSUB / GPOS を適用 | 差異あり: raden は個別 lookup 呼び出しを提供せず `FontFeatureSettings` 経由で制御 |
 | `get_glyph_outlines(...)` | `append_glyph_outline(glyph_id, offset_x, offset_y, &mut Path)` | 差異あり: raden は単一グリフのアウトラインを Path に追加するのみ。ユーザー変換行列 / sink コールバック / GlyphRun 単位の取得は未対応 |
@@ -484,7 +483,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | `write_to_file(path, BLImageCodec)` | `write_to_file(path)` | 差異あり: raden は BMP 形式のみ。コーデック指定なし |
 | `write_to_data(BLArray<uint8_t>&, BLImageCodec)` | なし | 未実装: メモリバッファへの画像書き込み |
 | `BLPixelConverter` | なし | 未実装: ピクセルフォーマット間の変換 |
-| `BLFormat` (Prgb32, Xrgb32, A8) | `PixelFormat` (Prgb32, Xrgb32, A8) | 一致: `A8` はパターン・グラデ塗りは未対応 (`fill_path` も未対応) |
+| `BLFormat` (Prgb32, Xrgb32, A8) | `PixelFormat` (Prgb32, Xrgb32, A8) | 一致: `A8` は単色 `fill_rect` / `clear_*` / blit 宛先に対応。スカラ合成は `SrcOver` / `SrcCopy` / `Clear` / `Plus`。パターン・グラデ塗りと `fill_path` は未対応 |
 | なし | `Image::stride()` | raden 独自: 行バイト数取得 |
 
 ## PathCmd の定義
@@ -504,12 +503,12 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
 | API | 説明 |
 |-----|------|
 | `PipelineRuntime` | JIT コンパイル済みパイプラインのキャッシュ。Blend2D は内部で管理するが raden は外部から注入する設計 |
-| `stroke_to_fill()` / `stroke_to_fill_with_workspace()` | パスのストローク輪郭を別の Path に変換する公開ユーティリティ |
-| `StrokeOptions` / `StrokeWorkspace` | ストローク変換のオプションとワークスペース。dash_array / dash_offset を含む |
+| `stroke_to_fill()` / `stroke_to_fill_with_workspace()` | パスのストローク輪郭を別の Path に変換する公開ユーティリティ (`raden::api::stroke`。クレート直下への `pub use` はなし) |
+| `StrokeOptions` / `StrokeWorkspace` | ストローク変換のオプションとワークスペース。dash_array / dash_offset を含む (`raden::api::stroke`) |
 | `premultiply_rgba(r, g, b, a)` -> `u32` | RGBA から premultiplied ARGB への変換関数 |
 | `Gradient` / `GradientStop` / `GradientValues` | グラデーション定義。Linear/Radial/Conic の 3 種別 |
 | `LinearGradientValues` / `RadialGradientValues` / `ConicGradientValues` | 各グラデーション種別のパラメータ |
-| `ExtendMode` | グラデーション/パターンの拡張モード (Pad, Repeat, Reflect) |
+| `ExtendMode` | グラデーション/パターンの拡張モード (Pad, Repeat, Reflect)。グラデーションのデフォルトは `Pad`、パターンのデフォルトは `Repeat` |
 | `Pattern` / `PatternFilter` | 画像パターンと補間モード。行列は `set_transform`、原点は `set_origin` |
 
 ## 課題一覧
@@ -518,7 +517,7 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
    - Linear/Radial/Conic グラデーション (LUT ベース、固定小数点、JIT F32X4 SIMD)
    - 画像パターン (Nearest / Bilinear、`set_origin` / `set_transform`、コンテキスト行列と `prepare` で合成)
 
-2. ~~**`PixelFormat` が `Prgb32` のみ**~~ → **`Xrgb32` / `A8` を追加済み**（`A8` 宛てはパターン・グラデ・`fill_path` 制限あり）
+2. ~~**`PixelFormat` が `Prgb32` のみ**~~ → **`Xrgb32` / `A8` を追加済み**（`A8` は単色 `fill_rect` / `clear_*` / blit 宛先と `SrcOver`/`SrcCopy`/`Clear`/`Plus` に対応。パターン・グラデ・`fill_path` は制限あり）
 
 3. ~~**ダッシュ線 (`dash_array` / `dash_offset`) が未実装**~~ → **実装済み**
    - SVG 準拠のダッシュパターン分断アルゴリズム
@@ -542,10 +541,11 @@ Blend2D ソース: https://github.com/blend2d/blend2d の各ヘッダファイ�
    - 未実装: ヒットテスト (`hit_test`)、範囲指定 (`BLRange`) 版
 
 8. ~~**Context の getter メソッドがない**~~ → **実装済み**
-   - `comp_op()` / `fill_rule()` / `fill_color_prgb32()` / `fill_gradient()` / `fill_pattern()` / `stroke_color_prgb32()` / `stroke_width()` / `stroke_miter_limit()` / `stroke_join()` / `stroke_start_cap()` / `stroke_end_cap()` / `stroke_dash_array()` / `stroke_dash_offset()` / `matrix()`（`src/api/context.rs`）
+   - `comp_op()` / `fill_rule()` / `fill_color_prgb32()` / `fill_gradient()` / `fill_pattern()` / `stroke_color_prgb32()` / `stroke_gradient()` / `stroke_pattern()` / `stroke_width()` / `stroke_miter_limit()` / `stroke_join()` / `stroke_start_cap()` / `stroke_end_cap()` / `stroke_dash_array()` / `stroke_dash_offset()` / `matrix()` / `global_alpha()` / `fill_alpha()` / `stroke_alpha()`（`src/api/context.rs`）
 
-9. **フォントモジュールのテストがない**
-   - テーブルパーサ、グリフアウトライン変換、cmap ルックアップの PBT / 単体テスト / fuzzing が未整備
+9. ~~**フォントモジュールのテストがない**~~ → **部分整備済み**
+   - 実装済み: `tests/test_font.rs` の統合テスト、`pbt/tests/prop_font` の PBT、`src/font/tables.rs` 内のパーサ単体テスト、`tests/helpers/font_fetch.rs` によるテストフォント取得
+   - 未整備: cargo-fuzz 基盤、既存テーブルパーサ全関数の不変条件 PBT、font 専用ベンチマーク
 
 10. **画像出力が BMP のみ**
     - `write_to_file()` は BMP 形式のみ。Blend2D は BLImageCodec でコーデックを指定

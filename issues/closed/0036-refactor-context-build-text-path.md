@@ -3,6 +3,7 @@
 - Priority: Medium
 - Category: refactor
 - Created: 2026-06-22
+- Completed: 2026-07-30
 - Model: Opus 4.7
 - Branch: feature/refactor-context-build-text-path
 - Polished: {YYYY-MM-DD}
@@ -46,4 +47,9 @@ Medium。0025 (kerning) と 0026 (shaping) で `fill_text` / `measure_text` / `s
 
 ## 解決方法
 
-polish 段階で確定する。
+0026（OpenType 基本シェーピング）実装の過程で、完了条件は既に満たされている。
+
+- `src/api/context.rs` に private の `Context::build_text_path` が存在し、文字列 → `shape_into` → Path 構築を集約している
+- `fill_text` / `stroke_text` は `build_text_path` 呼び出し後に `fill_path` / `stroke_path` する形に圧縮済み
+- 設計方針 1（`build_text_path` 抽出）が採用された結果。0035（RAII ガード化）との組み合わせは本 issue の完了条件外のため未実施
+- 本 issue 単独の追加実装は不要のため closed にする

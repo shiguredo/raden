@@ -3,6 +3,7 @@
 - Priority: Low
 - Category: refactor
 - Created: 2026-06-22
+- Completed: 2026-07-30
 - Model: Opus 4.7
 - Branch: feature/refactor-blend2d-doc-text-metrics
 - Polished: {YYYY-MM-DD}
@@ -46,4 +47,8 @@ Low。ドキュメント表記の追従漏れであり、実害はない。た�
 
 ## 解決方法
 
-polish 段階で確定する。
+0023 / 0026 およびドキュメント追従の過程で、完了条件は既に満たされている。
+
+- `docs/BLEND2D.md` の該当行（現行 L456 付近）は `TextMetrics { advance, bounding_box, leading_bearing, trailing_bearing }` と実装 (`src/font/mod.rs` の `TextMetrics`) に整合している
+- 設計方針 1（フィールド列挙）が採用された結果となっており、`bounding_box` の反映漏れは解消済み
+- 本 issue 単独の追加実装・ドキュメント編集は不要のため closed にする

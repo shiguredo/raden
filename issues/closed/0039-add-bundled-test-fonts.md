@@ -3,6 +3,7 @@
 - Priority: High
 - Category: add
 - Created: 2026-06-22
+- Completed: 2026-07-30
 - Model: Opus 4.7
 - Branch: feature/add-bundled-test-fonts
 - Polished: {YYYY-MM-DD}
@@ -93,7 +94,13 @@ polish 段階で決定する。順序選択は完了条件に影響しない (�
 
 ## 解決方法
 
-polish 段階で確定する。
+同梱方針は採用せず、同一番号の後続 issue `issues/closed/0039-add-test-font-downloader.md` でダウンロード＋キャッシュ方式に置換済みのため、本 issue を closed にする。
+
+- 0001 メタ issue の Tracked items「テスト用フォント選定」は closed 0039（downloader）で完了済み
+- `tests/helpers/font_fetch.rs` の `fetch_source_sans_3_bytes` / `fetch_source_serif_4_bytes` がテスト用フォント取得経路となる
+- closed 0039 の完了条件に「フォントバイナリをリポジトリにコミットしない」があり、本 issue の同梱方針と正面衝突する
+- CJK / BMP 外カバレッジは 0001 備考どおり、必要になった時点で別 issue とする
+- 本ファイルは方針転換前の同梱案の残骸であり、追加実装は行わない
 
 ## 関連
 

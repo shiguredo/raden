@@ -69,8 +69,8 @@ GPU を利用できない CI 環境において、CPU のみを利用して 1080
 |---|---|
 | `clear_all()` | 現在のクリップ領域全体をピクセル値 0 で書き換える (`comp_op` は変更しない) |
 | `clear_rect(&Rect)` | 指定矩形をピクセル値 0 で書き換える (デバイス座標、変換行列は無視) |
-| `blit_image_at(x, y, &Image)` | ソース画像全体を (x, y) に Nearest 転送する |
-| `blit_image_rect(&Rect, &Image, Option<Rect>)` | ソース矩形を宛先矩形に Nearest 転送する。`CompOp` は `SrcOver` / `SrcCopy` のみ |
+| `blit_image_at(x, y, &Image)` | ソース画像全体を (x, y) に Nearest 転送する。ソースは `Prgb32` / `Xrgb32`、宛先は `Prgb32` / `Xrgb32` / `A8`。`CompOp` は `SrcOver` / `SrcCopy` のみ。`global_alpha` は未適用 |
+| `blit_image_rect(&Rect, &Image, Option<Rect>)` | ソース矩形を宛先矩形に Nearest 転送する。制限は `blit_image_at` と同じ |
 
 ### 変換 (`Context`)
 
@@ -96,6 +96,11 @@ GPU を利用できない CI 環境において、CPU のみを利用して 1080
 | `restore()` | スタックから描画状態を復元する |
 | `clip_to_rect(&Rect)` | クリップ領域を指定矩形との積集合に縮小する (拡大不可) |
 | `restore_clipping()` | クリップ領域を画像境界 (メタクリップ) に戻す |
+| `comp_op()` / `fill_rule()` / `matrix()` | 現在の合成モード、塗り規則、変換行列を取得する |
+| `fill_color_prgb32()` / `fill_gradient()` / `fill_pattern()` | 現在のフィルスタイルを取得する |
+| `stroke_color_prgb32()` / `stroke_gradient()` / `stroke_pattern()` | 現在のストロークスタイルを取得する |
+| `stroke_width()` / `stroke_miter_limit()` / `stroke_join()` / `stroke_start_cap()` / `stroke_end_cap()` / `stroke_dash_array()` / `stroke_dash_offset()` | 現在のストロークパラメータを取得する |
+| `global_alpha()` / `fill_alpha()` / `stroke_alpha()` | 現在のアルファ設定を取得する |
 
 ### フィルスタイル / ストロークスタイル
 
@@ -123,13 +128,13 @@ GPU を利用できない CI 環境において、CPU のみを利用して 1080
 
 範囲外処理モード (`ExtendMode`): `Pad` (デフォルト) / `Repeat` / `Reflect`
 
-`fill_rect` でグラデーションを塗る場合、現状は `set_comp_op` の値を参照せず、内部で SrcOver 相当の融合のみを行う。`fill_path` 経由では `CompOp` をパイプラインで適用する。
+`fill_rect` のグラデーション高速パス (変換行列が identity かつ実効フィルアルファが 1.0) は `set_comp_op` を参照せず、内部で SrcOver 相当の融合のみを行う。変換行列が非 identity、または実効アルファが 1.0 未満のときは `fill_path` にフォールバックし、`CompOp` をパイプラインで適用する。
 
 ### パターン (`Pattern`)
 
-画像をタイルとして繰り返す塗りつぶし。`set_origin` / `set_transform`、`PatternFilter` (`Nearest` / `Bilinear`)、`ExtendMode` (`Pad` / `Repeat` / `Reflect`) に対応する。
+画像をタイルとして繰り返す塗りつぶし。`set_origin` / `set_transform`、`PatternFilter` (`Nearest` / `Bilinear`)、`ExtendMode` (`Pad` / `Repeat` / `Reflect`) に対応する。デフォルトの `ExtendMode` は `Repeat` (グラデーションのデフォルト `Pad` とは異なる)。
 
-`fill_rect` でパターンを塗るときは `set_comp_op` が `SrcOver` または `SrcCopy` のみ対応 (それ以外はパニック)。`fill_path` では `CompOp` をパイプライン経由で適用できる。
+`fill_rect` のパターン高速パス (変換行列が identity かつ実効フィルアルファが 1.0) は `CompOp` が `SrcOver` / `SrcCopy` のみ対応 (それ以外はパニック)。変換行列が非 identity、または実効アルファが 1.0 未満のときは `fill_path` にフォールバックし、`CompOp` をパイプライン経由で適用できる。
 
 ### 合成モード (`CompOp`)
 
@@ -198,11 +203,12 @@ Porter-Duff 基本セット + Clear + Plus の 13 種類と、ブレンドモー
 
 | 型 | 説明 |
 |---|---|
-| `FontData` | フォントファイルのバイトデータ。`from_file(path)` (`AsRef<Path>`) または `from_bytes(bytes)` で作成 |
+| `FontData` | フォントファイルのバイトデータ。`from_file(path)` (`AsRef<Path>`) または `from_bytes(bytes)` で作成。`data()` で生バイト列を取得 |
 | `FontFace` | パース済みフォントフェイス。TrueType / OpenType テーブル (head, maxp, hhea, hmtx, cmap, loca, glyf, OS/2, GSUB, GPOS) を解析。`units_per_em` / `ascent` / `descent` / `line_gap` / `cap_height` / `x_height` / `glyph_bounds` を提供 |
-| `Font` | サイズ指定済みフォント。`from_face` / `with_features` で作成し `fill_text` / `stroke_text` に渡す。`shape` / `shape_into` / `measure_text`、スケール済みメトリクス (`ascent` / `descent` / `line_gap` / `cap_height` / `x_height` / `glyph_bounds`)、`clone_with_features` / `set_feature_settings` で liga / kern / clig を切り替え可能 |
+| `Font` | サイズ指定済みフォント。`from_face` / `with_features` で作成し `fill_text` / `stroke_text` に渡す。`size` / `scale` / `map_char_to_glyph` / `glyph_advance` / `append_glyph_outline`、`shape` / `shape_into` / `measure_text`、スケール済みメトリクス (`ascent` / `descent` / `line_gap` / `cap_height` / `x_height` / `glyph_bounds`)、`feature_settings` / `set_feature_settings` / `clone_with_features` で liga / kern / clig を切り替え可能 |
+| `FontError` | フォント読み込み / パース失敗時のエラー型 |
 | `FontFeatureSettings` | liga / kern / clig の OpenType Layout feature ON/OFF 設定。デフォルトは全 ON。`none()` / `with_kern` / `with_liga` / `with_clig` |
-| `GlyphBuffer` | `Font::shape` / `Font::shape_into` の結果。glyph ID、配置 (`GlyphPlacement`)、クラスタを保持。`iter()` で走査 |
+| `GlyphBuffer` | `Font::shape` / `Font::shape_into` の結果。内部配列は `pub(crate)`。クレート外は `len` / `is_empty` / `glyph_id` / `placement` / `cluster` / `iter` / `is_well_formed` で参照 |
 | `GlyphBufferIter` | `GlyphBuffer::iter` が返すイテレータ。`(glyph_id, GlyphPlacement, cluster)` |
 | `GlyphPlacement` | 1 グリフの配置情報。advance / offset_x / offset_y (ピクセル単位、offset は Y up) |
 | `GlyphBounds` | グリフ境界ボックス (x_min / y_min / x_max / y_max)。Y up、baseline 原点。描画時の Y 反転は適用しない |
@@ -221,6 +227,7 @@ Porter-Duff 基本セット + Clear + Plus の 13 種類と、ブレンドモー
 | `conic_to(cx, cy, ex, ey, w)` | 有理 2 次ベジェ (円錐曲線、重み `w > 0`) を追加する |
 | `arc_to(cx, cy, rx, ry, start, sweep, force_move_to)` | 楕円弧を現在点から cubic Bezier 近似で接続する |
 | `close()` | サブパスを閉じる |
+| `clear()` / `len()` / `is_empty()` / `cmds()` / `points()` / `conic_weights()` | パス内容の消去と参照 |
 | `add_circle(cx, cy, r)` | 円を 4 本の cubic Bezier で近似して追加する (Blend2D 互換の KAPPA 定数使用) |
 | `add_ellipse(cx, cy, rx, ry)` | 楕円を追加する |
 | `add_round_rect(x, y, w, h, rx, ry)` | 角丸矩形を追加する (`rx` / `ry` は幅・高さの半分でクランプ) |
@@ -237,10 +244,10 @@ Porter-Duff 基本セット + Clear + Plus の 13 種類と、ブレンドモー
 
 | 機能 | 説明 |
 |---|---|
-| `Image` | 画像バッファ管理。`new(width, height, format)` で生成、`data()` / `data_mut()` でバイト列参照 |
+| `Image` | 画像バッファ管理。`new(width, height, format)` で生成、`width` / `height` / `stride` / `format` / `data()` / `data_mut()` で参照 |
 | `PixelFormat::Prgb32` | 32-bit premultiplied ARGB (デフォルト想定) |
 | `PixelFormat::Xrgb32` | 32-bit XRGB。アルファは未使用で、合成は `Prgb32` と同一 JIT を共有する |
-| `PixelFormat::A8` | 8-bit アルファ専用。合成はスカラ実装で `fill_rect` のみ対応 (`fill_path`、グラデ/パターン塗りは未対応) |
+| `PixelFormat::A8` | 8-bit アルファ専用。単色 `fill_rect` / `clear_*` / blit 宛先に対応。合成はスカラ実装で `SrcOver` / `SrcCopy` / `Clear` / `Plus`。`fill_path`、グラデ/パターン塗りは未対応 |
 | BMP 出力 | `Image::write_to_file()` で BI_BITFIELDS 形式の top-down BMP を出力する |
 
 ## JIT パイプライン
@@ -367,10 +374,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## 制約
 
-- `PixelFormat::A8` は単色 `fill_rect` とスカラ合成 (SrcOver / SrcCopy / Clear) のみ対応。`fill_path`・グラデーション塗り・パターン塗りは未対応
-- フォントは TrueType アウトライン (glyf/loca) に対応。OpenType Layout のうち GSUB Single/Ligature (Type 1/4) と GPOS Single/Pair (Type 1/2) による基本シェーピング (liga / kern / clig) に対応。CFF / CFF2 アウトライン、Microsoft `kern` テーブル v0、可変フォントは未対応
+- Rust 1.94 以上が必要 (`Cargo.toml` の `rust-version`)
+- `PixelFormat::A8` は単色 `fill_rect` / `clear_*` / blit 宛先とスカラ合成 (`SrcOver` / `SrcCopy` / `Clear` / `Plus`) に対応。`fill_path`・グラデーション塗り・パターン塗りは未対応
+- フォントは TrueType アウトライン (glyf/loca) に対応。OpenType Layout のうち GSUB Single/Ligature (Type 1/4) と GPOS Single/Pair (Type 1/2) による基本シェーピング (liga / kern / clig) に対応。CFF / CFF2 アウトライン、Microsoft `kern` テーブル v0、可変フォントは未対応。Compound Glyph の point-matching (`ARGS_ARE_XY_VALUES == 0`) は原点フォールバック
 - クリッピングは矩形のみ対応 (パスクリッピングは未対応)
-- `blit_image_*` は Nearest 補間、`CompOp` は `SrcOver` / `SrcCopy` のみ対応
+- `blit_image_*` は Nearest 補間、`CompOp` は `SrcOver` / `SrcCopy` のみ。ソースは `Prgb32` / `Xrgb32`、宛先は `Prgb32` / `Xrgb32` / `A8`。`global_alpha` は blit に未適用
 
 ## ライセンス
 
