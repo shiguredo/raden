@@ -5,7 +5,7 @@
 - Created: 2026-08-29
 - Completed: {YYYY-MM-DD}
 - Branch: feature/update-cranelift-0-135
-- Polished: {YYYY-MM-DD}
+- Polished: 2026-08-29
 
 ## 目的
 
@@ -24,7 +24,9 @@ Medium。現行の 0.133.3 のままでもビルドとテスト (179 件) はす
 - エラー: すべて `E0061` (`this method takes 1 argument but 0 arguments were supplied`)。`src/pipeline/compiler/` 配下の 7 ファイルに集中する
 - 警告: すべて `use of deprecated method cranelift_codegen::ir::InstBuilder::*_imm`
 
-`cargo update` は MSRV を考慮して 0.135 系を候補から除外するため (`available: v0.134.4` と案内される)、`rust-version` を上げない限り 0.135.1 は解決されない。
+cranelift 5 クレートの要求範囲を `*` に緩めて `rust-version = "1.94"` のまま `cargo generate-lockfile` を実行すると、5 クレートとも `Adding cranelift-codegen v0.134.4 (available: v0.135.1, requires Rust 1.95.0)` の案内で 0.134.4 が選ばれ、MSRV 考慮が 0.135 系を候補から落としていることが確認できる。要求範囲が `~0.133` の間は semver 範囲そのものが 0.135 を除外しており、既に 0.135.1 へロックした lockfile へ `~0.133` のマニフェストに戻して `cargo update -p cranelift-codegen --precise 0.135.1` を実行すると `Downgrading cranelift-codegen v0.135.1 -> v0.133.3 (available: v0.135.1, requires Rust 1.95.0)`（他 4 クレートは `Downgrading ... (available: v0.134.4)`）が出る。
+
+要求範囲を `~0.135` に書き換えると、`rust-version = "1.94"` をそのままでも `cargo generate-lockfile` は 0.135.1 を解決できる (`Adding cranelift-codegen v0.135.1 (requires Rust 1.95.0)` と注記されるだけで失敗はしない)。つまり `rust-version` の引き上げは解決を通すためではなく、cranelift 0.135 が要求する rustc 1.95 を正しく宣言するために必要である。`rust-version = "1.94"` のまま 0.135.1 をロックすると、MSRV 宣言が実態と食い違った状態になる。
 
 ### 中間段階としての 0.134 は意味がない
 
@@ -48,18 +50,20 @@ Medium。現行の 0.133.3 のままでもビルドとテスト (179 件) はす
 
 - 19 箇所のいずれにも `TargetFrontendConfig` は渡っておらず、スコープ内にも存在しない。build 関数が受け取っているのは `bcx` と `ptr_type: Type` など限られた値のみ
 - 供給元は既に手元にある。`src/pipeline/compiler/mod.rs` の `compile*` 9 メソッド (`compile` / `compile_cov` / `compile_box` / `compile_sweep` / `compile_span` / `compile_span_cov` / `compile_linear_gradient_cov` / `compile_radial_row` / `compile_transform_edges`) が `module.target_config()` を呼んで `ptr_type` を得ている。`Module::target_config` は `TargetFrontendConfig` を値で返し、`TargetFrontendConfig` は `Clone + Copy` で `pointer_type(self)` を持つ
-- 波及規模: `bcx` を値で受け取る `build_*` 関数は 68 個で、うち 19 個が finalize を呼ぶ（`blend_build.rs` 32 / `porter_duff.rs` 24 / `core_pipelines.rs` 4 / `box_pipelines.rs` 2 / `gradient_pipelines.rs` 2 / `span_pipelines.rs` 2 / `sweep.rs` 1 / `transform.rs` 1）。`src/pipeline/compiler/mod.rs` から `build_*` を呼んでいるのは 68 か所で、いずれも `ptr_type` を実引数に渡している。`ptr_type: Type` を受ける関数定義は 69 個（68 個の `build_*` と、`src/pipeline/compiler/gradient_pipelines.rs` の `emit_lut_lookup` 1 個）、`bcx` を `&mut FunctionBuilder` で受ける IR ヘルパーは 72 個。`src/pipeline/compiler/` 全体で `ptr_type` を参照する行は 458 行
+- 波及規模: `bcx` を値で受け取る `build_*` 関数は 68 個で、うち 19 個が finalize を呼ぶ（`blend_build.rs` 32 / `porter_duff.rs` 24 / `core_pipelines.rs` 4 / `box_pipelines.rs` 2 / `gradient_pipelines.rs` 2 / `span_pipelines.rs` 2 / `sweep.rs` 1 / `transform.rs` 1）。`src/pipeline/compiler/mod.rs` から `build_*` を呼んでいるのは 68 か所で、いずれも `ptr_type` を実引数に渡している。加えて `blend_build.rs` と `porter_duff.rs` の中に、`build_*` から別の `build_*` へ `ptr_type` をそのまま渡す中継呼び出しが 49 か所ある（1 行完結 21 と複数行の実引数 28）。`bcx` を値で受ける `build_*` 68 個は、実測で「他 `build_*` へ `ptr_type` を中継するだけの 49 個」「finalize を呼び、かつ `ptr_type` を値として使う 17 個」「finalize を呼ぶが `_ptr_type` 未使用引数の 2 個」に完全に分かれる（このいずれにも入らない関数は 0 個）。`ptr_type: Type` を受ける関数定義は 69 個（68 個の `build_*` と、`src/pipeline/compiler/gradient_pipelines.rs` の `emit_lut_lookup` 1 個。うち 2 個は後述の `_ptr_type` 未使用引数）、`bcx` を `&mut FunctionBuilder` で受ける IR ヘルパーは 72 個。`src/pipeline/compiler/` 全体で `ptr_type` を参照する行は 458 行
+- 置き換えの例外が 1 種ある。`src/pipeline/compiler/porter_duff.rs` の `build_dst_copy` / `build_dst_copy_cov` は引数が `_ptr_type: Type` で関数本体では一切使われないが、finalize を呼ぶ 19 箇所に含まれる（アンダースコア付き `ptr_type` 引数は実コードでこの 2 個のみ）。詳細は設計方針 1 の「置き換え手順」参照
+- import の連鎖も別途必要になる。`Type` を import しているのは 8 ファイル（`blend_build.rs` / `box_pipelines.rs` / `core_pipelines.rs` / `gradient_pipelines.rs` / `porter_duff.rs` / `span_pipelines.rs` / `sweep.rs` / `transform.rs`）で、複数のファイルは `MemFlagsData` / `Value` などと同じ import 行に並んでいる。置き換え後に `TargetFrontendConfig` の import を追加するファイルも同じ 8 ファイルだが、`TargetFrontendConfig` は `cranelift_codegen::isa` 側にある（`Type` は `cranelift_codegen::ir`）ため、追加先は既存行に括り付けられない
 
 ### 変更点 2: `InstBuilder` の `*_imm` 非推奨化
 
-0.134 で `*_imm` 系メソッドが非推奨となり、`*_imm_s`（即値を符号拡張）と `*_imm_u`（即値をゼロ拡張）へ分離された。cranelift-codegen-meta 0.135.1 の生成コメントには「`_s` / `_u` の差は `i128` でだけ意味を持つ」と明記されている。raden が使っているのは `ushr_imm` / `ishl_imm` / `band_imm` / `sshr_imm` の 4 種である。
+0.134 で `*_imm` 系メソッドが非推奨となり、`*_imm_s`（即値を符号拡張）と `*_imm_u`（即値をゼロ拡張）へ分離された。cranelift-codegen-meta 0.135.1 の `src/gen_inst.rs` にあるジェネレータ `gen_imm_inst_builder` の doc コメントは「`_imm_s` variant sign-extends the immediate while `_imm_u` zero-extends it; this only matters for `i128`」＝ `_s` / `_u` の差は `i128` でだけ意味を持つと述べている（生成物 `inst_builder.rs` 側にこの説明は現れない。実体はジェネレータ側のコメントである）。raden が使っているのは `ushr_imm` / `ishl_imm` / `band_imm` / `sshr_imm` の 4 種である。
 
 raden の使用箇所は 511 箇所で、ビルド警告 511 件と一致する（`src/pipeline/compiler/sweep.rs` の doc コメント内の言及 2 件を除いた実コード数）。
 
 - API 別: raden が使うのは `ushr_imm` 364 / `ishl_imm` 59 / `band_imm` 86 / `sshr_imm` 2 の 4 種。0.133.3 の `InstBuilder` に生えている `*_imm` は 15 種 (`band_imm` / `bor_imm` / `bxor_imm` / `iadd_imm` / `icmp_imm` / `imul_imm` / `ishl_imm` / `rotl_imm` / `rotr_imm` / `sdiv_imm` / `srem_imm` / `sshr_imm` / `udiv_imm` / `urem_imm` / `ushr_imm`) で、残る 11 種は不使用
 - ファイル別: `porter_duff.rs` 175 / `blend_modes.rs` 133 / `core_pipelines.rs` 76 / `span_pipelines.rs` 66 / `gradient_pipelines.rs` 35 / `box_pipelines.rs` 15 / `mod.rs` 6 / `sweep.rs` 5
 - 即値はすべて非負のリテラル（1 / 2 / 3 / 4 / 8 / 9 / 16 / 24 / 0xF / 0xFF / 511）。負の値・変数・定数式は 0 件
-- 使用する型は `I32` / `I32X4` / `F32X4` / `F32` / `I64` / `F64X2` / `I8` / `F64` / `I8X16` / `I16X8` で、`i128` は使わない
+- 使用する型は `src/pipeline/compiler/` 全体で `I32` / `I32X4` / `F32X4` / `F32` / `I64` / `F64X2` / `I8` / `F64` / `I8X16` / `I16X8` の 10 種（制御型ではなくモジュールで使う型の一覧）で、`i128` は `src/` 全体で 0 件
 
 **`_imm_s` / `_imm_u` は 0.133 には存在しない**（0.133.3 のビルド生成物 `inst_builder.rs` には `*_imm` が 15 種並ぶだけで `_imm_s` / `_imm_u` も `#[deprecated]` も 0 種。0.134.4 と 0.135.1 のビルドでは同じ生成物に 3 種が併存し、警告文が `_imm_s` / `_imm_u` への移行を推奨することを確認した）。したがってこの移行はバージョン更新と同時にしか行えない。`.github/workflows/ci.yml` の `cargo clippy --workspace -- -D warnings`、および `prek.toml` の pre-commit フック `cargo clippy --workspace --all-targets -- -D warnings` を実行するため、非推奨 API を残したままではコミット自体ができず、更新をマージできない。
 
@@ -83,15 +87,31 @@ CI は stable ツールチェーン参照（`rust-toolchain.toml` は `channel =
 
 `bcx` を値で受け取る `build_*` 関数の `ptr_type: Type` 引数を `frontend_config: TargetFrontendConfig` に置き換える。`TargetFrontendConfig::pointer_type()` は `self` を取る Copy 型なので、`ptr_type` が必要な関数の冒頭で `let ptr_type = frontend_config.pointer_type();` を取ればよい。
 
-- 採用理由: 引数の数を増やさずに 19 か所へ `TargetFrontendConfig` を届けられる。既存の `ptr_type` 受け渡し経路がそのまま流用でき、`ptr_type` と `TargetFrontendConfig` の二重管理が発生しない
+- 採用理由: 引数の数を増やさずに 68 個の `build_*` を経由して finalize を呼ぶ 19 か所へ `TargetFrontendConfig` を届けられる。既存の `ptr_type` 受け渡し経路がそのまま流用でき、`ptr_type` と `TargetFrontendConfig` の二重管理が発生しない
 - 採らない案 1: `ptr_type` を残したまま `frontend_config` を追加引数にする案。68 個の `build_*` のシグネチャと、`src/pipeline/compiler/` 全体で 458 行ある `ptr_type` の受け渡し行のほとんどに 1 引数が増え、`ptr_type` が `frontend_config` から導出される値である関係を呼び出し側に要求し続けることになる
 - 採らない案 2: `src/pipeline/compiler/mod.rs` 側で finalize を集約し、build 関数が `bcx` を返す設計にする案。`finalize(mut self, ...)` は `self` を move するため、中継 `build_*` 群の戻り値設計まで変えることになり、今回の更新の目的を超えて追従範囲が膨らむ
 
-`src/pipeline/compiler/mod.rs` の 9 メソッドでは `let frontend_config = module.target_config();` を取ってから `let ptr_type = frontend_config.pointer_type();` に置き、`sig.params.push(AbiParam::new(ptr_type))` は従来どおり `ptr_type` を使い、build 関数には `frontend_config` を渡す。
+`src/pipeline/compiler/mod.rs` の 9 メソッドは現状 `let ptr_type = module.target_config().pointer_type();` の 1 式で受けている。これを `let frontend_config = module.target_config();` と `let ptr_type = frontend_config.pointer_type();` の 2 行に分割し、`sig.params.push(AbiParam::new(ptr_type))` は従来どおり `ptr_type` を使い、build 関数には `frontend_config` を渡す。
+
+置き換え手順（実測の例外と波及先を明記する）:
+
+1. `bcx` を値で受け取る `build_*` 68 個の `ptr_type: Type` を `frontend_config: TargetFrontendConfig` に置き換える。実引数の書き換えは `mod.rs` の 68 か所だけでは済まない。`build_*` 同士の中継呼び出しが 49 か所（`blend_build.rs` 32 と `porter_duff.rs` 17。うち 1 行完結が 21 か所、複数行の実引数が 28 か所）あり、これらも `frontend_config` を渡す形に変わる。中継先は `build_generic_compose` / `build_generic_compose_cov` の 2 関数で、`mod.rs` からは呼ばれていない（`build_flags` / `build_isa` は `src/pipeline/compiler/mod.rs` 内の別関数で、上の 68 か所には含めない）
+2. `ptr_type` を中継実引数としてではなく値として使っている関数の冒頭に `let ptr_type = frontend_config.pointer_type();` を追加する。必要なのは 17 関数で、finalize を呼ぶ 19 のうち `porter_duff.rs` の `build_dst_copy` / `build_dst_copy_cov` を除いた 17 個（`build_generic_compose` / `build_generic_compose_cov` も `iconst(ptr_type, 0)` などで使うため含まれる）。`bcx` を値で受ける `build_*` 68 個のうち残る 49 個（`blend_build.rs` 32 と `porter_duff.rs` 17）は、本体での `ptr_type` の使われ方が他 `build_*` への実引数だけなので、`let ptr_type` を追加してはならない。追加すると未使用変数の警告になり `-D warnings` に抵触する。中継専用関数と値として使う関数が本体で併存するケースは実測でない（49 と 17 と 2 のいずれにも入らない関数は 0 個）
+3. 上記 2 個の未使用引数は `_ptr_type: Type` を `frontend_config: TargetFrontendConfig`（アンダースコアなし）に置き、`let ptr_type = ...` は追加せず末尾の `bcx.finalize(frontend_config);` でだけ使う。実引数となる時点で未使用ではないため `unused_variables` 警告は出ない
+4. `Type` を使わなくなった 7 ファイル（`blend_build.rs` / `box_pipelines.rs` / `core_pipelines.rs` / `porter_duff.rs` / `span_pipelines.rs` / `sweep.rs` / `transform.rs`）から `use cranelift_codegen::ir::...` の `Type` を除去する。`gradient_pipelines.rs` は `emit_lut_lookup` が `ptr_type: Type` を受けたまま残るため import を維持する
+5. `build_*` を定義する上記 8 ファイルへ `cranelift_codegen::isa::TargetFrontendConfig` の import を追加する。`TargetFrontendConfig` は `ir` ではなく `isa` にあり（0.133.3 でも同じ）、`Type` の `cranelift_codegen::ir::Type` とは別モジュールなので、import 行は増えるか `use cranelift_codegen::{ir, isa}` の形に寄せることになる。`mod.rs` は `module.target_config().pointer_type()` を 1 式で繋いで型名を字面に出さないため追加不要
+
+関数本体の `iconst(ptr_type, ...)` / `append_block_param(block, ptr_type)` / `emit_lut_lookup(&mut bcx, ..., ptr_type, ...)` などの `ptr_type` 参照は、手順 2 の `let` により解決先が変わるだけで字面は変更不要。`bcx` を `&mut FunctionBuilder` で受ける IR ヘルパー 72 個のうち `ptr_type: Type` を受けるのは `emit_lut_lookup` 1 個だけで、このシグネチャは維持する（呼び出し元である `gradient_pipelines.rs` の `build_radial_row_opaque` / `build_linear_gradient_cov_opaque` が手順 2 で `ptr_type` を取るため、実引数はそのまま）。残る 71 個は `ptr_type` を受け取らないため変更しない。
+
+実引数 `ptr_type` を `frontend_config` へ語長の長い名前へ置き換えると、1 行完結の呼び出しが rustfmt の行幅ヒューリスティックを超えるため、手順適用後に `cargo fmt --all` を 1 回かける必要がある（置換直後に `cargo fmt --all --check` を先に走らせると差分で落ちる）。
+
+`Type` / `TargetFrontendConfig` の import 不整合は `cargo build --workspace` の警告（未使用 import）と clippy `-D warnings` で必ず表面化するが、pre-commit フックで最初から通すため 4 と 5 を置き換え手順に含める。
 
 ### 2. `*_imm` は `_imm_u` へ一律置換する
 
-全 511 箇所の即値が非負リテラルで、raden は `i128` を使わないため `_imm_s` と `_imm_u` の生成結果は同じである。さらに cranelift-codegen-meta 0.135.1 の生成コードでは、非推奨の `*_imm` が旧命令の拡張挙動を維持する対象 (`historically_signed`) を `iadd` / `imul` / `sdiv` / `srem` / `icmp` に限定している。raden が使う `ushr` / `ishl` / `band` / `sshr` はこの対象外で、非推奨の `*_imm` は `_imm_u` と同じく即値をゼロ拡張して `iconst` を materialize する。したがって `_u` への置換は既存の挙動をそのまま保つ。`ins().band_imm(x, 0xFF)` を `ins().band_imm_u(x, 0xFF)` のように置換する。`#[expect(deprecated)]` による局所抑制は採らない（511 箇所の抑制は保守性を大きく損なう。AGENTS.md も lint の恒久抑制を嫌う）。
+全 511 箇所の即値が非負リテラルで、raden は `i128` を使わないため `_imm_s` と `_imm_u` の生成結果は同じである。加えて、現行 0.133.3 の `cranelift-codegen` が持つ `InstBuilderBase::build_imm_const` は `base_opcode` が `Iadd` / `Imul` / `Sdiv` / `Srem` / `Icmp` のときだけ `Sextend` を選び、それ以外（raden が使う `band` / `ushr` / `ishl` / `sshr` を含む）は `Uextend` である。しかも `Sextend` / `Uextend` の分岐は `controlling_type == types::I128` のときだけ通る経路で、それ以外の型では即値を lane 型で mask して `iconst` を作るのみであり、拡張種別は生成結果に関与しない（0.135.1 の同メソッド doc は「narrower types では `signed` フラグは効果を持たない」と明記している）。0.135.1 で生える非推奨 `*_imm` 4 種も同じゼロ拡張経路を呼ぶため、`_imm_u` への置換は生成コードを一切変えない。`ins().band_imm(x, 0xFF)` を `ins().band_imm_u(x, 0xFF)` のように置換する。
+
+`#[expect(deprecated)]` による局所抑制は採らない。`shiguredo-rust` は lint 抑制について「`#[allow(...)]` を使わないこと（例外なし）」「抑制が必要なときは必ず `#[expect(...)]` を使うこと」を定めるだけで、`AGENTS.md` / `CLAUDE.md` に lint 抑制の規定はない。したがって 511 か所への `#[expect(deprecated)]` は規約違反ではなく、採らない理由は純粋に保守性の判断である。生成結果が同一だと確認できた以上、抑制を残すより実置換する方が明確に優れており、抑制の位置管理という恒久的な負担を増やす理由がない。
 
 `src/pipeline/compiler/sweep.rs` の doc コメント 2 箇所（`emit_fill_rule_convert` の命令列説明にある `band_imm(511)` と、`build_sweep` のアルゴリズム説明にある `sshr_imm(9)`）は命令名の記述なので、実装とズレないように併せて更新する。
 
@@ -101,14 +121,18 @@ CI は stable ツールチェーン参照（`rust-toolchain.toml` は `channel =
 
 ### 4. 検証
 
-`cargo build --workspace` / `cargo test --workspace` / `cargo fmt --all --check` / `cargo clippy --workspace --all-targets -- -D warnings` をすべて実行する。加えて `make bench` 相当で主要パイプラインの性能が大きく劣化していないことを確認する。`*_imm_u` への置換と `finalize` 引数追加は生成コードを変えないはずだが、`wasmtime-internal-core` 46 から 48 などの追随が入るため、前回ベースラインとの比較で見る。
+`cargo build --workspace` / `cargo test --workspace` / `cargo fmt --all --check` / `cargo clippy --workspace --all-targets -- -D warnings` をすべて実行する。`*_imm` の置換対象 511 か所は `src/pipeline/compiler/` 配下の 8 ファイル、`bcx.finalize();` 19 か所は同 7 ファイルに閉じている（和集合は 9 ファイル。`transform.rs` は finalize のみ、`mod.rs` と `blend_modes.rs` は `*_imm` のみ）。`src/` の他ディレクトリ、`tests/` / `pbt/` / `benches/` / `examples/` に該当は 0 件。
+
+性能確認は `Makefile` の 2 段構成（`bench-save` / `bench-compare`）で行う。criterion のベースラインは `target/criterion/` 配下に置かれ `.gitignore` で `target/` ごと無視されるため、リポジトリには既存のベースラインが存在しない。更新前のツリーで先に `make bench-save` を走らせて `before` を取得し、更新とコード追従が完了したツリーで `make bench-compare` を実行して比較する。既定の `make bench-save` / `make bench-compare` は `cargo bench --benches` で `Cargo.toml` の `[[bench]]` 10 本（`fill_rect` / `fill_rect_smooth` / `fill_rect_rotated` / `fill_polygon` / `fill_shape` / `stroke_rect` / `stroke_polygon` / `stroke_shape` / `fill_gradient` / `matrix`）を走らせるが、うち `matrix` は `benches/matrix.rs` が `Matrix2D` の演算だけを回し `Context` も `PipelineRuntime` も使わないため、cranelift の影響を受けない。比較の意味で絞るなら `BENCH=fill_rect` など JIT パイプラインを通る 9 本側のベンチ名を指定する。
+
+`*_imm_u` への置換と `finalize` 引数追加は生成コードを変えないはずだが、`wasmtime-internal-core` 46 から 48、`memmap2` 0.2 から 0.9 などの追随が `Cargo.lock` 再生成で同時に入るため、比較で変動が出た場合はコード追従のせいではなく依存更新の帰属として切り分ける。数値の合格ラインは定めず、有意な劣化が確認されたら原因を調査して issue に追記する。
 
 ## 完了条件
 
 - `Cargo.toml` の cranelift 5 クレートが `~0.135` で、`cargo build --workspace` がエラー 0・警告 0 で通ること
 - `cargo test --workspace` が全件 pass すること (2026-08-29 時点で 179 件。`pbt` の PBT を含む)
 - `cargo clippy --workspace --all-targets -- -D warnings` と `cargo fmt --all --check` が通ること
-- `src/` 配下から引数なしの `bcx.finalize();` と非推奨 `*_imm` の呼び出しがなくなる（それぞれ 0 件）こと
+- `src/` 配下から引数なしの `bcx.finalize();` と非推奨 `*_imm` の呼び出しがなくなる（それぞれ 0 件）こと。確認は `bcx.finalize();` の完全一致と、`*_imm_u` / `*_imm_s` を除外した `*_imm` の grep で行うこと
 - `rust-version` が 1.95 で、`README.md` と `skills/raden/SKILL.md` の MSRV / cranelift バージョン表記が実態と一致すること
 - `CHANGES.md` に `[CHANGE]`（MSRV 1.95 化）と `[UPDATE]`（cranelift 0.135 更新）が記載されていること
 
@@ -119,10 +143,10 @@ CI は stable ツールチェーン参照（`rust-toolchain.toml` は `channel =
 | `Cargo.toml` | 既存編集 | cranelift 5 クレートを `~0.135`、`rust-version` を 1.95 |
 | `Cargo.lock` | 既存編集 | `cargo update` で再生成 |
 | `pbt/Cargo.toml` | 既存編集 | `rust-version` を 1.95 |
-| `src/pipeline/compiler/mod.rs` | 既存編集 | `frontend_config` の取得と 68 か所の `build_*` への受け渡し |
-| `src/pipeline/compiler/blend_build.rs` | 既存編集 | 中継 `build_*` の引数変更 |
+| `src/pipeline/compiler/mod.rs` | 既存編集 | `frontend_config` の取得と 68 か所の `build_*` への受け渡し、`emit_extract_channels_simd` / `emit_pack_channels_simd` の `*_imm_u` への置換 6 か所 |
+| `src/pipeline/compiler/blend_build.rs` | 既存編集 | 中継 `build_*` 32 個の引数変更と中継呼び出しの実引数 32 か所、`Type` import の除去 |
 | `src/pipeline/compiler/blend_modes.rs` | 既存編集 | `*_imm_u` への置換 |
-| `src/pipeline/compiler/porter_duff.rs` | 既存編集 | 引数変更と `*_imm_u` への置換 |
+| `src/pipeline/compiler/porter_duff.rs` | 既存編集 | `build_*` 24 個の引数変更（finalize を呼ぶ 7 と中継 17。`_ptr_type` 未使用引数の 2 個を含む）と中継呼び出しの実引数 17 か所、`*_imm_u` への置換 175 か所 |
 | `src/pipeline/compiler/core_pipelines.rs` | 既存編集 | 引数変更と `*_imm_u` への置換 |
 | `src/pipeline/compiler/span_pipelines.rs` | 既存編集 | 引数変更と `*_imm_u` への置換 |
 | `src/pipeline/compiler/box_pipelines.rs` | 既存編集 | 引数変更と `*_imm_u` への置換 |
