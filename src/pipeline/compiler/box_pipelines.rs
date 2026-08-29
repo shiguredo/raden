@@ -1,6 +1,7 @@
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::types;
-use cranelift_codegen::ir::{InstBuilder, MemFlagsData, Type};
+use cranelift_codegen::ir::{InstBuilder, MemFlagsData};
+use cranelift_codegen::isa::TargetFrontendConfig;
 use cranelift_frontend::FunctionBuilder;
 
 use super::block_args;
@@ -49,7 +50,8 @@ use super::core_pipelines::emit_src_over_ag_rb_simd;
 ///
 /// exit: return
 /// ```
-pub(super) fn build_src_over_box(mut bcx: FunctionBuilder, ptr_type: Type) {
+pub(super) fn build_src_over_box(mut bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    let ptr_type = frontend_config.pointer_type();
     let vec_type = types::I32X4;
 
     let entry = bcx.create_block();
@@ -73,13 +75,13 @@ pub(super) fn build_src_over_box(mut bcx: FunctionBuilder, ptr_type: Type) {
 
     // AG/RB 分解 (ソース、ループ不変)
     let mask_00ff00ff = bcx.ins().iconst(types::I32, 0x00FF00FFu32 as i64);
-    let src_ag = bcx.ins().ushr_imm(src_solid, 8);
+    let src_ag = bcx.ins().ushr_imm_u(src_solid, 8);
     let src_ag = bcx.ins().band(src_ag, mask_00ff00ff);
     let src_rb = bcx.ins().band(src_solid, mask_00ff00ff);
 
     // inv_alpha = 256 - src_a
-    let src_a = bcx.ins().ushr_imm(src_solid, 24);
-    let src_a = bcx.ins().band_imm(src_a, 0xFF);
+    let src_a = bcx.ins().ushr_imm_u(src_solid, 24);
+    let src_a = bcx.ins().band_imm_u(src_a, 0xFF);
     let c256 = bcx.ins().iconst(types::I32, 256);
     let inv_alpha = bcx.ins().isub(c256, src_a);
 
@@ -90,10 +92,10 @@ pub(super) fn build_src_over_box(mut bcx: FunctionBuilder, ptr_type: Type) {
     let mask_vec = bcx.ins().splat(vec_type, mask_00ff00ff);
 
     // ループカウント (width は全スキャンラインで同じ)
-    let count16 = bcx.ins().ushr_imm(width, 4);
-    let tail_quads = bcx.ins().band_imm(width, 0xF);
-    let tail_quads = bcx.ins().ushr_imm(tail_quads, 2);
-    let remainder = bcx.ins().band_imm(width, 3);
+    let count16 = bcx.ins().ushr_imm_u(width, 4);
+    let tail_quads = bcx.ins().band_imm_u(width, 0xF);
+    let tail_quads = bcx.ins().ushr_imm_u(tail_quads, 2);
+    let remainder = bcx.ins().band_imm_u(width, 3);
     let zero = bcx.ins().iconst(ptr_type, 0);
 
     // SIMD 不変値を y_loop のブロックパラメータとして渡す。
@@ -263,21 +265,21 @@ pub(super) fn build_src_over_box(mut bcx: FunctionBuilder, ptr_type: Type) {
     let scalar_i = bcx.block_params(scalar_loop)[1];
 
     let dst_pixel = bcx.ins().load(types::I32, MemFlagsData::new(), x_dst, 0);
-    let dst_ag = bcx.ins().ushr_imm(dst_pixel, 8);
+    let dst_ag = bcx.ins().ushr_imm_u(dst_pixel, 8);
     let dst_ag = bcx.ins().band(dst_ag, mask_00ff00ff);
     let dst_rb = bcx.ins().band(dst_pixel, mask_00ff00ff);
 
     let tmp_ag = bcx.ins().imul(dst_ag, inv_alpha);
-    let tmp_ag = bcx.ins().ushr_imm(tmp_ag, 8);
+    let tmp_ag = bcx.ins().ushr_imm_u(tmp_ag, 8);
     let tmp_ag = bcx.ins().band(tmp_ag, mask_00ff00ff);
     let out_ag = bcx.ins().iadd(src_ag, tmp_ag);
 
     let tmp_rb = bcx.ins().imul(dst_rb, inv_alpha);
-    let tmp_rb = bcx.ins().ushr_imm(tmp_rb, 8);
+    let tmp_rb = bcx.ins().ushr_imm_u(tmp_rb, 8);
     let tmp_rb = bcx.ins().band(tmp_rb, mask_00ff00ff);
     let out_rb = bcx.ins().iadd(src_rb, tmp_rb);
 
-    let result = bcx.ins().ishl_imm(out_ag, 8);
+    let result = bcx.ins().ishl_imm_u(out_ag, 8);
     let result = bcx.ins().bor(result, out_rb);
 
     bcx.ins().store(MemFlagsData::new(), result, x_dst, 0);
@@ -322,14 +324,15 @@ pub(super) fn build_src_over_box(mut bcx: FunctionBuilder, ptr_type: Type) {
     bcx.ins().return_(&[]);
 
     bcx.seal_all_blocks();
-    bcx.finalize();
+    bcx.finalize(frontend_config);
 }
 
 /// SrcCopy 矩形専用パイプラインを構築する。
 ///
 /// y ループを JIT 内に含み、4x SIMD アンロール (16px/反復) で処理する。
 /// SrcCopy は splat 済みベクタをストアするだけなので非常に高速。
-pub(super) fn build_src_copy_box(mut bcx: FunctionBuilder, ptr_type: Type) {
+pub(super) fn build_src_copy_box(mut bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    let ptr_type = frontend_config.pointer_type();
     let entry = bcx.create_block();
     let y_loop = bcx.create_block();
     let unroll_loop = bcx.create_block();
@@ -351,10 +354,10 @@ pub(super) fn build_src_copy_box(mut bcx: FunctionBuilder, ptr_type: Type) {
 
     let src_vec = bcx.ins().splat(types::I32X4, src_solid);
 
-    let count16 = bcx.ins().ushr_imm(width, 4);
-    let tail_quads = bcx.ins().band_imm(width, 0xF);
-    let tail_quads = bcx.ins().ushr_imm(tail_quads, 2);
-    let remainder = bcx.ins().band_imm(width, 3);
+    let count16 = bcx.ins().ushr_imm_u(width, 4);
+    let tail_quads = bcx.ins().band_imm_u(width, 0xF);
+    let tail_quads = bcx.ins().ushr_imm_u(tail_quads, 2);
+    let remainder = bcx.ins().band_imm_u(width, 3);
     let zero = bcx.ins().iconst(ptr_type, 0);
 
     bcx.ins().jump(y_loop, &block_args(&[dst, zero]));
@@ -489,5 +492,5 @@ pub(super) fn build_src_copy_box(mut bcx: FunctionBuilder, ptr_type: Type) {
     bcx.ins().return_(&[]);
 
     bcx.seal_all_blocks();
-    bcx.finalize();
+    bcx.finalize(frontend_config);
 }

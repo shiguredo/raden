@@ -8,6 +8,7 @@
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::types;
 use cranelift_codegen::ir::{InstBuilder, MemFlagsData, Type, Value};
+use cranelift_codegen::isa::TargetFrontendConfig;
 use cranelift_frontend::FunctionBuilder;
 
 use super::{
@@ -58,7 +59,11 @@ fn emit_lut_lookup(
 ///
 /// F32X4 で 4 ピクセル分の距離計算 (sqrt) を並列実行する。
 /// LUT lookup は gather 命令非対応のためスカラーで 4 回行い、結果を I32X4 にパックする。
-pub(super) fn build_radial_row_opaque(mut bcx: FunctionBuilder, ptr_type: Type) {
+pub(super) fn build_radial_row_opaque(
+    mut bcx: FunctionBuilder,
+    frontend_config: TargetFrontendConfig,
+) {
+    let ptr_type = frontend_config.pointer_type();
     let entry = bcx.create_block();
     let simd_loop = bcx.create_block();
     let scalar_check = bcx.create_block();
@@ -123,8 +128,8 @@ pub(super) fn build_radial_row_opaque(mut bcx: FunctionBuilder, ptr_type: Type) 
     let uy_init = bcx.ins().insertlane(uy_init, uy3, 3);
 
     // ループカウント
-    let simd_count = bcx.ins().ushr_imm(width, 2);
-    let remainder = bcx.ins().band_imm(width, 3);
+    let simd_count = bcx.ins().ushr_imm_u(width, 2);
+    let remainder = bcx.ins().band_imm_u(width, 3);
     let zero = bcx.ins().iconst(ptr_type, 0);
     let has_simd = bcx.ins().icmp(IntCC::NotEqual, simd_count, zero);
 
@@ -266,7 +271,7 @@ pub(super) fn build_radial_row_opaque(mut bcx: FunctionBuilder, ptr_type: Type) 
     bcx.ins().return_(&[]);
 
     bcx.seal_all_blocks();
-    bcx.finalize();
+    bcx.finalize(frontend_config);
 }
 
 /// Linear グラデーション + カバレッジ融合パイプラインを構築する (Pad モード、不透明 LUT)。
@@ -286,7 +291,11 @@ pub(super) fn build_radial_row_opaque(mut bcx: FunctionBuilder, ptr_type: Type) 
 ///
 /// fetch (固定小数点 t → LUT) + coverage + SrcOver blend を 1 パスで処理し、
 /// 中間バッファへのキャッシュ汚染を排除する。
-pub(super) fn build_linear_gradient_cov_opaque(mut bcx: FunctionBuilder, ptr_type: Type) {
+pub(super) fn build_linear_gradient_cov_opaque(
+    mut bcx: FunctionBuilder,
+    frontend_config: TargetFrontendConfig,
+) {
+    let ptr_type = frontend_config.pointer_type();
     let entry = bcx.create_block();
     let simd_loop = bcx.create_block();
     let simd_fast = bcx.create_block();
@@ -321,8 +330,8 @@ pub(super) fn build_linear_gradient_cov_opaque(mut bcx: FunctionBuilder, ptr_typ
     let zero_i64 = bcx.ins().iconst(types::I64, 0);
     let frac_bits = bcx.ins().iconst(types::I32, 16);
 
-    let simd_count = bcx.ins().ushr_imm(count, 2);
-    let remainder = bcx.ins().band_imm(count, 3);
+    let simd_count = bcx.ins().ushr_imm_u(count, 2);
+    let remainder = bcx.ins().band_imm_u(count, 3);
     let zero = bcx.ins().iconst(ptr_type, 0);
     let has_simd = bcx.ins().icmp(IntCC::NotEqual, simd_count, zero);
 
@@ -387,16 +396,16 @@ pub(super) fn build_linear_gradient_cov_opaque(mut bcx: FunctionBuilder, ptr_typ
         emit_extract_channels_simd(&mut bcx, dst_pixels, mask_0xff_vec);
 
     let tmp = bcx.ins().imul(dst_a, inv_alpha);
-    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let tmp = bcx.ins().ushr_imm_u(tmp, 8);
     let oa = bcx.ins().iadd(src_a, tmp);
     let tmp = bcx.ins().imul(dst_r, inv_alpha);
-    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let tmp = bcx.ins().ushr_imm_u(tmp, 8);
     let or = bcx.ins().iadd(src_r, tmp);
     let tmp = bcx.ins().imul(dst_g, inv_alpha);
-    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let tmp = bcx.ins().ushr_imm_u(tmp, 8);
     let og = bcx.ins().iadd(src_g, tmp);
     let tmp = bcx.ins().imul(dst_b, inv_alpha);
-    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let tmp = bcx.ins().ushr_imm_u(tmp, 8);
     let ob = bcx.ins().iadd(src_b, tmp);
 
     let result = emit_pack_channels_simd(&mut bcx, oa, or, og, ob);
@@ -423,16 +432,16 @@ pub(super) fn build_linear_gradient_cov_opaque(mut bcx: FunctionBuilder, ptr_typ
         emit_extract_channels_simd(&mut bcx, dst_pixels, mask_0xff_vec);
 
     let tmp = bcx.ins().imul(dst_a, inv_alpha_v);
-    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let tmp = bcx.ins().ushr_imm_u(tmp, 8);
     let oa = bcx.ins().iadd(cov_src_a, tmp);
     let tmp = bcx.ins().imul(dst_r, inv_alpha_v);
-    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let tmp = bcx.ins().ushr_imm_u(tmp, 8);
     let or = bcx.ins().iadd(cov_src_r, tmp);
     let tmp = bcx.ins().imul(dst_g, inv_alpha_v);
-    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let tmp = bcx.ins().ushr_imm_u(tmp, 8);
     let og = bcx.ins().iadd(cov_src_g, tmp);
     let tmp = bcx.ins().imul(dst_b, inv_alpha_v);
-    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let tmp = bcx.ins().ushr_imm_u(tmp, 8);
     let ob = bcx.ins().iadd(cov_src_b, tmp);
 
     let result = emit_pack_channels_simd(&mut bcx, oa, or, og, ob);
@@ -492,13 +501,13 @@ pub(super) fn build_linear_gradient_cov_opaque(mut bcx: FunctionBuilder, ptr_typ
     let cov = bcx.ins().uextend(types::I32, cov_u8);
 
     // src チャネル分解
-    let tmp = bcx.ins().ushr_imm(src, 24);
-    let src_a = bcx.ins().band_imm(tmp, 0xFF);
-    let tmp = bcx.ins().ushr_imm(src, 16);
-    let src_r = bcx.ins().band_imm(tmp, 0xFF);
-    let tmp = bcx.ins().ushr_imm(src, 8);
-    let src_g = bcx.ins().band_imm(tmp, 0xFF);
-    let src_b = bcx.ins().band_imm(src, 0xFF);
+    let tmp = bcx.ins().ushr_imm_u(src, 24);
+    let src_a = bcx.ins().band_imm_u(tmp, 0xFF);
+    let tmp = bcx.ins().ushr_imm_u(src, 16);
+    let src_r = bcx.ins().band_imm_u(tmp, 0xFF);
+    let tmp = bcx.ins().ushr_imm_u(src, 8);
+    let src_g = bcx.ins().band_imm_u(tmp, 0xFF);
+    let src_b = bcx.ins().band_imm_u(src, 0xFF);
 
     // cov_src = div255(src * cov)
     let csa = emit_div255_scalar(&mut bcx, src_a, cov, c257_scalar);
@@ -511,31 +520,31 @@ pub(super) fn build_linear_gradient_cov_opaque(mut bcx: FunctionBuilder, ptr_typ
     let dst_pixel = bcx
         .ins()
         .load(types::I32, MemFlagsData::new(), current_dst, 0);
-    let tmp = bcx.ins().ushr_imm(dst_pixel, 24);
-    let da = bcx.ins().band_imm(tmp, 0xFF);
-    let tmp = bcx.ins().ushr_imm(dst_pixel, 16);
-    let dr = bcx.ins().band_imm(tmp, 0xFF);
-    let tmp = bcx.ins().ushr_imm(dst_pixel, 8);
-    let dg = bcx.ins().band_imm(tmp, 0xFF);
-    let db = bcx.ins().band_imm(dst_pixel, 0xFF);
+    let tmp = bcx.ins().ushr_imm_u(dst_pixel, 24);
+    let da = bcx.ins().band_imm_u(tmp, 0xFF);
+    let tmp = bcx.ins().ushr_imm_u(dst_pixel, 16);
+    let dr = bcx.ins().band_imm_u(tmp, 0xFF);
+    let tmp = bcx.ins().ushr_imm_u(dst_pixel, 8);
+    let dg = bcx.ins().band_imm_u(tmp, 0xFF);
+    let db = bcx.ins().band_imm_u(dst_pixel, 0xFF);
 
     let tmp = bcx.ins().imul(da, inv_a);
-    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let tmp = bcx.ins().ushr_imm_u(tmp, 8);
     let oa = bcx.ins().iadd(csa, tmp);
     let tmp = bcx.ins().imul(dr, inv_a);
-    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let tmp = bcx.ins().ushr_imm_u(tmp, 8);
     let or = bcx.ins().iadd(csr, tmp);
     let tmp = bcx.ins().imul(dg, inv_a);
-    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let tmp = bcx.ins().ushr_imm_u(tmp, 8);
     let og = bcx.ins().iadd(csg, tmp);
     let tmp = bcx.ins().imul(db, inv_a);
-    let tmp = bcx.ins().ushr_imm(tmp, 8);
+    let tmp = bcx.ins().ushr_imm_u(tmp, 8);
     let ob = bcx.ins().iadd(csb, tmp);
 
-    let result = bcx.ins().ishl_imm(oa, 24);
-    let tmp = bcx.ins().ishl_imm(or, 16);
+    let result = bcx.ins().ishl_imm_u(oa, 24);
+    let tmp = bcx.ins().ishl_imm_u(or, 16);
     let result = bcx.ins().bor(result, tmp);
-    let tmp = bcx.ins().ishl_imm(og, 8);
+    let tmp = bcx.ins().ishl_imm_u(og, 8);
     let result = bcx.ins().bor(result, tmp);
     let result = bcx.ins().bor(result, ob);
     bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
@@ -556,7 +565,7 @@ pub(super) fn build_linear_gradient_cov_opaque(mut bcx: FunctionBuilder, ptr_typ
     bcx.ins().return_(&[]);
 
     bcx.seal_all_blocks();
-    bcx.finalize();
+    bcx.finalize(frontend_config);
 }
 
 /// 固定小数点 t → クランプ済み LUT インデックス (I32)。
@@ -581,7 +590,7 @@ fn emit_div255_simd(bcx: &mut FunctionBuilder, src: Value, cov: Value, c257: Val
     let tmp = bcx.ins().imul(src, cov);
     let tmp = bcx.ins().imul(tmp, c257);
     let tmp = bcx.ins().iadd(tmp, c257);
-    bcx.ins().ushr_imm(tmp, 16)
+    bcx.ins().ushr_imm_u(tmp, 16)
 }
 
 /// div255 のスカラー版: (src * cov * 257 + 257) >> 16
@@ -590,5 +599,5 @@ fn emit_div255_scalar(bcx: &mut FunctionBuilder, src: Value, cov: Value, c257: V
     let tmp = bcx.ins().imul(src, cov);
     let tmp = bcx.ins().imul(tmp, c257);
     let tmp = bcx.ins().iadd(tmp, c257);
-    bcx.ins().ushr_imm(tmp, 16)
+    bcx.ins().ushr_imm_u(tmp, 16)
 }

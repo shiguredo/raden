@@ -1,6 +1,7 @@
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::types;
-use cranelift_codegen::ir::{InstBuilder, MemFlagsData, Type};
+use cranelift_codegen::ir::{InstBuilder, MemFlagsData};
+use cranelift_codegen::isa::TargetFrontendConfig;
 use cranelift_frontend::FunctionBuilder;
 
 use super::block_args;
@@ -19,7 +20,11 @@ use super::block_args;
 //
 //   result = x_splat * col_a + y_splat * col_c + trans
 
-pub(super) fn build_transform_edges(mut bcx: FunctionBuilder, ptr_type: Type) {
+pub(super) fn build_transform_edges(
+    mut bcx: FunctionBuilder,
+    frontend_config: TargetFrontendConfig,
+) {
+    let ptr_type = frontend_config.pointer_type();
     let entry = bcx.create_block();
     let loop_body = bcx.create_block();
     let exit = bcx.create_block();
@@ -119,5 +124,5 @@ pub(super) fn build_transform_edges(mut bcx: FunctionBuilder, ptr_type: Type) {
     bcx.seal_block(loop_body);
     bcx.ins().return_(&[]);
 
-    bcx.finalize();
+    bcx.finalize(frontend_config);
 }

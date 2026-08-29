@@ -203,7 +203,8 @@ impl PipelineCompiler {
     /// カバレッジ処理が不要なため、最もシンプルで高速。
     pub fn compile(&mut self, key: &PipelineKey, comp_op: CompOp) -> PipelineFn {
         let mut module = new_module(&self.flags);
-        let ptr_type = module.target_config().pointer_type();
+        let frontend_config = module.target_config();
+        let ptr_type = frontend_config.pointer_type();
 
         let mut sig = module.make_signature();
         sig.params.push(AbiParam::new(ptr_type)); // dst: *mut u8
@@ -222,35 +223,35 @@ impl PipelineCompiler {
         {
             let bcx = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
             match comp_op {
-                CompOp::SrcOver => build_src_over(bcx, ptr_type),
-                CompOp::SrcCopy => build_src_copy(bcx, ptr_type),
-                CompOp::Clear => build_clear(bcx, ptr_type),
-                CompOp::DstCopy => build_dst_copy(bcx, ptr_type),
-                CompOp::Plus => build_plus(bcx, ptr_type),
-                CompOp::SrcIn => build_src_in(bcx, ptr_type),
-                CompOp::SrcOut => build_src_out(bcx, ptr_type),
-                CompOp::SrcAtop => build_src_atop(bcx, ptr_type),
-                CompOp::DstOver => build_dst_over(bcx, ptr_type),
-                CompOp::DstIn => build_dst_in(bcx, ptr_type),
-                CompOp::DstOut => build_dst_out(bcx, ptr_type),
-                CompOp::DstAtop => build_dst_atop(bcx, ptr_type),
-                CompOp::Xor => build_xor(bcx, ptr_type),
-                CompOp::Minus => build_minus(bcx, ptr_type),
-                CompOp::Modulate => build_modulate(bcx, ptr_type),
-                CompOp::Multiply => build_multiply(bcx, ptr_type),
-                CompOp::Screen => build_screen(bcx, ptr_type),
-                CompOp::Overlay => build_overlay(bcx, ptr_type),
-                CompOp::Darken => build_darken(bcx, ptr_type),
-                CompOp::Lighten => build_lighten(bcx, ptr_type),
-                CompOp::ColorDodge => build_color_dodge(bcx, ptr_type),
-                CompOp::ColorBurn => build_color_burn(bcx, ptr_type),
-                CompOp::LinearBurn => build_linear_burn(bcx, ptr_type),
-                CompOp::LinearLight => build_linear_light(bcx, ptr_type),
-                CompOp::PinLight => build_pin_light(bcx, ptr_type),
-                CompOp::HardLight => build_hard_light(bcx, ptr_type),
-                CompOp::SoftLight => build_soft_light(bcx, ptr_type),
-                CompOp::Difference => build_difference(bcx, ptr_type),
-                CompOp::Exclusion => build_exclusion(bcx, ptr_type),
+                CompOp::SrcOver => build_src_over(bcx, frontend_config),
+                CompOp::SrcCopy => build_src_copy(bcx, frontend_config),
+                CompOp::Clear => build_clear(bcx, frontend_config),
+                CompOp::DstCopy => build_dst_copy(bcx, frontend_config),
+                CompOp::Plus => build_plus(bcx, frontend_config),
+                CompOp::SrcIn => build_src_in(bcx, frontend_config),
+                CompOp::SrcOut => build_src_out(bcx, frontend_config),
+                CompOp::SrcAtop => build_src_atop(bcx, frontend_config),
+                CompOp::DstOver => build_dst_over(bcx, frontend_config),
+                CompOp::DstIn => build_dst_in(bcx, frontend_config),
+                CompOp::DstOut => build_dst_out(bcx, frontend_config),
+                CompOp::DstAtop => build_dst_atop(bcx, frontend_config),
+                CompOp::Xor => build_xor(bcx, frontend_config),
+                CompOp::Minus => build_minus(bcx, frontend_config),
+                CompOp::Modulate => build_modulate(bcx, frontend_config),
+                CompOp::Multiply => build_multiply(bcx, frontend_config),
+                CompOp::Screen => build_screen(bcx, frontend_config),
+                CompOp::Overlay => build_overlay(bcx, frontend_config),
+                CompOp::Darken => build_darken(bcx, frontend_config),
+                CompOp::Lighten => build_lighten(bcx, frontend_config),
+                CompOp::ColorDodge => build_color_dodge(bcx, frontend_config),
+                CompOp::ColorBurn => build_color_burn(bcx, frontend_config),
+                CompOp::LinearBurn => build_linear_burn(bcx, frontend_config),
+                CompOp::LinearLight => build_linear_light(bcx, frontend_config),
+                CompOp::PinLight => build_pin_light(bcx, frontend_config),
+                CompOp::HardLight => build_hard_light(bcx, frontend_config),
+                CompOp::SoftLight => build_soft_light(bcx, frontend_config),
+                CompOp::Difference => build_difference(bcx, frontend_config),
+                CompOp::Exclusion => build_exclusion(bcx, frontend_config),
             }
         }
 
@@ -280,7 +281,8 @@ impl PipelineCompiler {
     /// AnalyticRasterizer が生成するカバレッジマスクと組み合わせて動作する。
     pub fn compile_cov(&mut self, key: &PipelineKey, comp_op: CompOp) -> PipelineCovFn {
         let mut module = new_module(&self.flags);
-        let ptr_type = module.target_config().pointer_type();
+        let frontend_config = module.target_config();
+        let ptr_type = frontend_config.pointer_type();
 
         let mut sig = module.make_signature();
         sig.params.push(AbiParam::new(ptr_type)); // dst: *mut u8
@@ -300,35 +302,35 @@ impl PipelineCompiler {
         {
             let bcx = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
             match comp_op {
-                CompOp::SrcOver => build_src_over_cov(bcx, ptr_type),
-                CompOp::SrcCopy => build_src_copy_cov(bcx, ptr_type),
-                CompOp::Clear => build_clear_cov(bcx, ptr_type),
-                CompOp::DstCopy => build_dst_copy_cov(bcx, ptr_type),
-                CompOp::Plus => build_plus_cov(bcx, ptr_type),
-                CompOp::SrcIn => build_src_in_cov(bcx, ptr_type),
-                CompOp::SrcOut => build_src_out_cov(bcx, ptr_type),
-                CompOp::SrcAtop => build_src_atop_cov(bcx, ptr_type),
-                CompOp::DstOver => build_dst_over_cov(bcx, ptr_type),
-                CompOp::DstIn => build_dst_in_cov(bcx, ptr_type),
-                CompOp::DstOut => build_dst_out_cov(bcx, ptr_type),
-                CompOp::DstAtop => build_dst_atop_cov(bcx, ptr_type),
-                CompOp::Xor => build_xor_cov(bcx, ptr_type),
-                CompOp::Minus => build_minus_cov(bcx, ptr_type),
-                CompOp::Modulate => build_modulate_cov(bcx, ptr_type),
-                CompOp::Multiply => build_multiply_cov(bcx, ptr_type),
-                CompOp::Screen => build_screen_cov(bcx, ptr_type),
-                CompOp::Overlay => build_overlay_cov(bcx, ptr_type),
-                CompOp::Darken => build_darken_cov(bcx, ptr_type),
-                CompOp::Lighten => build_lighten_cov(bcx, ptr_type),
-                CompOp::ColorDodge => build_color_dodge_cov(bcx, ptr_type),
-                CompOp::ColorBurn => build_color_burn_cov(bcx, ptr_type),
-                CompOp::LinearBurn => build_linear_burn_cov(bcx, ptr_type),
-                CompOp::LinearLight => build_linear_light_cov(bcx, ptr_type),
-                CompOp::PinLight => build_pin_light_cov(bcx, ptr_type),
-                CompOp::HardLight => build_hard_light_cov(bcx, ptr_type),
-                CompOp::SoftLight => build_soft_light_cov(bcx, ptr_type),
-                CompOp::Difference => build_difference_cov(bcx, ptr_type),
-                CompOp::Exclusion => build_exclusion_cov(bcx, ptr_type),
+                CompOp::SrcOver => build_src_over_cov(bcx, frontend_config),
+                CompOp::SrcCopy => build_src_copy_cov(bcx, frontend_config),
+                CompOp::Clear => build_clear_cov(bcx, frontend_config),
+                CompOp::DstCopy => build_dst_copy_cov(bcx, frontend_config),
+                CompOp::Plus => build_plus_cov(bcx, frontend_config),
+                CompOp::SrcIn => build_src_in_cov(bcx, frontend_config),
+                CompOp::SrcOut => build_src_out_cov(bcx, frontend_config),
+                CompOp::SrcAtop => build_src_atop_cov(bcx, frontend_config),
+                CompOp::DstOver => build_dst_over_cov(bcx, frontend_config),
+                CompOp::DstIn => build_dst_in_cov(bcx, frontend_config),
+                CompOp::DstOut => build_dst_out_cov(bcx, frontend_config),
+                CompOp::DstAtop => build_dst_atop_cov(bcx, frontend_config),
+                CompOp::Xor => build_xor_cov(bcx, frontend_config),
+                CompOp::Minus => build_minus_cov(bcx, frontend_config),
+                CompOp::Modulate => build_modulate_cov(bcx, frontend_config),
+                CompOp::Multiply => build_multiply_cov(bcx, frontend_config),
+                CompOp::Screen => build_screen_cov(bcx, frontend_config),
+                CompOp::Overlay => build_overlay_cov(bcx, frontend_config),
+                CompOp::Darken => build_darken_cov(bcx, frontend_config),
+                CompOp::Lighten => build_lighten_cov(bcx, frontend_config),
+                CompOp::ColorDodge => build_color_dodge_cov(bcx, frontend_config),
+                CompOp::ColorBurn => build_color_burn_cov(bcx, frontend_config),
+                CompOp::LinearBurn => build_linear_burn_cov(bcx, frontend_config),
+                CompOp::LinearLight => build_linear_light_cov(bcx, frontend_config),
+                CompOp::PinLight => build_pin_light_cov(bcx, frontend_config),
+                CompOp::HardLight => build_hard_light_cov(bcx, frontend_config),
+                CompOp::SoftLight => build_soft_light_cov(bcx, frontend_config),
+                CompOp::Difference => build_difference_cov(bcx, frontend_config),
+                CompOp::Exclusion => build_exclusion_cov(bcx, frontend_config),
             }
         }
 
@@ -355,7 +357,8 @@ impl PipelineCompiler {
     /// - 4x SIMD アンロール (16px/反復) で内部ループのオーバーヘッドを最小化
     pub fn compile_box(&mut self, key: &PipelineKey, comp_op: CompOp) -> PipelineBoxFn {
         let mut module = new_module(&self.flags);
-        let ptr_type = module.target_config().pointer_type();
+        let frontend_config = module.target_config();
+        let ptr_type = frontend_config.pointer_type();
 
         let mut sig = module.make_signature();
         sig.params.push(AbiParam::new(ptr_type)); // dst: *mut u8
@@ -376,8 +379,8 @@ impl PipelineCompiler {
         {
             let bcx = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
             match comp_op {
-                CompOp::SrcOver => build_src_over_box(bcx, ptr_type),
-                CompOp::SrcCopy => build_src_copy_box(bcx, ptr_type),
+                CompOp::SrcOver => build_src_over_box(bcx, frontend_config),
+                CompOp::SrcCopy => build_src_copy_box(bcx, frontend_config),
                 _ => unreachable!("compile_box supports only SrcOver and SrcCopy"),
             }
         }
@@ -403,7 +406,8 @@ impl PipelineCompiler {
     /// 4 要素アンロールで 4 バイトを 1 つの i32 ストアに統合する。
     pub fn compile_sweep(&mut self, fill_rule: FillRule) -> SweepFn {
         let mut module = new_module(&self.flags);
-        let ptr_type = module.target_config().pointer_type();
+        let frontend_config = module.target_config();
+        let ptr_type = frontend_config.pointer_type();
 
         let mut sig = module.make_signature();
         sig.params.push(AbiParam::new(ptr_type)); // cells: *const i32
@@ -422,7 +426,7 @@ impl PipelineCompiler {
 
         {
             let bcx = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
-            build_sweep(bcx, ptr_type, fill_rule);
+            build_sweep(bcx, frontend_config, fill_rule);
         }
 
         finalize_function(&mut module, func_id, &mut ctx, name);
@@ -446,7 +450,8 @@ impl PipelineCompiler {
     /// SrcOver のみサポート。
     pub fn compile_span(&mut self, key: &PipelineKey, comp_op: CompOp) -> PipelineSpanFn {
         let mut module = new_module(&self.flags);
-        let ptr_type = module.target_config().pointer_type();
+        let frontend_config = module.target_config();
+        let ptr_type = frontend_config.pointer_type();
 
         let mut sig = module.make_signature();
         sig.params.push(AbiParam::new(ptr_type)); // dst: *mut u8
@@ -465,8 +470,8 @@ impl PipelineCompiler {
         {
             let bcx = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
             match comp_op {
-                CompOp::SrcOver => build_src_over_span(bcx, ptr_type),
-                _ => build_src_over_span(bcx, ptr_type),
+                CompOp::SrcOver => build_src_over_span(bcx, frontend_config),
+                _ => build_src_over_span(bcx, frontend_config),
             }
         }
 
@@ -488,7 +493,8 @@ impl PipelineCompiler {
     /// ```
     pub fn compile_span_cov(&mut self, key: &PipelineKey, comp_op: CompOp) -> PipelineSpanCovFn {
         let mut module = new_module(&self.flags);
-        let ptr_type = module.target_config().pointer_type();
+        let frontend_config = module.target_config();
+        let ptr_type = frontend_config.pointer_type();
 
         let mut sig = module.make_signature();
         sig.params.push(AbiParam::new(ptr_type)); // dst: *mut u8
@@ -508,8 +514,8 @@ impl PipelineCompiler {
         {
             let bcx = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
             match comp_op {
-                CompOp::SrcOver => build_src_over_span_cov(bcx, ptr_type),
-                _ => build_src_over_span_cov(bcx, ptr_type),
+                CompOp::SrcOver => build_src_over_span_cov(bcx, frontend_config),
+                _ => build_src_over_span_cov(bcx, frontend_config),
             }
         }
 
@@ -536,7 +542,8 @@ impl PipelineCompiler {
     /// 固定小数点 fetch + coverage + SrcOver blend を 1 パスで処理する。
     pub fn compile_linear_gradient_cov(&mut self) -> LinearGradientCovFn {
         let mut module = new_module(&self.flags);
-        let ptr_type = module.target_config().pointer_type();
+        let frontend_config = module.target_config();
+        let ptr_type = frontend_config.pointer_type();
 
         let mut sig = module.make_signature();
         sig.params.push(AbiParam::new(ptr_type)); // dst
@@ -557,7 +564,7 @@ impl PipelineCompiler {
 
         {
             let bcx = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
-            build_linear_gradient_cov_opaque(bcx, ptr_type);
+            build_linear_gradient_cov_opaque(bcx, frontend_config);
         }
 
         finalize_function(&mut module, func_id, &mut ctx, func_name);
@@ -574,7 +581,8 @@ impl PipelineCompiler {
     /// 4 ピクセル分の sqrt を並列実行し、LUT lookup はスカラーで行う。
     pub fn compile_radial_row(&mut self) -> RadialGradientRowFn {
         let mut module = new_module(&self.flags);
-        let ptr_type = module.target_config().pointer_type();
+        let frontend_config = module.target_config();
+        let ptr_type = frontend_config.pointer_type();
 
         let mut sig = module.make_signature();
         sig.params.push(AbiParam::new(ptr_type)); // dst_row: *mut u32
@@ -600,7 +608,7 @@ impl PipelineCompiler {
 
         {
             let bcx = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
-            build_radial_row_opaque(bcx, ptr_type);
+            build_radial_row_opaque(bcx, frontend_config);
         }
 
         finalize_function(&mut module, func_id, &mut ctx, func_name);
@@ -615,7 +623,8 @@ impl PipelineCompiler {
     /// F64X2 SIMD で各エッジの 2 点 (x0,y0), (x1,y1) を一括変換する。
     pub fn compile_transform_edges(&mut self) -> super::cache::TransformEdgesFn {
         let mut module = new_module(&self.flags);
-        let ptr_type = module.target_config().pointer_type();
+        let frontend_config = module.target_config();
+        let ptr_type = frontend_config.pointer_type();
 
         let mut sig = module.make_signature();
         sig.params.push(AbiParam::new(ptr_type)); // edges: *mut f64
@@ -636,7 +645,7 @@ impl PipelineCompiler {
 
         {
             let bcx = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
-            build_transform_edges(bcx, ptr_type);
+            build_transform_edges(bcx, frontend_config);
         }
 
         finalize_function(&mut module, func_id, &mut ctx, name);
@@ -711,13 +720,13 @@ pub(super) fn emit_extract_channels_simd(
     mask_0xff_vec: Value,
 ) -> (Value, Value, Value, Value) {
     // alpha: bits[31:24] → ushr 24 → band 0xFF
-    let a = bcx.ins().ushr_imm(pixel_vec, 24);
+    let a = bcx.ins().ushr_imm_u(pixel_vec, 24);
     let a = bcx.ins().band(a, mask_0xff_vec);
     // red: bits[23:16] → ushr 16 → band 0xFF
-    let r = bcx.ins().ushr_imm(pixel_vec, 16);
+    let r = bcx.ins().ushr_imm_u(pixel_vec, 16);
     let r = bcx.ins().band(r, mask_0xff_vec);
     // green: bits[15:8] → ushr 8 → band 0xFF
-    let g = bcx.ins().ushr_imm(pixel_vec, 8);
+    let g = bcx.ins().ushr_imm_u(pixel_vec, 8);
     let g = bcx.ins().band(g, mask_0xff_vec);
     // blue: bits[7:0] → band 0xFF のみ
     let b = bcx.ins().band(pixel_vec, mask_0xff_vec);
@@ -762,10 +771,10 @@ pub(super) fn emit_pack_channels_simd(
     g: Value,
     b: Value,
 ) -> Value {
-    let result = bcx.ins().ishl_imm(a, 24);
-    let tmp = bcx.ins().ishl_imm(r, 16);
+    let result = bcx.ins().ishl_imm_u(a, 24);
+    let tmp = bcx.ins().ishl_imm_u(r, 16);
     let result = bcx.ins().bor(result, tmp);
-    let tmp = bcx.ins().ishl_imm(g, 8);
+    let tmp = bcx.ins().ishl_imm_u(g, 8);
     let result = bcx.ins().bor(result, tmp);
     bcx.ins().bor(result, b)
 }
