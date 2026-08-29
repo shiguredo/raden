@@ -11,6 +11,11 @@
 
 ## develop
 
+### misc
+
+- [UPDATE] `Pattern::prepare` のアルファ値不透明判定を `chunks_exact` から `as_chunks` に変更する
+  - @voluntas
+
 ## 2026.2.0
 
 **リリース日**: 2026-07-27

@@ -120,8 +120,8 @@ impl Pattern {
     /// 合成はパイプライン側で行う。
     pub(crate) fn prepare(&self, matrix: &Matrix2D, comp_op: CompOp) -> PreparedPattern<'_> {
         // 行が stride 幅でパディングされていても、先頭 width×height の 4 バイト単位がピクセルとみなす。
-        // 末尾に不足ピクセルがある場合は chunks_exact で末尾を無視する（不正なバッファでは不透明判定がずれる）。
-        let opaque = self.data.chunks_exact(4).all(|px| px[3] == 0xFF);
+        // 末尾に不足ピクセルがある場合は as_chunks で切り捨て、末尾を無視する（不正なバッファでは不透明判定がずれる）。
+        let opaque = self.data.as_chunks::<4>().0.iter().all(|px| px[3] == 0xFF);
         let inv = matrix.invert().unwrap_or(Matrix2D::IDENTITY);
         let to_tex = self.transform.multiply(&inv);
 
