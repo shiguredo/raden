@@ -3,7 +3,7 @@
 - Priority: Medium
 - Category: update
 - Created: 2026-08-29
-- Completed: {YYYY-MM-DD}
+- Completed: 2026-08-29
 - Branch: feature/update-cranelift-0-135
 - Polished: 2026-08-29
 
@@ -165,4 +165,51 @@ CI は stable ツールチェーン参照（`rust-toolchain.toml` は `channel =
 
 ## 解決方法
 
-polish 段階で確定する。
+`Cargo.toml` の cranelift 5 クレートを `~0.135`（0.135.1）へ、`Cargo.toml` と `pbt/Cargo.toml` の `rust-version` を 1.95 へ更新し、以下のコード追従を行った。テストコードの変更は不要だった（後述の「テストへの影響」参照）。
+
+### 1. `FunctionBuilder::finalize` の引数追加への追従
+
+設計方針 1 の置き換え手順 1〜5 を額面どおり適用した。
+
+- `bcx` を値で受け取る `build_*` 68 個の `ptr_type: Type` 引数を `frontend_config: TargetFrontendConfig` に置き換えた
+- `src/pipeline/compiler/mod.rs` の `compile*` 9 メソッドは `let ptr_type = module.target_config().pointer_type();` の 1 式を `let frontend_config = module.target_config();` と `let ptr_type = frontend_config.pointer_type();` の 2 行に分割した
+- `mod.rs` からの `build_*` 呼び出し 68 か所と、`build_*` 同士の中継呼び出し 49 か所（`blend_build.rs` 32 / `porter_duff.rs` 17）の実引数を `ptr_type` から `frontend_config` に読み替えた
+- `ptr_type` を値として使う 17 関数の本体先頭に `let ptr_type = frontend_config.pointer_type();` を追加した。中継専用の 49 関数は実引数としてだけ `frontend_config` を受け渡すため `let ptr_type` を追加しておらず、追加すれば未使用変数警告になって `-D warnings` を通らなかった（設計方針 1 の予想どおり）
+- `build_dst_copy` / `build_dst_copy_cov` の `_ptr_type` 未使用引数は `frontend_config: TargetFrontendConfig`（アンダースコアなし）に置き、`bcx.finalize(frontend_config);` の実引数としてのみ使用した。実引数となる時点で未使用ではないため警告は出ない
+- `Type` を使わなくなった 7 ファイルから import を除去した。`gradient_pipelines.rs` は `emit_lut_lookup` が `ptr_type: Type` を受けたまま残るため import を維持し、`build_*` を定義する 8 ファイルへ `cranelift_codegen::isa::TargetFrontendConfig` を追加した。`TargetFrontendConfig` は `ir` ではなく `isa` にある（0.133.3 でも同じ）ため、追加は既存 import 行に括り付けられない別行になった
+- 実引数名が長くなったことで 1 行完結の呼び出しが rustfmt の行幅を超える箇所が出たため、`cargo fmt --all` を適用した（`blend_build.rs` と `porter_duff.rs` の差分行数が増えているのはこの折返しによる）
+
+### 2. `InstBuilder` の `*_imm` 非推奨化への追従
+
+`band_imm` / `ushr_imm` / `ishl_imm` / `sshr_imm` を `*_imm_u` へ 511 か所置換した（`src/pipeline/compiler/sweep.rs` の doc コメント内の命令名 2 箇所を含む計 513 箇所）。`#[expect(deprecated)]` による局所抑制は採用していない。
+
+`sshr_imm_u` は符号付き右シフト命令 `sshr` の即値をゼロ拡張で materialize するという意味であり、命令の意味を変えていない。cranelift 0.135.1 の生成物では非推奨 `sshr_imm` も `sshr_imm_u` も同じく即値をゼロ拡張する（`historically_signed` は `iadd` / `imul` / `sdiv` / `srem` / `icmp` に限定される）。
+
+### 3. MSRV 引き上げと表記追従
+
+`Cargo.toml` / `pbt/Cargo.toml` の `rust-version` を 1.95 にし、`README.md` の「制約」と `skills/raden/SKILL.md` の「依存関係」の表記を `~0.135` / 1.95 へ更新した。CI は stable ツールチェーン参照のためワークフロー側の版本変更は不要だった。`cargo update` で cranelift 0.135.1 を解決し、`memmap2` 0.2.3 から 0.9.11、`wasmtime-internal-core` 46.0.3 から 48.0.1 の追随を取り込んだ。`Cargo.toml` の `[dependencies]` に用途コメントが無かったため、本次第で書き換えた 5 クレート分を機に追記した（時雨堂 Rust 規約）。
+
+### 4. 生成コードへの影響の実測
+
+`RADEN_DUMP_PIPELINE` による JIT アセンブリダンプを 3 条件で突き合わせた。
+
+| 条件 | 生成コード | 既存テスト |
+|---|---|---|
+| 0.135.1 + `*_imm_u`（本次第） | 基準 | 179 件 pass |
+| 0.135.1 + 非推奨 `*_imm` を意図的に復元 | 全ブロック一致 | 179 件 pass |
+| 0.133.3 + `*_imm`（変更前） | 命令ミックス同一。`pipeline_box_*` のレジスタ割り当てと prologue のみ変化 | 179 件 pass |
+
+`*_imm_u` への置換は生成コードを一切変えない。cranelift 版本差による生成コードの違いは box パイプラインのレジスタ割り当てに留まり、命令の並びは変わらなかった。
+
+### 5. 性能比較
+
+`make bench-save`（更新前ツリー）→ `make bench-compare`（更新後ツリー）で 151 測定ブロックを比較した。中央値 -0.18%、有意な回退 28 件と有意な改善 28 件が両方向に分散した。同一コードをそのまま再実行した底本で最大 8.23% の変動が出るほか、cranelift を通らない `Matrix2D` の 10 ブロックも揃って -0.7% 〜 -1.7% 側へ振れており、機械状態・実行順序に起因する変動と判断した。本追従による有意な性能劣化は確認していない。
+
+### テストへの影響
+
+`tests/` / `pbt/` / `benches/` / `examples/` に cranelift の直接参照は無く、公開 API 経由の既存テストが置換対象の命令列を実行している。`tests/test_render.rs` は `Context::fill_rect` 後のピクセル値を完全一致で検証し、`pbt` は JIT sweep と Rust リファレンスの出力完全一致を性質検証しているため、生成コードが崩れた場合に捕まえる経路が通っている。cranelift は private 依存であり、規約上も公開 API 経由以外にテストを書けない。よって新規テストは追加していない。
+
+### 見送った事項
+
+- `src/pipeline/compiler/mod.rs` の `compile_span` / `compile_span_cov` に両アームが同一式の `match` が残っている。develop からの既存構造で本次第の行書き換えを踏んでいるが、除去は cranelift 追従とは別の論理変更になるため本コミットに含めない
+- `frontend_config` を素通しする中継 `build_*` 49 個は、`mod.rs` から `compose_*` 関数ポインタを直接渡せば畳める。ただし本次第で導入した構造ではなく、設計方針 1 の「採らない案 2」と同じ理由で範囲外とした
