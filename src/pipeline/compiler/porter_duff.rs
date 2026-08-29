@@ -1,6 +1,7 @@
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::types;
-use cranelift_codegen::ir::{InstBuilder, MemFlagsData, Type, Value};
+use cranelift_codegen::ir::{InstBuilder, MemFlagsData, Value};
+use cranelift_codegen::isa::TargetFrontendConfig;
 use cranelift_frontend::FunctionBuilder;
 
 use super::{
@@ -13,7 +14,8 @@ use super::{
 // =============================================================================
 
 /// Clear パイプライン (カバレッジなし)。out = 0。
-pub(super) fn build_clear(mut bcx: FunctionBuilder, ptr_type: Type) {
+pub(super) fn build_clear(mut bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    let ptr_type = frontend_config.pointer_type();
     let entry = bcx.create_block();
     let simd_loop = bcx.create_block();
     let scalar_check = bcx.create_block();
@@ -25,8 +27,8 @@ pub(super) fn build_clear(mut bcx: FunctionBuilder, ptr_type: Type) {
     let dst = bcx.block_params(entry)[0];
     let count = bcx.block_params(entry)[2];
 
-    let simd_count = bcx.ins().ushr_imm(count, 2);
-    let remainder = bcx.ins().band_imm(count, 3);
+    let simd_count = bcx.ins().ushr_imm_u(count, 2);
+    let remainder = bcx.ins().band_imm_u(count, 3);
     let zero = bcx.ins().iconst(ptr_type, 0);
     let zero_i32 = bcx.ins().iconst(types::I32, 0);
     let zero_vec = bcx.ins().splat(types::I32X4, zero_i32);
@@ -83,23 +85,23 @@ pub(super) fn build_clear(mut bcx: FunctionBuilder, ptr_type: Type) {
     bcx.switch_to_block(exit);
     bcx.ins().return_(&[]);
     bcx.seal_all_blocks();
-    bcx.finalize();
+    bcx.finalize(frontend_config);
 }
 
 /// DstCopy パイプライン (カバレッジなし)。out = dst (何もしない)。
-pub(super) fn build_dst_copy(mut bcx: FunctionBuilder, _ptr_type: Type) {
+pub(super) fn build_dst_copy(mut bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
     let entry = bcx.create_block();
     bcx.switch_to_block(entry);
     bcx.append_block_params_for_function_params(entry);
     bcx.ins().return_(&[]);
     bcx.seal_all_blocks();
-    bcx.finalize();
+    bcx.finalize(frontend_config);
 }
 
 /// 汎用 Porter-Duff パイプライン (カバレッジなし) を構築する。
 pub(super) fn build_generic_compose(
     mut bcx: FunctionBuilder,
-    ptr_type: Type,
+    frontend_config: TargetFrontendConfig,
     compose_simd: fn(
         &mut FunctionBuilder,
         Value,
@@ -126,6 +128,7 @@ pub(super) fn build_generic_compose(
         Value,
     ) -> (Value, Value, Value, Value),
 ) {
+    let ptr_type = frontend_config.pointer_type();
     let entry = bcx.create_block();
     let simd_loop = bcx.create_block();
     let scalar_check = bcx.create_block();
@@ -138,13 +141,13 @@ pub(super) fn build_generic_compose(
     let src_solid = bcx.block_params(entry)[1];
     let count = bcx.block_params(entry)[2];
 
-    let src_a = bcx.ins().ushr_imm(src_solid, 24);
-    let src_a = bcx.ins().band_imm(src_a, 0xFF);
-    let src_r = bcx.ins().ushr_imm(src_solid, 16);
-    let src_r = bcx.ins().band_imm(src_r, 0xFF);
-    let src_g = bcx.ins().ushr_imm(src_solid, 8);
-    let src_g = bcx.ins().band_imm(src_g, 0xFF);
-    let src_b = bcx.ins().band_imm(src_solid, 0xFF);
+    let src_a = bcx.ins().ushr_imm_u(src_solid, 24);
+    let src_a = bcx.ins().band_imm_u(src_a, 0xFF);
+    let src_r = bcx.ins().ushr_imm_u(src_solid, 16);
+    let src_r = bcx.ins().band_imm_u(src_r, 0xFF);
+    let src_g = bcx.ins().ushr_imm_u(src_solid, 8);
+    let src_g = bcx.ins().band_imm_u(src_g, 0xFF);
+    let src_b = bcx.ins().band_imm_u(src_solid, 0xFF);
 
     let src_a_vec = bcx.ins().splat(types::I32X4, src_a);
     let src_r_vec = bcx.ins().splat(types::I32X4, src_r);
@@ -155,8 +158,8 @@ pub(super) fn build_generic_compose(
     let mask_0xff = bcx.ins().iconst(types::I32, 0xFF);
     let mask_0xff_vec = bcx.ins().splat(types::I32X4, mask_0xff);
 
-    let simd_count = bcx.ins().ushr_imm(count, 2);
-    let remainder = bcx.ins().band_imm(count, 3);
+    let simd_count = bcx.ins().ushr_imm_u(count, 2);
+    let remainder = bcx.ins().band_imm_u(count, 3);
     let zero = bcx.ins().iconst(ptr_type, 0);
 
     let has_simd = bcx.ins().icmp(IntCC::NotEqual, simd_count, zero);
@@ -226,13 +229,13 @@ pub(super) fn build_generic_compose(
     let si = bcx.block_params(scalar_loop)[1];
 
     let dst_px = bcx.ins().load(types::I32, MemFlagsData::new(), cur_dst, 0);
-    let da = bcx.ins().ushr_imm(dst_px, 24);
-    let da = bcx.ins().band_imm(da, 0xFF);
-    let dr = bcx.ins().ushr_imm(dst_px, 16);
-    let dr = bcx.ins().band_imm(dr, 0xFF);
-    let dg = bcx.ins().ushr_imm(dst_px, 8);
-    let dg = bcx.ins().band_imm(dg, 0xFF);
-    let db = bcx.ins().band_imm(dst_px, 0xFF);
+    let da = bcx.ins().ushr_imm_u(dst_px, 24);
+    let da = bcx.ins().band_imm_u(da, 0xFF);
+    let dr = bcx.ins().ushr_imm_u(dst_px, 16);
+    let dr = bcx.ins().band_imm_u(dr, 0xFF);
+    let dg = bcx.ins().ushr_imm_u(dst_px, 8);
+    let dg = bcx.ins().band_imm_u(dg, 0xFF);
+    let db = bcx.ins().band_imm_u(dst_px, 0xFF);
     let (oa, or, og, ob) = compose_scalar(
         &mut bcx,
         src_a,
@@ -245,10 +248,10 @@ pub(super) fn build_generic_compose(
         db,
         c256_scalar,
     );
-    let result = bcx.ins().ishl_imm(oa, 24);
-    let tmp = bcx.ins().ishl_imm(or, 16);
+    let result = bcx.ins().ishl_imm_u(oa, 24);
+    let tmp = bcx.ins().ishl_imm_u(or, 16);
     let result = bcx.ins().bor(result, tmp);
-    let tmp = bcx.ins().ishl_imm(og, 8);
+    let tmp = bcx.ins().ishl_imm_u(og, 8);
     let result = bcx.ins().bor(result, tmp);
     let result = bcx.ins().bor(result, ob);
     bcx.ins().store(MemFlagsData::new(), result, cur_dst, 0);
@@ -264,7 +267,7 @@ pub(super) fn build_generic_compose(
     bcx.switch_to_block(exit);
     bcx.ins().return_(&[]);
     bcx.seal_all_blocks();
-    bcx.finalize();
+    bcx.finalize(frontend_config);
 }
 
 // =============================================================================
@@ -288,13 +291,13 @@ pub(super) fn compose_src_in_simd(
     let one_v = bcx.ins().splat(types::I32X4, one);
     let f = bcx.ins().iadd(dst_a, one_v);
     let oa = bcx.ins().imul(src_a, f);
-    let oa = bcx.ins().ushr_imm(oa, 8);
+    let oa = bcx.ins().ushr_imm_u(oa, 8);
     let or = bcx.ins().imul(src_r, f);
-    let or = bcx.ins().ushr_imm(or, 8);
+    let or = bcx.ins().ushr_imm_u(or, 8);
     let og = bcx.ins().imul(src_g, f);
-    let og = bcx.ins().ushr_imm(og, 8);
+    let og = bcx.ins().ushr_imm_u(og, 8);
     let ob = bcx.ins().imul(src_b, f);
-    let ob = bcx.ins().ushr_imm(ob, 8);
+    let ob = bcx.ins().ushr_imm_u(ob, 8);
     (oa, or, og, ob)
 }
 
@@ -313,13 +316,13 @@ pub(super) fn compose_src_in_scalar(
     let one = bcx.ins().iconst(types::I32, 1);
     let f = bcx.ins().iadd(dst_a, one);
     let oa = bcx.ins().imul(src_a, f);
-    let oa = bcx.ins().ushr_imm(oa, 8);
+    let oa = bcx.ins().ushr_imm_u(oa, 8);
     let or = bcx.ins().imul(src_r, f);
-    let or = bcx.ins().ushr_imm(or, 8);
+    let or = bcx.ins().ushr_imm_u(or, 8);
     let og = bcx.ins().imul(src_g, f);
-    let og = bcx.ins().ushr_imm(og, 8);
+    let og = bcx.ins().ushr_imm_u(og, 8);
     let ob = bcx.ins().imul(src_b, f);
-    let ob = bcx.ins().ushr_imm(ob, 8);
+    let ob = bcx.ins().ushr_imm_u(ob, 8);
     (oa, or, og, ob)
 }
 
@@ -338,13 +341,13 @@ pub(super) fn compose_src_out_simd(
 ) -> (Value, Value, Value, Value) {
     let inv = bcx.ins().isub(c256, dst_a);
     let oa = bcx.ins().imul(src_a, inv);
-    let oa = bcx.ins().ushr_imm(oa, 8);
+    let oa = bcx.ins().ushr_imm_u(oa, 8);
     let or = bcx.ins().imul(src_r, inv);
-    let or = bcx.ins().ushr_imm(or, 8);
+    let or = bcx.ins().ushr_imm_u(or, 8);
     let og = bcx.ins().imul(src_g, inv);
-    let og = bcx.ins().ushr_imm(og, 8);
+    let og = bcx.ins().ushr_imm_u(og, 8);
     let ob = bcx.ins().imul(src_b, inv);
-    let ob = bcx.ins().ushr_imm(ob, 8);
+    let ob = bcx.ins().ushr_imm_u(ob, 8);
     (oa, or, og, ob)
 }
 
@@ -362,13 +365,13 @@ pub(super) fn compose_src_out_scalar(
 ) -> (Value, Value, Value, Value) {
     let inv = bcx.ins().isub(c256, dst_a);
     let oa = bcx.ins().imul(src_a, inv);
-    let oa = bcx.ins().ushr_imm(oa, 8);
+    let oa = bcx.ins().ushr_imm_u(oa, 8);
     let or = bcx.ins().imul(src_r, inv);
-    let or = bcx.ins().ushr_imm(or, 8);
+    let or = bcx.ins().ushr_imm_u(or, 8);
     let og = bcx.ins().imul(src_g, inv);
-    let og = bcx.ins().ushr_imm(og, 8);
+    let og = bcx.ins().ushr_imm_u(og, 8);
     let ob = bcx.ins().imul(src_b, inv);
-    let ob = bcx.ins().ushr_imm(ob, 8);
+    let ob = bcx.ins().ushr_imm_u(ob, 8);
     (oa, or, og, ob)
 }
 
@@ -390,24 +393,24 @@ pub(super) fn compose_src_atop_simd(
     let da_f = bcx.ins().iadd(dst_a, one_v);
     let inv_sa = bcx.ins().isub(c256, src_a);
     let oa = bcx.ins().imul(src_a, da_f);
-    let oa = bcx.ins().ushr_imm(oa, 8);
+    let oa = bcx.ins().ushr_imm_u(oa, 8);
     let t = bcx.ins().imul(dst_a, inv_sa);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let oa = bcx.ins().iadd(oa, t);
     let or = bcx.ins().imul(src_r, da_f);
-    let or = bcx.ins().ushr_imm(or, 8);
+    let or = bcx.ins().ushr_imm_u(or, 8);
     let t = bcx.ins().imul(dst_r, inv_sa);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let or = bcx.ins().iadd(or, t);
     let og = bcx.ins().imul(src_g, da_f);
-    let og = bcx.ins().ushr_imm(og, 8);
+    let og = bcx.ins().ushr_imm_u(og, 8);
     let t = bcx.ins().imul(dst_g, inv_sa);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let og = bcx.ins().iadd(og, t);
     let ob = bcx.ins().imul(src_b, da_f);
-    let ob = bcx.ins().ushr_imm(ob, 8);
+    let ob = bcx.ins().ushr_imm_u(ob, 8);
     let t = bcx.ins().imul(dst_b, inv_sa);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let ob = bcx.ins().iadd(ob, t);
     (oa, or, og, ob)
 }
@@ -428,24 +431,24 @@ pub(super) fn compose_src_atop_scalar(
     let da_f = bcx.ins().iadd(dst_a, one);
     let inv_sa = bcx.ins().isub(c256, src_a);
     let oa = bcx.ins().imul(src_a, da_f);
-    let oa = bcx.ins().ushr_imm(oa, 8);
+    let oa = bcx.ins().ushr_imm_u(oa, 8);
     let t = bcx.ins().imul(dst_a, inv_sa);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let oa = bcx.ins().iadd(oa, t);
     let or = bcx.ins().imul(src_r, da_f);
-    let or = bcx.ins().ushr_imm(or, 8);
+    let or = bcx.ins().ushr_imm_u(or, 8);
     let t = bcx.ins().imul(dst_r, inv_sa);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let or = bcx.ins().iadd(or, t);
     let og = bcx.ins().imul(src_g, da_f);
-    let og = bcx.ins().ushr_imm(og, 8);
+    let og = bcx.ins().ushr_imm_u(og, 8);
     let t = bcx.ins().imul(dst_g, inv_sa);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let og = bcx.ins().iadd(og, t);
     let ob = bcx.ins().imul(src_b, da_f);
-    let ob = bcx.ins().ushr_imm(ob, 8);
+    let ob = bcx.ins().ushr_imm_u(ob, 8);
     let t = bcx.ins().imul(dst_b, inv_sa);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let ob = bcx.ins().iadd(ob, t);
     (oa, or, og, ob)
 }
@@ -465,16 +468,16 @@ pub(super) fn compose_dst_over_simd(
 ) -> (Value, Value, Value, Value) {
     let inv = bcx.ins().isub(c256, dst_a);
     let t = bcx.ins().imul(src_a, inv);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let oa = bcx.ins().iadd(dst_a, t);
     let t = bcx.ins().imul(src_r, inv);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let or = bcx.ins().iadd(dst_r, t);
     let t = bcx.ins().imul(src_g, inv);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let og = bcx.ins().iadd(dst_g, t);
     let t = bcx.ins().imul(src_b, inv);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let ob = bcx.ins().iadd(dst_b, t);
     (oa, or, og, ob)
 }
@@ -493,16 +496,16 @@ pub(super) fn compose_dst_over_scalar(
 ) -> (Value, Value, Value, Value) {
     let inv = bcx.ins().isub(c256, dst_a);
     let t = bcx.ins().imul(src_a, inv);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let oa = bcx.ins().iadd(dst_a, t);
     let t = bcx.ins().imul(src_r, inv);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let or = bcx.ins().iadd(dst_r, t);
     let t = bcx.ins().imul(src_g, inv);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let og = bcx.ins().iadd(dst_g, t);
     let t = bcx.ins().imul(src_b, inv);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let ob = bcx.ins().iadd(dst_b, t);
     (oa, or, og, ob)
 }
@@ -524,13 +527,13 @@ pub(super) fn compose_dst_in_simd(
     let one_v = bcx.ins().splat(types::I32X4, one);
     let f = bcx.ins().iadd(src_a, one_v);
     let oa = bcx.ins().imul(dst_a, f);
-    let oa = bcx.ins().ushr_imm(oa, 8);
+    let oa = bcx.ins().ushr_imm_u(oa, 8);
     let or = bcx.ins().imul(dst_r, f);
-    let or = bcx.ins().ushr_imm(or, 8);
+    let or = bcx.ins().ushr_imm_u(or, 8);
     let og = bcx.ins().imul(dst_g, f);
-    let og = bcx.ins().ushr_imm(og, 8);
+    let og = bcx.ins().ushr_imm_u(og, 8);
     let ob = bcx.ins().imul(dst_b, f);
-    let ob = bcx.ins().ushr_imm(ob, 8);
+    let ob = bcx.ins().ushr_imm_u(ob, 8);
     (oa, or, og, ob)
 }
 
@@ -549,13 +552,13 @@ pub(super) fn compose_dst_in_scalar(
     let one = bcx.ins().iconst(types::I32, 1);
     let f = bcx.ins().iadd(src_a, one);
     let oa = bcx.ins().imul(dst_a, f);
-    let oa = bcx.ins().ushr_imm(oa, 8);
+    let oa = bcx.ins().ushr_imm_u(oa, 8);
     let or = bcx.ins().imul(dst_r, f);
-    let or = bcx.ins().ushr_imm(or, 8);
+    let or = bcx.ins().ushr_imm_u(or, 8);
     let og = bcx.ins().imul(dst_g, f);
-    let og = bcx.ins().ushr_imm(og, 8);
+    let og = bcx.ins().ushr_imm_u(og, 8);
     let ob = bcx.ins().imul(dst_b, f);
-    let ob = bcx.ins().ushr_imm(ob, 8);
+    let ob = bcx.ins().ushr_imm_u(ob, 8);
     (oa, or, og, ob)
 }
 
@@ -574,13 +577,13 @@ pub(super) fn compose_dst_out_simd(
 ) -> (Value, Value, Value, Value) {
     let inv = bcx.ins().isub(c256, src_a);
     let oa = bcx.ins().imul(dst_a, inv);
-    let oa = bcx.ins().ushr_imm(oa, 8);
+    let oa = bcx.ins().ushr_imm_u(oa, 8);
     let or = bcx.ins().imul(dst_r, inv);
-    let or = bcx.ins().ushr_imm(or, 8);
+    let or = bcx.ins().ushr_imm_u(or, 8);
     let og = bcx.ins().imul(dst_g, inv);
-    let og = bcx.ins().ushr_imm(og, 8);
+    let og = bcx.ins().ushr_imm_u(og, 8);
     let ob = bcx.ins().imul(dst_b, inv);
-    let ob = bcx.ins().ushr_imm(ob, 8);
+    let ob = bcx.ins().ushr_imm_u(ob, 8);
     (oa, or, og, ob)
 }
 
@@ -598,13 +601,13 @@ pub(super) fn compose_dst_out_scalar(
 ) -> (Value, Value, Value, Value) {
     let inv = bcx.ins().isub(c256, src_a);
     let oa = bcx.ins().imul(dst_a, inv);
-    let oa = bcx.ins().ushr_imm(oa, 8);
+    let oa = bcx.ins().ushr_imm_u(oa, 8);
     let or = bcx.ins().imul(dst_r, inv);
-    let or = bcx.ins().ushr_imm(or, 8);
+    let or = bcx.ins().ushr_imm_u(or, 8);
     let og = bcx.ins().imul(dst_g, inv);
-    let og = bcx.ins().ushr_imm(og, 8);
+    let og = bcx.ins().ushr_imm_u(og, 8);
     let ob = bcx.ins().imul(dst_b, inv);
-    let ob = bcx.ins().ushr_imm(ob, 8);
+    let ob = bcx.ins().ushr_imm_u(ob, 8);
     (oa, or, og, ob)
 }
 
@@ -626,24 +629,24 @@ pub(super) fn compose_dst_atop_simd(
     let sa_f = bcx.ins().iadd(src_a, one_v);
     let inv_da = bcx.ins().isub(c256, dst_a);
     let t = bcx.ins().imul(dst_a, sa_f);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let u = bcx.ins().imul(src_a, inv_da);
-    let u = bcx.ins().ushr_imm(u, 8);
+    let u = bcx.ins().ushr_imm_u(u, 8);
     let oa = bcx.ins().iadd(t, u);
     let t = bcx.ins().imul(dst_r, sa_f);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let u = bcx.ins().imul(src_r, inv_da);
-    let u = bcx.ins().ushr_imm(u, 8);
+    let u = bcx.ins().ushr_imm_u(u, 8);
     let or = bcx.ins().iadd(t, u);
     let t = bcx.ins().imul(dst_g, sa_f);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let u = bcx.ins().imul(src_g, inv_da);
-    let u = bcx.ins().ushr_imm(u, 8);
+    let u = bcx.ins().ushr_imm_u(u, 8);
     let og = bcx.ins().iadd(t, u);
     let t = bcx.ins().imul(dst_b, sa_f);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let u = bcx.ins().imul(src_b, inv_da);
-    let u = bcx.ins().ushr_imm(u, 8);
+    let u = bcx.ins().ushr_imm_u(u, 8);
     let ob = bcx.ins().iadd(t, u);
     (oa, or, og, ob)
 }
@@ -664,24 +667,24 @@ pub(super) fn compose_dst_atop_scalar(
     let sa_f = bcx.ins().iadd(src_a, one);
     let inv_da = bcx.ins().isub(c256, dst_a);
     let t = bcx.ins().imul(dst_a, sa_f);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let u = bcx.ins().imul(src_a, inv_da);
-    let u = bcx.ins().ushr_imm(u, 8);
+    let u = bcx.ins().ushr_imm_u(u, 8);
     let oa = bcx.ins().iadd(t, u);
     let t = bcx.ins().imul(dst_r, sa_f);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let u = bcx.ins().imul(src_r, inv_da);
-    let u = bcx.ins().ushr_imm(u, 8);
+    let u = bcx.ins().ushr_imm_u(u, 8);
     let or = bcx.ins().iadd(t, u);
     let t = bcx.ins().imul(dst_g, sa_f);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let u = bcx.ins().imul(src_g, inv_da);
-    let u = bcx.ins().ushr_imm(u, 8);
+    let u = bcx.ins().ushr_imm_u(u, 8);
     let og = bcx.ins().iadd(t, u);
     let t = bcx.ins().imul(dst_b, sa_f);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let u = bcx.ins().imul(src_b, inv_da);
-    let u = bcx.ins().ushr_imm(u, 8);
+    let u = bcx.ins().ushr_imm_u(u, 8);
     let ob = bcx.ins().iadd(t, u);
     (oa, or, og, ob)
 }
@@ -702,24 +705,24 @@ pub(super) fn compose_xor_simd(
     let inv_sa = bcx.ins().isub(c256, src_a);
     let inv_da = bcx.ins().isub(c256, dst_a);
     let t = bcx.ins().imul(src_a, inv_da);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let u = bcx.ins().imul(dst_a, inv_sa);
-    let u = bcx.ins().ushr_imm(u, 8);
+    let u = bcx.ins().ushr_imm_u(u, 8);
     let oa = bcx.ins().iadd(t, u);
     let t = bcx.ins().imul(src_r, inv_da);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let u = bcx.ins().imul(dst_r, inv_sa);
-    let u = bcx.ins().ushr_imm(u, 8);
+    let u = bcx.ins().ushr_imm_u(u, 8);
     let or = bcx.ins().iadd(t, u);
     let t = bcx.ins().imul(src_g, inv_da);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let u = bcx.ins().imul(dst_g, inv_sa);
-    let u = bcx.ins().ushr_imm(u, 8);
+    let u = bcx.ins().ushr_imm_u(u, 8);
     let og = bcx.ins().iadd(t, u);
     let t = bcx.ins().imul(src_b, inv_da);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let u = bcx.ins().imul(dst_b, inv_sa);
-    let u = bcx.ins().ushr_imm(u, 8);
+    let u = bcx.ins().ushr_imm_u(u, 8);
     let ob = bcx.ins().iadd(t, u);
     (oa, or, og, ob)
 }
@@ -739,24 +742,24 @@ pub(super) fn compose_xor_scalar(
     let inv_sa = bcx.ins().isub(c256, src_a);
     let inv_da = bcx.ins().isub(c256, dst_a);
     let t = bcx.ins().imul(src_a, inv_da);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let u = bcx.ins().imul(dst_a, inv_sa);
-    let u = bcx.ins().ushr_imm(u, 8);
+    let u = bcx.ins().ushr_imm_u(u, 8);
     let oa = bcx.ins().iadd(t, u);
     let t = bcx.ins().imul(src_r, inv_da);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let u = bcx.ins().imul(dst_r, inv_sa);
-    let u = bcx.ins().ushr_imm(u, 8);
+    let u = bcx.ins().ushr_imm_u(u, 8);
     let or = bcx.ins().iadd(t, u);
     let t = bcx.ins().imul(src_g, inv_da);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let u = bcx.ins().imul(dst_g, inv_sa);
-    let u = bcx.ins().ushr_imm(u, 8);
+    let u = bcx.ins().ushr_imm_u(u, 8);
     let og = bcx.ins().iadd(t, u);
     let t = bcx.ins().imul(src_b, inv_da);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let u = bcx.ins().imul(dst_b, inv_sa);
-    let u = bcx.ins().ushr_imm(u, 8);
+    let u = bcx.ins().ushr_imm_u(u, 8);
     let ob = bcx.ins().iadd(t, u);
     (oa, or, og, ob)
 }
@@ -810,55 +813,76 @@ pub(super) fn compose_plus_scalar(
     (oa, or, og, ob)
 }
 
-pub(super) fn build_src_in(bcx: FunctionBuilder, ptr_type: Type) {
-    build_generic_compose(bcx, ptr_type, compose_src_in_simd, compose_src_in_scalar);
-}
-
-pub(super) fn build_src_out(bcx: FunctionBuilder, ptr_type: Type) {
-    build_generic_compose(bcx, ptr_type, compose_src_out_simd, compose_src_out_scalar);
-}
-
-pub(super) fn build_src_atop(bcx: FunctionBuilder, ptr_type: Type) {
+pub(super) fn build_src_in(bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
     build_generic_compose(
         bcx,
-        ptr_type,
+        frontend_config,
+        compose_src_in_simd,
+        compose_src_in_scalar,
+    );
+}
+
+pub(super) fn build_src_out(bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    build_generic_compose(
+        bcx,
+        frontend_config,
+        compose_src_out_simd,
+        compose_src_out_scalar,
+    );
+}
+
+pub(super) fn build_src_atop(bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    build_generic_compose(
+        bcx,
+        frontend_config,
         compose_src_atop_simd,
         compose_src_atop_scalar,
     );
 }
 
-pub(super) fn build_dst_over(bcx: FunctionBuilder, ptr_type: Type) {
+pub(super) fn build_dst_over(bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
     build_generic_compose(
         bcx,
-        ptr_type,
+        frontend_config,
         compose_dst_over_simd,
         compose_dst_over_scalar,
     );
 }
 
-pub(super) fn build_dst_in(bcx: FunctionBuilder, ptr_type: Type) {
-    build_generic_compose(bcx, ptr_type, compose_dst_in_simd, compose_dst_in_scalar);
-}
-
-pub(super) fn build_dst_out(bcx: FunctionBuilder, ptr_type: Type) {
-    build_generic_compose(bcx, ptr_type, compose_dst_out_simd, compose_dst_out_scalar);
-}
-
-pub(super) fn build_dst_atop(bcx: FunctionBuilder, ptr_type: Type) {
+pub(super) fn build_dst_in(bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
     build_generic_compose(
         bcx,
-        ptr_type,
+        frontend_config,
+        compose_dst_in_simd,
+        compose_dst_in_scalar,
+    );
+}
+
+pub(super) fn build_dst_out(bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    build_generic_compose(
+        bcx,
+        frontend_config,
+        compose_dst_out_simd,
+        compose_dst_out_scalar,
+    );
+}
+
+pub(super) fn build_dst_atop(bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    build_generic_compose(
+        bcx,
+        frontend_config,
         compose_dst_atop_simd,
         compose_dst_atop_scalar,
     );
 }
 
-pub(super) fn build_xor(bcx: FunctionBuilder, ptr_type: Type) {
-    build_generic_compose(bcx, ptr_type, compose_xor_simd, compose_xor_scalar);
+pub(super) fn build_xor(bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    build_generic_compose(bcx, frontend_config, compose_xor_simd, compose_xor_scalar);
 }
 
 /// Plus パイプライン (カバレッジなし)。out = min(src + dst, 255)。
-pub(super) fn build_plus(mut bcx: FunctionBuilder, ptr_type: Type) {
+pub(super) fn build_plus(mut bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    let ptr_type = frontend_config.pointer_type();
     let entry = bcx.create_block();
     let simd_loop = bcx.create_block();
     let scalar_check = bcx.create_block();
@@ -874,21 +898,21 @@ pub(super) fn build_plus(mut bcx: FunctionBuilder, ptr_type: Type) {
     let c255 = bcx.ins().iconst(types::I32, 0xFF);
     let c255_vec = bcx.ins().splat(types::I32X4, c255);
 
-    let src_a = bcx.ins().ushr_imm(src_solid, 24);
-    let src_a = bcx.ins().band_imm(src_a, 0xFF);
-    let src_r = bcx.ins().ushr_imm(src_solid, 16);
-    let src_r = bcx.ins().band_imm(src_r, 0xFF);
-    let src_g = bcx.ins().ushr_imm(src_solid, 8);
-    let src_g = bcx.ins().band_imm(src_g, 0xFF);
-    let src_b = bcx.ins().band_imm(src_solid, 0xFF);
+    let src_a = bcx.ins().ushr_imm_u(src_solid, 24);
+    let src_a = bcx.ins().band_imm_u(src_a, 0xFF);
+    let src_r = bcx.ins().ushr_imm_u(src_solid, 16);
+    let src_r = bcx.ins().band_imm_u(src_r, 0xFF);
+    let src_g = bcx.ins().ushr_imm_u(src_solid, 8);
+    let src_g = bcx.ins().band_imm_u(src_g, 0xFF);
+    let src_b = bcx.ins().band_imm_u(src_solid, 0xFF);
 
     let sa_v = bcx.ins().splat(types::I32X4, src_a);
     let sr_v = bcx.ins().splat(types::I32X4, src_r);
     let sg_v = bcx.ins().splat(types::I32X4, src_g);
     let sb_v = bcx.ins().splat(types::I32X4, src_b);
 
-    let simd_count = bcx.ins().ushr_imm(count, 2);
-    let remainder = bcx.ins().band_imm(count, 3);
+    let simd_count = bcx.ins().ushr_imm_u(count, 2);
+    let remainder = bcx.ins().band_imm_u(count, 3);
     let zero = bcx.ins().iconst(ptr_type, 0);
 
     let has_simd = bcx.ins().icmp(IntCC::NotEqual, simd_count, zero);
@@ -943,13 +967,13 @@ pub(super) fn build_plus(mut bcx: FunctionBuilder, ptr_type: Type) {
     let cur = bcx.block_params(scalar_loop)[0];
     let si = bcx.block_params(scalar_loop)[1];
     let dp = bcx.ins().load(types::I32, MemFlagsData::new(), cur, 0);
-    let da = bcx.ins().ushr_imm(dp, 24);
-    let da = bcx.ins().band_imm(da, 0xFF);
-    let dr = bcx.ins().ushr_imm(dp, 16);
-    let dr = bcx.ins().band_imm(dr, 0xFF);
-    let dg = bcx.ins().ushr_imm(dp, 8);
-    let dg = bcx.ins().band_imm(dg, 0xFF);
-    let db = bcx.ins().band_imm(dp, 0xFF);
+    let da = bcx.ins().ushr_imm_u(dp, 24);
+    let da = bcx.ins().band_imm_u(da, 0xFF);
+    let dr = bcx.ins().ushr_imm_u(dp, 16);
+    let dr = bcx.ins().band_imm_u(dr, 0xFF);
+    let dg = bcx.ins().ushr_imm_u(dp, 8);
+    let dg = bcx.ins().band_imm_u(dg, 0xFF);
+    let db = bcx.ins().band_imm_u(dp, 0xFF);
     let oa = bcx.ins().iadd(src_a, da);
     let oa = bcx.ins().umin(oa, c255);
     let or = bcx.ins().iadd(src_r, dr);
@@ -958,10 +982,10 @@ pub(super) fn build_plus(mut bcx: FunctionBuilder, ptr_type: Type) {
     let og = bcx.ins().umin(og, c255);
     let ob = bcx.ins().iadd(src_b, db);
     let ob = bcx.ins().umin(ob, c255);
-    let result = bcx.ins().ishl_imm(oa, 24);
-    let tmp = bcx.ins().ishl_imm(or, 16);
+    let result = bcx.ins().ishl_imm_u(oa, 24);
+    let tmp = bcx.ins().ishl_imm_u(or, 16);
     let result = bcx.ins().bor(result, tmp);
-    let tmp = bcx.ins().ishl_imm(og, 8);
+    let tmp = bcx.ins().ishl_imm_u(og, 8);
     let result = bcx.ins().bor(result, tmp);
     let result = bcx.ins().bor(result, ob);
     bcx.ins().store(MemFlagsData::new(), result, cur, 0);
@@ -976,7 +1000,7 @@ pub(super) fn build_plus(mut bcx: FunctionBuilder, ptr_type: Type) {
     bcx.switch_to_block(exit);
     bcx.ins().return_(&[]);
     bcx.seal_all_blocks();
-    bcx.finalize();
+    bcx.finalize(frontend_config);
 }
 
 // =============================================================================
@@ -995,7 +1019,8 @@ pub(super) fn build_plus(mut bcx: FunctionBuilder, ptr_type: Type) {
 /// ```
 ///
 /// cov=0xFF 高速パス: dst を読む必要すらなく、ゼロベクタをストアするだけ。
-pub(super) fn build_clear_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
+pub(super) fn build_clear_cov(mut bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    let ptr_type = frontend_config.pointer_type();
     let entry = bcx.create_block();
     let simd_loop = bcx.create_block();
     let simd_fast = bcx.create_block();
@@ -1020,8 +1045,8 @@ pub(super) fn build_clear_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     let zero_vec = bcx.ins().splat(types::I32X4, zero_i32);
     let all_ff = bcx.ins().iconst(types::I32, -1);
 
-    let simd_count = bcx.ins().ushr_imm(count, 2);
-    let remainder = bcx.ins().band_imm(count, 3);
+    let simd_count = bcx.ins().ushr_imm_u(count, 2);
+    let remainder = bcx.ins().band_imm_u(count, 3);
     let zero = bcx.ins().iconst(ptr_type, 0);
 
     let has_simd = bcx.ins().icmp(IntCC::NotEqual, simd_count, zero);
@@ -1063,13 +1088,13 @@ pub(super) fn build_clear_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
         emit_extract_channels_simd(&mut bcx, dst_pixels, mask_0xff_vec);
 
     let out_a = bcx.ins().imul(dst_a_v, inv_cov_vec);
-    let out_a = bcx.ins().ushr_imm(out_a, 8);
+    let out_a = bcx.ins().ushr_imm_u(out_a, 8);
     let out_r = bcx.ins().imul(dst_r_v, inv_cov_vec);
-    let out_r = bcx.ins().ushr_imm(out_r, 8);
+    let out_r = bcx.ins().ushr_imm_u(out_r, 8);
     let out_g = bcx.ins().imul(dst_g_v, inv_cov_vec);
-    let out_g = bcx.ins().ushr_imm(out_g, 8);
+    let out_g = bcx.ins().ushr_imm_u(out_g, 8);
     let out_b = bcx.ins().imul(dst_b_v, inv_cov_vec);
-    let out_b = bcx.ins().ushr_imm(out_b, 8);
+    let out_b = bcx.ins().ushr_imm_u(out_b, 8);
 
     let result = emit_pack_channels_simd(&mut bcx, out_a, out_r, out_g, out_b);
     bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
@@ -1114,27 +1139,27 @@ pub(super) fn build_clear_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     let inv_cov = bcx.ins().isub(c256_scalar, cov);
 
     let dp = bcx.ins().load(types::I32, MemFlagsData::new(), cur_dst, 0);
-    let da = bcx.ins().ushr_imm(dp, 24);
-    let da = bcx.ins().band_imm(da, 0xFF);
-    let dr = bcx.ins().ushr_imm(dp, 16);
-    let dr = bcx.ins().band_imm(dr, 0xFF);
-    let dg = bcx.ins().ushr_imm(dp, 8);
-    let dg = bcx.ins().band_imm(dg, 0xFF);
-    let db = bcx.ins().band_imm(dp, 0xFF);
+    let da = bcx.ins().ushr_imm_u(dp, 24);
+    let da = bcx.ins().band_imm_u(da, 0xFF);
+    let dr = bcx.ins().ushr_imm_u(dp, 16);
+    let dr = bcx.ins().band_imm_u(dr, 0xFF);
+    let dg = bcx.ins().ushr_imm_u(dp, 8);
+    let dg = bcx.ins().band_imm_u(dg, 0xFF);
+    let db = bcx.ins().band_imm_u(dp, 0xFF);
 
     let oa = bcx.ins().imul(da, inv_cov);
-    let oa = bcx.ins().ushr_imm(oa, 8);
+    let oa = bcx.ins().ushr_imm_u(oa, 8);
     let or = bcx.ins().imul(dr, inv_cov);
-    let or = bcx.ins().ushr_imm(or, 8);
+    let or = bcx.ins().ushr_imm_u(or, 8);
     let og = bcx.ins().imul(dg, inv_cov);
-    let og = bcx.ins().ushr_imm(og, 8);
+    let og = bcx.ins().ushr_imm_u(og, 8);
     let ob = bcx.ins().imul(db, inv_cov);
-    let ob = bcx.ins().ushr_imm(ob, 8);
+    let ob = bcx.ins().ushr_imm_u(ob, 8);
 
-    let result = bcx.ins().ishl_imm(oa, 24);
-    let tmp = bcx.ins().ishl_imm(or, 16);
+    let result = bcx.ins().ishl_imm_u(oa, 24);
+    let tmp = bcx.ins().ishl_imm_u(or, 16);
     let result = bcx.ins().bor(result, tmp);
-    let tmp = bcx.ins().ishl_imm(og, 8);
+    let tmp = bcx.ins().ishl_imm_u(og, 8);
     let result = bcx.ins().bor(result, tmp);
     let result = bcx.ins().bor(result, ob);
     bcx.ins().store(MemFlagsData::new(), result, cur_dst, 0);
@@ -1152,17 +1177,17 @@ pub(super) fn build_clear_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     bcx.switch_to_block(exit);
     bcx.ins().return_(&[]);
     bcx.seal_all_blocks();
-    bcx.finalize();
+    bcx.finalize(frontend_config);
 }
 
 /// DstCopy + カバレッジ。out = dst (何もしない)。
-pub(super) fn build_dst_copy_cov(mut bcx: FunctionBuilder, _ptr_type: Type) {
+pub(super) fn build_dst_copy_cov(mut bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
     let entry = bcx.create_block();
     bcx.switch_to_block(entry);
     bcx.append_block_params_for_function_params(entry);
     bcx.ins().return_(&[]);
     bcx.seal_all_blocks();
-    bcx.finalize();
+    bcx.finalize(frontend_config);
 }
 
 /// 汎用 Porter-Duff カバレッジ付きパイプラインを構築する。
@@ -1180,7 +1205,7 @@ pub(super) fn build_dst_copy_cov(mut bcx: FunctionBuilder, _ptr_type: Type) {
 /// ```
 pub(super) fn build_generic_compose_cov(
     mut bcx: FunctionBuilder,
-    ptr_type: Type,
+    frontend_config: TargetFrontendConfig,
     compose_simd: fn(
         &mut FunctionBuilder,
         Value,
@@ -1207,6 +1232,7 @@ pub(super) fn build_generic_compose_cov(
         Value,
     ) -> (Value, Value, Value, Value),
 ) {
+    let ptr_type = frontend_config.pointer_type();
     let entry = bcx.create_block();
     let simd_loop = bcx.create_block();
     let simd_fast = bcx.create_block();
@@ -1225,13 +1251,13 @@ pub(super) fn build_generic_compose_cov(
     let coverage = bcx.block_params(entry)[3];
 
     // ソースチャネル分解 (ループ不変)
-    let src_a = bcx.ins().ushr_imm(src_solid, 24);
-    let src_a = bcx.ins().band_imm(src_a, 0xFF);
-    let src_r = bcx.ins().ushr_imm(src_solid, 16);
-    let src_r = bcx.ins().band_imm(src_r, 0xFF);
-    let src_g = bcx.ins().ushr_imm(src_solid, 8);
-    let src_g = bcx.ins().band_imm(src_g, 0xFF);
-    let src_b = bcx.ins().band_imm(src_solid, 0xFF);
+    let src_a = bcx.ins().ushr_imm_u(src_solid, 24);
+    let src_a = bcx.ins().band_imm_u(src_a, 0xFF);
+    let src_r = bcx.ins().ushr_imm_u(src_solid, 16);
+    let src_r = bcx.ins().band_imm_u(src_r, 0xFF);
+    let src_g = bcx.ins().ushr_imm_u(src_solid, 8);
+    let src_g = bcx.ins().band_imm_u(src_g, 0xFF);
+    let src_b = bcx.ins().band_imm_u(src_solid, 0xFF);
 
     // SIMD 用ループ不変ベクタ
     let src_a_vec = bcx.ins().splat(types::I32X4, src_a);
@@ -1246,8 +1272,8 @@ pub(super) fn build_generic_compose_cov(
     let mask_0xff_vec = bcx.ins().splat(types::I32X4, mask_0xff);
     let all_ff = bcx.ins().iconst(types::I32, -1);
 
-    let simd_count = bcx.ins().ushr_imm(count, 2);
-    let remainder = bcx.ins().band_imm(count, 3);
+    let simd_count = bcx.ins().ushr_imm_u(count, 2);
+    let remainder = bcx.ins().band_imm_u(count, 3);
     let zero = bcx.ins().iconst(ptr_type, 0);
 
     let has_simd = bcx.ins().icmp(IntCC::NotEqual, simd_count, zero);
@@ -1303,22 +1329,22 @@ pub(super) fn build_generic_compose_cov(
     let ca = bcx.ins().imul(src_a_vec, cov_vec);
     let ca = bcx.ins().imul(ca, c257_vec);
     let ca = bcx.ins().iadd(ca, c257_vec);
-    let cov_src_a = bcx.ins().ushr_imm(ca, 16);
+    let cov_src_a = bcx.ins().ushr_imm_u(ca, 16);
 
     let cr = bcx.ins().imul(src_r_vec, cov_vec);
     let cr = bcx.ins().imul(cr, c257_vec);
     let cr = bcx.ins().iadd(cr, c257_vec);
-    let cov_src_r = bcx.ins().ushr_imm(cr, 16);
+    let cov_src_r = bcx.ins().ushr_imm_u(cr, 16);
 
     let cg = bcx.ins().imul(src_g_vec, cov_vec);
     let cg = bcx.ins().imul(cg, c257_vec);
     let cg = bcx.ins().iadd(cg, c257_vec);
-    let cov_src_g = bcx.ins().ushr_imm(cg, 16);
+    let cov_src_g = bcx.ins().ushr_imm_u(cg, 16);
 
     let cb = bcx.ins().imul(src_b_vec, cov_vec);
     let cb = bcx.ins().imul(cb, c257_vec);
     let cb = bcx.ins().iadd(cb, c257_vec);
-    let cov_src_b = bcx.ins().ushr_imm(cb, 16);
+    let cov_src_b = bcx.ins().ushr_imm_u(cb, 16);
 
     let dst_pixels = bcx
         .ins()
@@ -1383,31 +1409,31 @@ pub(super) fn build_generic_compose_cov(
     let ca = bcx.ins().imul(src_a, cov);
     let ca = bcx.ins().imul(ca, c257_scalar);
     let ca = bcx.ins().iadd(ca, c257_scalar);
-    let cov_sa = bcx.ins().ushr_imm(ca, 16);
+    let cov_sa = bcx.ins().ushr_imm_u(ca, 16);
 
     let cr = bcx.ins().imul(src_r, cov);
     let cr = bcx.ins().imul(cr, c257_scalar);
     let cr = bcx.ins().iadd(cr, c257_scalar);
-    let cov_sr = bcx.ins().ushr_imm(cr, 16);
+    let cov_sr = bcx.ins().ushr_imm_u(cr, 16);
 
     let cg = bcx.ins().imul(src_g, cov);
     let cg = bcx.ins().imul(cg, c257_scalar);
     let cg = bcx.ins().iadd(cg, c257_scalar);
-    let cov_sg = bcx.ins().ushr_imm(cg, 16);
+    let cov_sg = bcx.ins().ushr_imm_u(cg, 16);
 
     let cb = bcx.ins().imul(src_b, cov);
     let cb = bcx.ins().imul(cb, c257_scalar);
     let cb = bcx.ins().iadd(cb, c257_scalar);
-    let cov_sb = bcx.ins().ushr_imm(cb, 16);
+    let cov_sb = bcx.ins().ushr_imm_u(cb, 16);
 
     let dp = bcx.ins().load(types::I32, MemFlagsData::new(), cur_dst, 0);
-    let da = bcx.ins().ushr_imm(dp, 24);
-    let da = bcx.ins().band_imm(da, 0xFF);
-    let dr = bcx.ins().ushr_imm(dp, 16);
-    let dr = bcx.ins().band_imm(dr, 0xFF);
-    let dg = bcx.ins().ushr_imm(dp, 8);
-    let dg = bcx.ins().band_imm(dg, 0xFF);
-    let db = bcx.ins().band_imm(dp, 0xFF);
+    let da = bcx.ins().ushr_imm_u(dp, 24);
+    let da = bcx.ins().band_imm_u(da, 0xFF);
+    let dr = bcx.ins().ushr_imm_u(dp, 16);
+    let dr = bcx.ins().band_imm_u(dr, 0xFF);
+    let dg = bcx.ins().ushr_imm_u(dp, 8);
+    let dg = bcx.ins().band_imm_u(dg, 0xFF);
+    let db = bcx.ins().band_imm_u(dp, 0xFF);
 
     let (oa, or, og, ob) = compose_scalar(
         &mut bcx,
@@ -1422,10 +1448,10 @@ pub(super) fn build_generic_compose_cov(
         c256_scalar,
     );
 
-    let result = bcx.ins().ishl_imm(oa, 24);
-    let tmp = bcx.ins().ishl_imm(or, 16);
+    let result = bcx.ins().ishl_imm_u(oa, 24);
+    let tmp = bcx.ins().ishl_imm_u(or, 16);
     let result = bcx.ins().bor(result, tmp);
-    let tmp = bcx.ins().ishl_imm(og, 8);
+    let tmp = bcx.ins().ishl_imm_u(og, 8);
     let result = bcx.ins().bor(result, tmp);
     let result = bcx.ins().bor(result, ob);
     bcx.ins().store(MemFlagsData::new(), result, cur_dst, 0);
@@ -1443,56 +1469,76 @@ pub(super) fn build_generic_compose_cov(
     bcx.switch_to_block(exit);
     bcx.ins().return_(&[]);
     bcx.seal_all_blocks();
-    bcx.finalize();
+    bcx.finalize(frontend_config);
 }
 
-pub(super) fn build_src_in_cov(bcx: FunctionBuilder, ptr_type: Type) {
-    build_generic_compose_cov(bcx, ptr_type, compose_src_in_simd, compose_src_in_scalar);
-}
-
-pub(super) fn build_src_out_cov(bcx: FunctionBuilder, ptr_type: Type) {
-    build_generic_compose_cov(bcx, ptr_type, compose_src_out_simd, compose_src_out_scalar);
-}
-
-pub(super) fn build_src_atop_cov(bcx: FunctionBuilder, ptr_type: Type) {
+pub(super) fn build_src_in_cov(bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
     build_generic_compose_cov(
         bcx,
-        ptr_type,
+        frontend_config,
+        compose_src_in_simd,
+        compose_src_in_scalar,
+    );
+}
+
+pub(super) fn build_src_out_cov(bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    build_generic_compose_cov(
+        bcx,
+        frontend_config,
+        compose_src_out_simd,
+        compose_src_out_scalar,
+    );
+}
+
+pub(super) fn build_src_atop_cov(bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    build_generic_compose_cov(
+        bcx,
+        frontend_config,
         compose_src_atop_simd,
         compose_src_atop_scalar,
     );
 }
 
-pub(super) fn build_dst_over_cov(bcx: FunctionBuilder, ptr_type: Type) {
+pub(super) fn build_dst_over_cov(bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
     build_generic_compose_cov(
         bcx,
-        ptr_type,
+        frontend_config,
         compose_dst_over_simd,
         compose_dst_over_scalar,
     );
 }
 
-pub(super) fn build_dst_in_cov(bcx: FunctionBuilder, ptr_type: Type) {
-    build_generic_compose_cov(bcx, ptr_type, compose_dst_in_simd, compose_dst_in_scalar);
-}
-
-pub(super) fn build_dst_out_cov(bcx: FunctionBuilder, ptr_type: Type) {
-    build_generic_compose_cov(bcx, ptr_type, compose_dst_out_simd, compose_dst_out_scalar);
-}
-
-pub(super) fn build_dst_atop_cov(bcx: FunctionBuilder, ptr_type: Type) {
+pub(super) fn build_dst_in_cov(bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
     build_generic_compose_cov(
         bcx,
-        ptr_type,
+        frontend_config,
+        compose_dst_in_simd,
+        compose_dst_in_scalar,
+    );
+}
+
+pub(super) fn build_dst_out_cov(bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    build_generic_compose_cov(
+        bcx,
+        frontend_config,
+        compose_dst_out_simd,
+        compose_dst_out_scalar,
+    );
+}
+
+pub(super) fn build_dst_atop_cov(bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    build_generic_compose_cov(
+        bcx,
+        frontend_config,
         compose_dst_atop_simd,
         compose_dst_atop_scalar,
     );
 }
 
-pub(super) fn build_xor_cov(bcx: FunctionBuilder, ptr_type: Type) {
-    build_generic_compose_cov(bcx, ptr_type, compose_xor_simd, compose_xor_scalar);
+pub(super) fn build_xor_cov(bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    build_generic_compose_cov(bcx, frontend_config, compose_xor_simd, compose_xor_scalar);
 }
 
-pub(super) fn build_plus_cov(bcx: FunctionBuilder, ptr_type: Type) {
-    build_generic_compose_cov(bcx, ptr_type, compose_plus_simd, compose_plus_scalar);
+pub(super) fn build_plus_cov(bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    build_generic_compose_cov(bcx, frontend_config, compose_plus_simd, compose_plus_scalar);
 }

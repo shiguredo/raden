@@ -1,6 +1,7 @@
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::types;
-use cranelift_codegen::ir::{Endianness, InstBuilder, MemFlagsData, Type, Value};
+use cranelift_codegen::ir::{Endianness, InstBuilder, MemFlagsData, Value};
+use cranelift_codegen::isa::TargetFrontendConfig;
 use cranelift_frontend::FunctionBuilder;
 
 use super::block_args;
@@ -13,7 +14,7 @@ use crate::api::style::FillRule;
 /// shifted 値を fill rule に応じてカバレッジ値に変換する JIT コードを生成する (スカラー版)。
 ///
 /// - NonZero: iabs → umin(c255) (2 命令)
-/// - EvenOdd: iabs → band_imm(511) → c512 - val → umin(val, folded) → umin(c255) (5 命令)
+/// - EvenOdd: iabs → band_imm_u(511) → c512 - val → umin(val, folded) → umin(c255) (5 命令)
 pub(super) fn emit_fill_rule_convert(
     bcx: &mut FunctionBuilder,
     shifted: Value,
@@ -27,7 +28,7 @@ pub(super) fn emit_fill_rule_convert(
         }
         FillRule::EvenOdd => {
             let abs_val = bcx.ins().iabs(shifted);
-            let val = bcx.ins().band_imm(abs_val, 511);
+            let val = bcx.ins().band_imm_u(abs_val, 511);
             let c512 = bcx.ins().iconst(types::I32, 512);
             let folded = bcx.ins().isub(c512, val);
             let min_vf = bcx.ins().umin(val, folded);
@@ -91,14 +92,19 @@ fn emit_fill_rule_convert_simd(
 /// main_loop(cells_p, cov_p, i, cover, c255_vec, zero_vec):
 ///   c0..c3 = load.i32 (4 セル個別ロード)
 ///   cover を逐次加算し 4 つの prefix sum 値を取得
-///   I32X4 にパック → sshr_imm(9) → fill_rule_convert_simd
+///   I32X4 にパック → sshr_imm_u(9) → fill_rule_convert_simd
 ///   unarrow で I32X4 → I8X16 → extractlane(0) で 4 バイト packed i32
 ///   store.i32(cov_p, packed)
 ///   i+1 < count4 ? → main_loop : scalar_check
 ///
 /// scalar_check / scalar_loop / exit: 余り 1-3 ピクセルをスカラー処理
 /// ```
-pub(super) fn build_sweep(mut bcx: FunctionBuilder, ptr_type: Type, fill_rule: FillRule) {
+pub(super) fn build_sweep(
+    mut bcx: FunctionBuilder,
+    frontend_config: TargetFrontendConfig,
+    fill_rule: FillRule,
+) {
+    let ptr_type = frontend_config.pointer_type();
     let entry = bcx.create_block();
     let main_loop = bcx.create_block();
     let scalar_check = bcx.create_block();
@@ -112,8 +118,8 @@ pub(super) fn build_sweep(mut bcx: FunctionBuilder, ptr_type: Type, fill_rule: F
     let cov_buf = bcx.block_params(entry)[1]; // *mut u8
     let len = bcx.block_params(entry)[2]; // usize
 
-    let count4 = bcx.ins().ushr_imm(len, 2);
-    let rem = bcx.ins().band_imm(len, 3);
+    let count4 = bcx.ins().ushr_imm_u(len, 2);
+    let rem = bcx.ins().band_imm_u(len, 3);
     let zero = bcx.ins().iconst(ptr_type, 0);
     let c255 = bcx.ins().iconst(types::I32, 255);
     let c255_vec = bcx.ins().splat(types::I32X4, c255);
@@ -168,7 +174,7 @@ pub(super) fn build_sweep(mut bcx: FunctionBuilder, ptr_type: Type, fill_rule: F
     let vec = bcx.ins().insertlane(vec, cover3, 3);
 
     // SIMD で sshr(9) + fill_rule 変換を 4 要素並列実行
-    let shifted_vec = bcx.ins().sshr_imm(vec, 9);
+    let shifted_vec = bcx.ins().sshr_imm_u(vec, 9);
     let cov_vec = emit_fill_rule_convert_simd(&mut bcx, shifted_vec, c255_vec_loop, fill_rule);
 
     // I32X4 → 4 バイトにパック: unarrow で段階的にナロウイングする
@@ -235,7 +241,7 @@ pub(super) fn build_sweep(mut bcx: FunctionBuilder, ptr_type: Type, fill_rule: F
     let i32_zero_s = bcx.ins().iconst(types::I32, 0);
     bcx.ins().store(MemFlagsData::new(), i32_zero_s, cells_p, 0);
     let cover = bcx.ins().iadd(cover, cell_val);
-    let shifted = bcx.ins().sshr_imm(cover, 9);
+    let shifted = bcx.ins().sshr_imm_u(cover, 9);
     let clamped = emit_fill_rule_convert(&mut bcx, shifted, c255, fill_rule);
     bcx.ins().istore8(MemFlagsData::new(), clamped, cov_p, 0);
 
@@ -253,5 +259,5 @@ pub(super) fn build_sweep(mut bcx: FunctionBuilder, ptr_type: Type, fill_rule: F
     bcx.ins().return_(&[]);
 
     bcx.seal_all_blocks();
-    bcx.finalize();
+    bcx.finalize(frontend_config);
 }

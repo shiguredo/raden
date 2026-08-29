@@ -1,6 +1,7 @@
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::types;
-use cranelift_codegen::ir::{InstBuilder, MemFlagsData, Type, Value};
+use cranelift_codegen::ir::{InstBuilder, MemFlagsData, Value};
+use cranelift_codegen::isa::TargetFrontendConfig;
 use cranelift_frontend::FunctionBuilder;
 
 use super::{
@@ -60,7 +61,8 @@ use super::{
 ///
 /// SIMD ループは 1 命令/反復 (128-bit store) のため、メモリ帯域が律速。
 /// 1280x720 の全画面塗りつぶしで ~0.1ms (DDR4-3200 の帯域上限に近い)。
-pub(super) fn build_src_copy(mut bcx: FunctionBuilder, ptr_type: Type) {
+pub(super) fn build_src_copy(mut bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    let ptr_type = frontend_config.pointer_type();
     let entry = bcx.create_block();
     let simd_loop = bcx.create_block();
     let scalar_check = bcx.create_block();
@@ -77,8 +79,8 @@ pub(super) fn build_src_copy(mut bcx: FunctionBuilder, ptr_type: Type) {
 
     // count を 4 で割って SIMD 反復回数と余りを計算する。
     // ushr 2 は count / 4、band 3 は count % 4 と等価。
-    let simd_count = bcx.ins().ushr_imm(count, 2);
-    let remainder = bcx.ins().band_imm(count, 3);
+    let simd_count = bcx.ins().ushr_imm_u(count, 2);
+    let remainder = bcx.ins().band_imm_u(count, 3);
     let zero = bcx.ins().iconst(ptr_type, 0);
 
     // src_solid を I32X4 の全 4 レーンにブロードキャスト。
@@ -150,7 +152,7 @@ pub(super) fn build_src_copy(mut bcx: FunctionBuilder, ptr_type: Type) {
     bcx.ins().return_(&[]);
 
     bcx.seal_all_blocks();
-    bcx.finalize();
+    bcx.finalize(frontend_config);
 }
 
 /// Porter-Duff SrcCopy + カバレッジパイプラインを構築する。
@@ -187,7 +189,8 @@ pub(super) fn build_src_copy(mut bcx: FunctionBuilder, ptr_type: Type) {
 ///
 /// 円や矩形の内部ピクセルは cov=0xFF が大半を占めるため、
 /// 高速パスにより平均命令数が大幅に削減される。
-pub(super) fn build_src_copy_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
+pub(super) fn build_src_copy_cov(mut bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    let ptr_type = frontend_config.pointer_type();
     let entry = bcx.create_block();
     let simd_loop = bcx.create_block();
     let simd_fast = bcx.create_block();
@@ -207,13 +210,13 @@ pub(super) fn build_src_copy_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
 
     // ソース色を ARGB チャネルに分解する (ループ不変)。
     // PRGB32 形式: 0xAARRGGBB (premultiplied alpha)
-    let src_a = bcx.ins().ushr_imm(src_solid, 24);
-    let src_a = bcx.ins().band_imm(src_a, 0xFF);
-    let src_r = bcx.ins().ushr_imm(src_solid, 16);
-    let src_r = bcx.ins().band_imm(src_r, 0xFF);
-    let src_g = bcx.ins().ushr_imm(src_solid, 8);
-    let src_g = bcx.ins().band_imm(src_g, 0xFF);
-    let src_b = bcx.ins().band_imm(src_solid, 0xFF);
+    let src_a = bcx.ins().ushr_imm_u(src_solid, 24);
+    let src_a = bcx.ins().band_imm_u(src_a, 0xFF);
+    let src_r = bcx.ins().ushr_imm_u(src_solid, 16);
+    let src_r = bcx.ins().band_imm_u(src_r, 0xFF);
+    let src_g = bcx.ins().ushr_imm_u(src_solid, 8);
+    let src_g = bcx.ins().band_imm_u(src_g, 0xFF);
+    let src_b = bcx.ins().band_imm_u(src_solid, 0xFF);
 
     // 各チャネルを I32X4 にブロードキャストする (SIMD ループ用の不変ベクタ)。
     // splat 命令は x86_64 では vpbroadcastd に対応する。
@@ -230,8 +233,8 @@ pub(super) fn build_src_copy_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     // 全カバレッジバイトが 0xFF かの判定用。4 バイト = 0xFFFFFFFF = -1 (i32)。
     let all_ff = bcx.ins().iconst(types::I32, -1);
 
-    let simd_count = bcx.ins().ushr_imm(count, 2);
-    let remainder = bcx.ins().band_imm(count, 3);
+    let simd_count = bcx.ins().ushr_imm_u(count, 2);
+    let remainder = bcx.ins().band_imm_u(count, 3);
     let zero = bcx.ins().iconst(ptr_type, 0);
 
     let has_simd = bcx.ins().icmp(IntCC::NotEqual, simd_count, zero);
@@ -289,22 +292,22 @@ pub(super) fn build_src_copy_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     let ca = bcx.ins().imul(src_a_vec, cov_vec);
     let ca = bcx.ins().imul(ca, c257_vec);
     let ca = bcx.ins().iadd(ca, c257_vec);
-    let out_a = bcx.ins().ushr_imm(ca, 16);
+    let out_a = bcx.ins().ushr_imm_u(ca, 16);
 
     let cr = bcx.ins().imul(src_r_vec, cov_vec);
     let cr = bcx.ins().imul(cr, c257_vec);
     let cr = bcx.ins().iadd(cr, c257_vec);
-    let out_r = bcx.ins().ushr_imm(cr, 16);
+    let out_r = bcx.ins().ushr_imm_u(cr, 16);
 
     let cg = bcx.ins().imul(src_g_vec, cov_vec);
     let cg = bcx.ins().imul(cg, c257_vec);
     let cg = bcx.ins().iadd(cg, c257_vec);
-    let out_g = bcx.ins().ushr_imm(cg, 16);
+    let out_g = bcx.ins().ushr_imm_u(cg, 16);
 
     let cb = bcx.ins().imul(src_b_vec, cov_vec);
     let cb = bcx.ins().imul(cb, c257_vec);
     let cb = bcx.ins().iadd(cb, c257_vec);
-    let out_b = bcx.ins().ushr_imm(cb, 16);
+    let out_b = bcx.ins().ushr_imm_u(cb, 16);
 
     let result = emit_pack_channels_simd(&mut bcx, out_a, out_r, out_g, out_b);
     bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
@@ -356,28 +359,28 @@ pub(super) fn build_src_copy_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     let ca = bcx.ins().imul(src_a, cov);
     let ca = bcx.ins().imul(ca, c257_scalar);
     let ca = bcx.ins().iadd(ca, c257_scalar);
-    let out_a = bcx.ins().ushr_imm(ca, 16);
+    let out_a = bcx.ins().ushr_imm_u(ca, 16);
 
     let cr = bcx.ins().imul(src_r, cov);
     let cr = bcx.ins().imul(cr, c257_scalar);
     let cr = bcx.ins().iadd(cr, c257_scalar);
-    let out_r = bcx.ins().ushr_imm(cr, 16);
+    let out_r = bcx.ins().ushr_imm_u(cr, 16);
 
     let cg = bcx.ins().imul(src_g, cov);
     let cg = bcx.ins().imul(cg, c257_scalar);
     let cg = bcx.ins().iadd(cg, c257_scalar);
-    let out_g = bcx.ins().ushr_imm(cg, 16);
+    let out_g = bcx.ins().ushr_imm_u(cg, 16);
 
     let cb = bcx.ins().imul(src_b, cov);
     let cb = bcx.ins().imul(cb, c257_scalar);
     let cb = bcx.ins().iadd(cb, c257_scalar);
-    let out_b = bcx.ins().ushr_imm(cb, 16);
+    let out_b = bcx.ins().ushr_imm_u(cb, 16);
 
     // スカラ版パック: シフト + OR で ARGB32 に結合
-    let result = bcx.ins().ishl_imm(out_a, 24);
-    let tmp = bcx.ins().ishl_imm(out_r, 16);
+    let result = bcx.ins().ishl_imm_u(out_a, 24);
+    let tmp = bcx.ins().ishl_imm_u(out_r, 16);
     let result = bcx.ins().bor(result, tmp);
-    let tmp = bcx.ins().ishl_imm(out_g, 8);
+    let tmp = bcx.ins().ishl_imm_u(out_g, 8);
     let result = bcx.ins().bor(result, tmp);
     let result = bcx.ins().bor(result, out_b);
 
@@ -398,7 +401,7 @@ pub(super) fn build_src_copy_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     bcx.ins().return_(&[]);
 
     bcx.seal_all_blocks();
-    bcx.finalize();
+    bcx.finalize(frontend_config);
 }
 
 /// Porter-Duff SrcOver + カバレッジパイプラインを構築する。
@@ -447,7 +450,8 @@ pub(super) fn build_src_copy_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
 ///   + dst ロード + チャネル抽出 (8) + SrcOver × 4ch (12) + パック (6) + ストア
 ///   = 約 53 命令/4 ピクセル = 約 13 命令/ピクセル
 /// ```
-pub(super) fn build_src_over_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
+pub(super) fn build_src_over_cov(mut bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    let ptr_type = frontend_config.pointer_type();
     let entry = bcx.create_block();
     let simd_loop = bcx.create_block();
     let simd_fast = bcx.create_block();
@@ -466,13 +470,13 @@ pub(super) fn build_src_over_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     let coverage = bcx.block_params(entry)[3];
 
     // ソースチャネル分解 (ループ不変)
-    let src_a = bcx.ins().ushr_imm(src_solid, 24);
-    let src_a = bcx.ins().band_imm(src_a, 0xFF);
-    let src_r = bcx.ins().ushr_imm(src_solid, 16);
-    let src_r = bcx.ins().band_imm(src_r, 0xFF);
-    let src_g = bcx.ins().ushr_imm(src_solid, 8);
-    let src_g = bcx.ins().band_imm(src_g, 0xFF);
-    let src_b = bcx.ins().band_imm(src_solid, 0xFF);
+    let src_a = bcx.ins().ushr_imm_u(src_solid, 24);
+    let src_a = bcx.ins().band_imm_u(src_a, 0xFF);
+    let src_r = bcx.ins().ushr_imm_u(src_solid, 16);
+    let src_r = bcx.ins().band_imm_u(src_r, 0xFF);
+    let src_g = bcx.ins().ushr_imm_u(src_solid, 8);
+    let src_g = bcx.ins().band_imm_u(src_g, 0xFF);
+    let src_b = bcx.ins().band_imm_u(src_solid, 0xFF);
 
     // SIMD 用ループ不変ベクタ
     let src_a_vec = bcx.ins().splat(types::I32X4, src_a);
@@ -493,8 +497,8 @@ pub(super) fn build_src_over_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     // 全カバレッジバイトが 0xFF かの判定用
     let all_ff = bcx.ins().iconst(types::I32, -1);
 
-    let simd_count = bcx.ins().ushr_imm(count, 2);
-    let remainder = bcx.ins().band_imm(count, 3);
+    let simd_count = bcx.ins().ushr_imm_u(count, 2);
+    let remainder = bcx.ins().band_imm_u(count, 3);
     let zero = bcx.ins().iconst(ptr_type, 0);
 
     let has_simd = bcx.ins().icmp(IntCC::NotEqual, simd_count, zero);
@@ -541,19 +545,19 @@ pub(super) fn build_src_over_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
 
     // out_c = src_c + (dst_c * inv_alpha_src) >> 8
     let da = bcx.ins().imul(dst_a_v, inv_alpha_src_vec);
-    let da = bcx.ins().ushr_imm(da, 8);
+    let da = bcx.ins().ushr_imm_u(da, 8);
     let out_a = bcx.ins().iadd(src_a_vec, da);
 
     let dr = bcx.ins().imul(dst_r_v, inv_alpha_src_vec);
-    let dr = bcx.ins().ushr_imm(dr, 8);
+    let dr = bcx.ins().ushr_imm_u(dr, 8);
     let out_r = bcx.ins().iadd(src_r_vec, dr);
 
     let dg = bcx.ins().imul(dst_g_v, inv_alpha_src_vec);
-    let dg = bcx.ins().ushr_imm(dg, 8);
+    let dg = bcx.ins().ushr_imm_u(dg, 8);
     let out_g = bcx.ins().iadd(src_g_vec, dg);
 
     let db = bcx.ins().imul(dst_b_v, inv_alpha_src_vec);
-    let db = bcx.ins().ushr_imm(db, 8);
+    let db = bcx.ins().ushr_imm_u(db, 8);
     let out_b = bcx.ins().iadd(src_b_vec, db);
 
     let result = emit_pack_channels_simd(&mut bcx, out_a, out_r, out_g, out_b);
@@ -568,22 +572,22 @@ pub(super) fn build_src_over_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     let ca = bcx.ins().imul(src_a_vec, cov_vec);
     let ca = bcx.ins().imul(ca, c257_vec);
     let ca = bcx.ins().iadd(ca, c257_vec);
-    let cov_src_a = bcx.ins().ushr_imm(ca, 16);
+    let cov_src_a = bcx.ins().ushr_imm_u(ca, 16);
 
     let cr = bcx.ins().imul(src_r_vec, cov_vec);
     let cr = bcx.ins().imul(cr, c257_vec);
     let cr = bcx.ins().iadd(cr, c257_vec);
-    let cov_src_r = bcx.ins().ushr_imm(cr, 16);
+    let cov_src_r = bcx.ins().ushr_imm_u(cr, 16);
 
     let cg = bcx.ins().imul(src_g_vec, cov_vec);
     let cg = bcx.ins().imul(cg, c257_vec);
     let cg = bcx.ins().iadd(cg, c257_vec);
-    let cov_src_g = bcx.ins().ushr_imm(cg, 16);
+    let cov_src_g = bcx.ins().ushr_imm_u(cg, 16);
 
     let cb = bcx.ins().imul(src_b_vec, cov_vec);
     let cb = bcx.ins().imul(cb, c257_vec);
     let cb = bcx.ins().iadd(cb, c257_vec);
-    let cov_src_b = bcx.ins().ushr_imm(cb, 16);
+    let cov_src_b = bcx.ins().ushr_imm_u(cb, 16);
 
     // --- ステップ 2: inv_alpha = 256 - cov_src_a ---
     let inv_alpha_v = bcx.ins().isub(c256_vec, cov_src_a);
@@ -597,19 +601,19 @@ pub(super) fn build_src_over_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
 
     // out_c = cov_src_c + (dst_c * inv_alpha) >> 8
     let da = bcx.ins().imul(dst_a_v, inv_alpha_v);
-    let da = bcx.ins().ushr_imm(da, 8);
+    let da = bcx.ins().ushr_imm_u(da, 8);
     let out_a = bcx.ins().iadd(cov_src_a, da);
 
     let dr = bcx.ins().imul(dst_r_v, inv_alpha_v);
-    let dr = bcx.ins().ushr_imm(dr, 8);
+    let dr = bcx.ins().ushr_imm_u(dr, 8);
     let out_r = bcx.ins().iadd(cov_src_r, dr);
 
     let dg = bcx.ins().imul(dst_g_v, inv_alpha_v);
-    let dg = bcx.ins().ushr_imm(dg, 8);
+    let dg = bcx.ins().ushr_imm_u(dg, 8);
     let out_g = bcx.ins().iadd(cov_src_g, dg);
 
     let db = bcx.ins().imul(dst_b_v, inv_alpha_v);
-    let db = bcx.ins().ushr_imm(db, 8);
+    let db = bcx.ins().ushr_imm_u(db, 8);
     let out_b = bcx.ins().iadd(cov_src_b, db);
 
     let result = emit_pack_channels_simd(&mut bcx, out_a, out_r, out_g, out_b);
@@ -661,22 +665,22 @@ pub(super) fn build_src_over_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     let ca = bcx.ins().imul(src_a, cov);
     let ca = bcx.ins().imul(ca, c257_scalar);
     let ca = bcx.ins().iadd(ca, c257_scalar);
-    let cov_src_a = bcx.ins().ushr_imm(ca, 16);
+    let cov_src_a = bcx.ins().ushr_imm_u(ca, 16);
 
     let cr = bcx.ins().imul(src_r, cov);
     let cr = bcx.ins().imul(cr, c257_scalar);
     let cr = bcx.ins().iadd(cr, c257_scalar);
-    let cov_src_r = bcx.ins().ushr_imm(cr, 16);
+    let cov_src_r = bcx.ins().ushr_imm_u(cr, 16);
 
     let cg = bcx.ins().imul(src_g, cov);
     let cg = bcx.ins().imul(cg, c257_scalar);
     let cg = bcx.ins().iadd(cg, c257_scalar);
-    let cov_src_g = bcx.ins().ushr_imm(cg, 16);
+    let cov_src_g = bcx.ins().ushr_imm_u(cg, 16);
 
     let cb = bcx.ins().imul(src_b, cov);
     let cb = bcx.ins().imul(cb, c257_scalar);
     let cb = bcx.ins().iadd(cb, c257_scalar);
-    let cov_src_b = bcx.ins().ushr_imm(cb, 16);
+    let cov_src_b = bcx.ins().ushr_imm_u(cb, 16);
 
     // ステップ 2: inv_alpha = 256 - cov_src_a (スカラ版)
     let inv_alpha = bcx.ins().isub(c256_scalar, cov_src_a);
@@ -686,36 +690,36 @@ pub(super) fn build_src_over_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
         .ins()
         .load(types::I32, MemFlagsData::new(), current_dst, 0);
 
-    let dst_a_s = bcx.ins().ushr_imm(dst_pixel, 24);
-    let dst_a_s = bcx.ins().band_imm(dst_a_s, 0xFF);
-    let dst_r_s = bcx.ins().ushr_imm(dst_pixel, 16);
-    let dst_r_s = bcx.ins().band_imm(dst_r_s, 0xFF);
-    let dst_g_s = bcx.ins().ushr_imm(dst_pixel, 8);
-    let dst_g_s = bcx.ins().band_imm(dst_g_s, 0xFF);
-    let dst_b_s = bcx.ins().band_imm(dst_pixel, 0xFF);
+    let dst_a_s = bcx.ins().ushr_imm_u(dst_pixel, 24);
+    let dst_a_s = bcx.ins().band_imm_u(dst_a_s, 0xFF);
+    let dst_r_s = bcx.ins().ushr_imm_u(dst_pixel, 16);
+    let dst_r_s = bcx.ins().band_imm_u(dst_r_s, 0xFF);
+    let dst_g_s = bcx.ins().ushr_imm_u(dst_pixel, 8);
+    let dst_g_s = bcx.ins().band_imm_u(dst_g_s, 0xFF);
+    let dst_b_s = bcx.ins().band_imm_u(dst_pixel, 0xFF);
 
     // out_c = cov_src_c + (dst_c * inv_alpha) >> 8
     let da = bcx.ins().imul(dst_a_s, inv_alpha);
-    let da = bcx.ins().ushr_imm(da, 8);
+    let da = bcx.ins().ushr_imm_u(da, 8);
     let out_a = bcx.ins().iadd(cov_src_a, da);
 
     let dr = bcx.ins().imul(dst_r_s, inv_alpha);
-    let dr = bcx.ins().ushr_imm(dr, 8);
+    let dr = bcx.ins().ushr_imm_u(dr, 8);
     let out_r = bcx.ins().iadd(cov_src_r, dr);
 
     let dg = bcx.ins().imul(dst_g_s, inv_alpha);
-    let dg = bcx.ins().ushr_imm(dg, 8);
+    let dg = bcx.ins().ushr_imm_u(dg, 8);
     let out_g = bcx.ins().iadd(cov_src_g, dg);
 
     let db = bcx.ins().imul(dst_b_s, inv_alpha);
-    let db = bcx.ins().ushr_imm(db, 8);
+    let db = bcx.ins().ushr_imm_u(db, 8);
     let out_b = bcx.ins().iadd(cov_src_b, db);
 
     // スカラ版パック
-    let result = bcx.ins().ishl_imm(out_a, 24);
-    let tmp = bcx.ins().ishl_imm(out_r, 16);
+    let result = bcx.ins().ishl_imm_u(out_a, 24);
+    let tmp = bcx.ins().ishl_imm_u(out_r, 16);
     let result = bcx.ins().bor(result, tmp);
-    let tmp = bcx.ins().ishl_imm(out_g, 8);
+    let tmp = bcx.ins().ishl_imm_u(out_g, 8);
     let result = bcx.ins().bor(result, tmp);
     let result = bcx.ins().bor(result, out_b);
 
@@ -736,7 +740,7 @@ pub(super) fn build_src_over_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
     bcx.ins().return_(&[]);
 
     bcx.seal_all_blocks();
-    bcx.finalize();
+    bcx.finalize(frontend_config);
 }
 
 /// Porter-Duff SrcOver パイプラインを構築する (カバレッジなし)。
@@ -774,7 +778,8 @@ pub(super) fn build_src_over_cov(mut bcx: FunctionBuilder, ptr_type: Type) {
 ///   255 * 256 = 65280 < 65536 のためチャネル間の干渉なし。
 ///   26 → 13 命令/4px。
 /// - 4x ループアンロール: 16px/反復でループ制御オーバーヘッドを削減。
-pub(super) fn build_src_over(mut bcx: FunctionBuilder, ptr_type: Type) {
+pub(super) fn build_src_over(mut bcx: FunctionBuilder, frontend_config: TargetFrontendConfig) {
+    let ptr_type = frontend_config.pointer_type();
     let entry = bcx.create_block();
     let unroll_loop = bcx.create_block();
     let tail_check = bcx.create_block();
@@ -792,13 +797,13 @@ pub(super) fn build_src_over(mut bcx: FunctionBuilder, ptr_type: Type) {
 
     // AG/RB 分解 (ソース、ループ不変)
     let mask_00ff00ff = bcx.ins().iconst(types::I32, 0x00FF00FFu32 as i64);
-    let src_ag = bcx.ins().ushr_imm(src_solid, 8);
+    let src_ag = bcx.ins().ushr_imm_u(src_solid, 8);
     let src_ag = bcx.ins().band(src_ag, mask_00ff00ff);
     let src_rb = bcx.ins().band(src_solid, mask_00ff00ff);
 
     // inv_alpha = 256 - src_a
-    let src_a = bcx.ins().ushr_imm(src_solid, 24);
-    let src_a = bcx.ins().band_imm(src_a, 0xFF);
+    let src_a = bcx.ins().ushr_imm_u(src_solid, 24);
+    let src_a = bcx.ins().band_imm_u(src_a, 0xFF);
     let c256 = bcx.ins().iconst(types::I32, 256);
     let inv_alpha = bcx.ins().isub(c256, src_a);
 
@@ -812,10 +817,10 @@ pub(super) fn build_src_over(mut bcx: FunctionBuilder, ptr_type: Type) {
     // count16 = count / 16 (16px = 4x I32X4 per iteration)
     // tail_quads = (count % 16) / 4 (残り 4px チャンクの数 0-3)
     // remainder = count % 4 (残り 0-3px)
-    let count16 = bcx.ins().ushr_imm(count, 4);
-    let tail_quads = bcx.ins().band_imm(count, 0xF);
-    let tail_quads = bcx.ins().ushr_imm(tail_quads, 2);
-    let remainder = bcx.ins().band_imm(count, 3);
+    let count16 = bcx.ins().ushr_imm_u(count, 4);
+    let tail_quads = bcx.ins().band_imm_u(count, 0xF);
+    let tail_quads = bcx.ins().ushr_imm_u(tail_quads, 2);
+    let remainder = bcx.ins().band_imm_u(count, 3);
     let zero = bcx.ins().iconst(ptr_type, 0);
 
     let has_unroll = bcx.ins().icmp(IntCC::NotEqual, count16, zero);
@@ -974,21 +979,21 @@ pub(super) fn build_src_over(mut bcx: FunctionBuilder, ptr_type: Type) {
         .load(types::I32, MemFlagsData::new(), current_dst, 0);
 
     // AG/RB 分解 → 合成 → パック (スカラ版)
-    let dst_ag = bcx.ins().ushr_imm(dst_pixel, 8);
+    let dst_ag = bcx.ins().ushr_imm_u(dst_pixel, 8);
     let dst_ag = bcx.ins().band(dst_ag, mask_00ff00ff);
     let dst_rb = bcx.ins().band(dst_pixel, mask_00ff00ff);
 
     let tmp_ag = bcx.ins().imul(dst_ag, inv_alpha);
-    let tmp_ag = bcx.ins().ushr_imm(tmp_ag, 8);
+    let tmp_ag = bcx.ins().ushr_imm_u(tmp_ag, 8);
     let tmp_ag = bcx.ins().band(tmp_ag, mask_00ff00ff);
     let out_ag = bcx.ins().iadd(src_ag, tmp_ag);
 
     let tmp_rb = bcx.ins().imul(dst_rb, inv_alpha);
-    let tmp_rb = bcx.ins().ushr_imm(tmp_rb, 8);
+    let tmp_rb = bcx.ins().ushr_imm_u(tmp_rb, 8);
     let tmp_rb = bcx.ins().band(tmp_rb, mask_00ff00ff);
     let out_rb = bcx.ins().iadd(src_rb, tmp_rb);
 
-    let result = bcx.ins().ishl_imm(out_ag, 8);
+    let result = bcx.ins().ishl_imm_u(out_ag, 8);
     let result = bcx.ins().bor(result, out_rb);
 
     bcx.ins().store(MemFlagsData::new(), result, current_dst, 0);
@@ -1011,7 +1016,7 @@ pub(super) fn build_src_over(mut bcx: FunctionBuilder, ptr_type: Type) {
     bcx.ins().return_(&[]);
 
     bcx.seal_all_blocks();
-    bcx.finalize();
+    bcx.finalize(frontend_config);
 }
 
 /// AG/RB インターリーブによる SrcOver 合成 (SIMD)。
@@ -1029,20 +1034,20 @@ pub(super) fn emit_src_over_ag_rb_simd(
     inv_alpha_vec: Value,
     mask_vec: Value,
 ) -> Value {
-    let dst_ag = bcx.ins().ushr_imm(dst_pixels, 8);
+    let dst_ag = bcx.ins().ushr_imm_u(dst_pixels, 8);
     let dst_ag = bcx.ins().band(dst_ag, mask_vec);
     let dst_rb = bcx.ins().band(dst_pixels, mask_vec);
 
     let tmp_ag = bcx.ins().imul(dst_ag, inv_alpha_vec);
-    let tmp_ag = bcx.ins().ushr_imm(tmp_ag, 8);
+    let tmp_ag = bcx.ins().ushr_imm_u(tmp_ag, 8);
     let tmp_ag = bcx.ins().band(tmp_ag, mask_vec);
     let out_ag = bcx.ins().iadd(src_ag_vec, tmp_ag);
 
     let tmp_rb = bcx.ins().imul(dst_rb, inv_alpha_vec);
-    let tmp_rb = bcx.ins().ushr_imm(tmp_rb, 8);
+    let tmp_rb = bcx.ins().ushr_imm_u(tmp_rb, 8);
     let tmp_rb = bcx.ins().band(tmp_rb, mask_vec);
     let out_rb = bcx.ins().iadd(src_rb_vec, tmp_rb);
 
-    let result = bcx.ins().ishl_imm(out_ag, 8);
+    let result = bcx.ins().ishl_imm_u(out_ag, 8);
     bcx.ins().bor(result, out_rb)
 }

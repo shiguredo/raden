@@ -18,7 +18,7 @@ pub(super) fn emit_srcover_alpha(
 ) -> Value {
     let inv_sa = bcx.ins().isub(c256, src_a);
     let t = bcx.ins().imul(dst_a, inv_sa);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     bcx.ins().iadd(src_a, t)
 }
 
@@ -32,9 +32,9 @@ pub(super) fn emit_blend_with_edges(
     inv_sa: Value,
 ) -> Value {
     let edge_s = bcx.ins().imul(src_c, inv_da);
-    let edge_s = bcx.ins().ushr_imm(edge_s, 8);
+    let edge_s = bcx.ins().ushr_imm_u(edge_s, 8);
     let edge_d = bcx.ins().imul(dst_c, inv_sa);
-    let edge_d = bcx.ins().ushr_imm(edge_d, 8);
+    let edge_d = bcx.ins().ushr_imm_u(edge_d, 8);
     let t = bcx.ins().iadd(blend_c, edge_s);
     bcx.ins().iadd(t, edge_d)
 }
@@ -112,16 +112,16 @@ pub(super) fn compose_modulate_simd(
     let one_v = bcx.ins().splat(types::I32X4, one_s);
     let fa = bcx.ins().iadd(dst_a, one_v);
     let oa = bcx.ins().imul(src_a, fa);
-    let oa = bcx.ins().ushr_imm(oa, 8);
+    let oa = bcx.ins().ushr_imm_u(oa, 8);
     let fr = bcx.ins().iadd(dst_r, one_v);
     let or = bcx.ins().imul(src_r, fr);
-    let or = bcx.ins().ushr_imm(or, 8);
+    let or = bcx.ins().ushr_imm_u(or, 8);
     let fg = bcx.ins().iadd(dst_g, one_v);
     let og = bcx.ins().imul(src_g, fg);
-    let og = bcx.ins().ushr_imm(og, 8);
+    let og = bcx.ins().ushr_imm_u(og, 8);
     let fb = bcx.ins().iadd(dst_b, one_v);
     let ob = bcx.ins().imul(src_b, fb);
-    let ob = bcx.ins().ushr_imm(ob, 8);
+    let ob = bcx.ins().ushr_imm_u(ob, 8);
     (oa, or, og, ob)
 }
 
@@ -140,16 +140,16 @@ pub(super) fn compose_modulate_scalar(
     let one = bcx.ins().iconst(types::I32, 1);
     let fa = bcx.ins().iadd(dst_a, one);
     let oa = bcx.ins().imul(src_a, fa);
-    let oa = bcx.ins().ushr_imm(oa, 8);
+    let oa = bcx.ins().ushr_imm_u(oa, 8);
     let fr = bcx.ins().iadd(dst_r, one);
     let or = bcx.ins().imul(src_r, fr);
-    let or = bcx.ins().ushr_imm(or, 8);
+    let or = bcx.ins().ushr_imm_u(or, 8);
     let fg = bcx.ins().iadd(dst_g, one);
     let og = bcx.ins().imul(src_g, fg);
-    let og = bcx.ins().ushr_imm(og, 8);
+    let og = bcx.ins().ushr_imm_u(og, 8);
     let fb = bcx.ins().iadd(dst_b, one);
     let ob = bcx.ins().imul(src_b, fb);
-    let ob = bcx.ins().ushr_imm(ob, 8);
+    let ob = bcx.ins().ushr_imm_u(ob, 8);
     (oa, or, og, ob)
 }
 
@@ -173,22 +173,22 @@ pub(super) fn compose_screen_simd(
     // out_c = src_c + dst_c - (src_c * (dst_c + 1)) >> 8
     let fa = bcx.ins().iadd(dst_a, one_v);
     let t = bcx.ins().imul(src_a, fa);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let oa = bcx.ins().iadd(src_a, dst_a);
     let oa = bcx.ins().isub(oa, t);
     let fr = bcx.ins().iadd(dst_r, one_v);
     let t = bcx.ins().imul(src_r, fr);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let or = bcx.ins().iadd(src_r, dst_r);
     let or = bcx.ins().isub(or, t);
     let fg = bcx.ins().iadd(dst_g, one_v);
     let t = bcx.ins().imul(src_g, fg);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let og = bcx.ins().iadd(src_g, dst_g);
     let og = bcx.ins().isub(og, t);
     let fb = bcx.ins().iadd(dst_b, one_v);
     let t = bcx.ins().imul(src_b, fb);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let ob = bcx.ins().iadd(src_b, dst_b);
     let ob = bcx.ins().isub(ob, t);
     (oa, or, og, ob)
@@ -209,22 +209,22 @@ pub(super) fn compose_screen_scalar(
     let one = bcx.ins().iconst(types::I32, 1);
     let fa = bcx.ins().iadd(dst_a, one);
     let t = bcx.ins().imul(src_a, fa);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let oa = bcx.ins().iadd(src_a, dst_a);
     let oa = bcx.ins().isub(oa, t);
     let fr = bcx.ins().iadd(dst_r, one);
     let t = bcx.ins().imul(src_r, fr);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let or = bcx.ins().iadd(src_r, dst_r);
     let or = bcx.ins().isub(or, t);
     let fg = bcx.ins().iadd(dst_g, one);
     let t = bcx.ins().imul(src_g, fg);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let og = bcx.ins().iadd(src_g, dst_g);
     let og = bcx.ins().isub(og, t);
     let fb = bcx.ins().iadd(dst_b, one);
     let t = bcx.ins().imul(src_b, fb);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let ob = bcx.ins().iadd(src_b, dst_b);
     let ob = bcx.ins().isub(ob, t);
     (oa, or, og, ob)
@@ -251,20 +251,20 @@ pub(super) fn compose_exclusion_simd(
     // out_c = src_c + dst_c - (2 * src_c * (dst_c + 1)) >> 8
     let fr = bcx.ins().iadd(dst_r, one_v);
     let t = bcx.ins().imul(src_r, fr);
-    let t = bcx.ins().ishl_imm(t, 1);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ishl_imm_u(t, 1);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let or = bcx.ins().iadd(src_r, dst_r);
     let or = bcx.ins().isub(or, t);
     let fg = bcx.ins().iadd(dst_g, one_v);
     let t = bcx.ins().imul(src_g, fg);
-    let t = bcx.ins().ishl_imm(t, 1);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ishl_imm_u(t, 1);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let og = bcx.ins().iadd(src_g, dst_g);
     let og = bcx.ins().isub(og, t);
     let fb = bcx.ins().iadd(dst_b, one_v);
     let t = bcx.ins().imul(src_b, fb);
-    let t = bcx.ins().ishl_imm(t, 1);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ishl_imm_u(t, 1);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let ob = bcx.ins().iadd(src_b, dst_b);
     let ob = bcx.ins().isub(ob, t);
     (oa, or, og, ob)
@@ -286,20 +286,20 @@ pub(super) fn compose_exclusion_scalar(
     let one = bcx.ins().iconst(types::I32, 1);
     let fr = bcx.ins().iadd(dst_r, one);
     let t = bcx.ins().imul(src_r, fr);
-    let t = bcx.ins().ishl_imm(t, 1);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ishl_imm_u(t, 1);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let or = bcx.ins().iadd(src_r, dst_r);
     let or = bcx.ins().isub(or, t);
     let fg = bcx.ins().iadd(dst_g, one);
     let t = bcx.ins().imul(src_g, fg);
-    let t = bcx.ins().ishl_imm(t, 1);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ishl_imm_u(t, 1);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let og = bcx.ins().iadd(src_g, dst_g);
     let og = bcx.ins().isub(og, t);
     let fb = bcx.ins().iadd(dst_b, one);
     let t = bcx.ins().imul(src_b, fb);
-    let t = bcx.ins().ishl_imm(t, 1);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ishl_imm_u(t, 1);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let ob = bcx.ins().iadd(src_b, dst_b);
     let ob = bcx.ins().isub(ob, t);
     (oa, or, og, ob)
@@ -329,21 +329,21 @@ pub(super) fn compose_darken_simd(
     let sa_p1 = bcx.ins().iadd(src_a, one_v);
     // blend_c = min(src_c * (dst_a+1) >> 8, dst_c * (src_a+1) >> 8)
     let a = bcx.ins().imul(src_r, da_p1);
-    let a = bcx.ins().ushr_imm(a, 8);
+    let a = bcx.ins().ushr_imm_u(a, 8);
     let b = bcx.ins().imul(dst_r, sa_p1);
-    let b = bcx.ins().ushr_imm(b, 8);
+    let b = bcx.ins().ushr_imm_u(b, 8);
     let blend_r = bcx.ins().umin(a, b);
     let or = emit_blend_with_edges(bcx, blend_r, src_r, dst_r, inv_da, inv_sa);
     let a = bcx.ins().imul(src_g, da_p1);
-    let a = bcx.ins().ushr_imm(a, 8);
+    let a = bcx.ins().ushr_imm_u(a, 8);
     let b = bcx.ins().imul(dst_g, sa_p1);
-    let b = bcx.ins().ushr_imm(b, 8);
+    let b = bcx.ins().ushr_imm_u(b, 8);
     let blend_g = bcx.ins().umin(a, b);
     let og = emit_blend_with_edges(bcx, blend_g, src_g, dst_g, inv_da, inv_sa);
     let a = bcx.ins().imul(src_b, da_p1);
-    let a = bcx.ins().ushr_imm(a, 8);
+    let a = bcx.ins().ushr_imm_u(a, 8);
     let b = bcx.ins().imul(dst_b, sa_p1);
-    let b = bcx.ins().ushr_imm(b, 8);
+    let b = bcx.ins().ushr_imm_u(b, 8);
     let blend_b = bcx.ins().umin(a, b);
     let ob = emit_blend_with_edges(bcx, blend_b, src_b, dst_b, inv_da, inv_sa);
     (oa, or, og, ob)
@@ -368,21 +368,21 @@ pub(super) fn compose_darken_scalar(
     let da_p1 = bcx.ins().iadd(dst_a, one);
     let sa_p1 = bcx.ins().iadd(src_a, one);
     let a = bcx.ins().imul(src_r, da_p1);
-    let a = bcx.ins().ushr_imm(a, 8);
+    let a = bcx.ins().ushr_imm_u(a, 8);
     let b = bcx.ins().imul(dst_r, sa_p1);
-    let b = bcx.ins().ushr_imm(b, 8);
+    let b = bcx.ins().ushr_imm_u(b, 8);
     let blend_r = bcx.ins().umin(a, b);
     let or = emit_blend_with_edges(bcx, blend_r, src_r, dst_r, inv_da, inv_sa);
     let a = bcx.ins().imul(src_g, da_p1);
-    let a = bcx.ins().ushr_imm(a, 8);
+    let a = bcx.ins().ushr_imm_u(a, 8);
     let b = bcx.ins().imul(dst_g, sa_p1);
-    let b = bcx.ins().ushr_imm(b, 8);
+    let b = bcx.ins().ushr_imm_u(b, 8);
     let blend_g = bcx.ins().umin(a, b);
     let og = emit_blend_with_edges(bcx, blend_g, src_g, dst_g, inv_da, inv_sa);
     let a = bcx.ins().imul(src_b, da_p1);
-    let a = bcx.ins().ushr_imm(a, 8);
+    let a = bcx.ins().ushr_imm_u(a, 8);
     let b = bcx.ins().imul(dst_b, sa_p1);
-    let b = bcx.ins().ushr_imm(b, 8);
+    let b = bcx.ins().ushr_imm_u(b, 8);
     let blend_b = bcx.ins().umin(a, b);
     let ob = emit_blend_with_edges(bcx, blend_b, src_b, dst_b, inv_da, inv_sa);
     (oa, or, og, ob)
@@ -411,21 +411,21 @@ pub(super) fn compose_lighten_simd(
     let da_p1 = bcx.ins().iadd(dst_a, one_v);
     let sa_p1 = bcx.ins().iadd(src_a, one_v);
     let a = bcx.ins().imul(src_r, da_p1);
-    let a = bcx.ins().ushr_imm(a, 8);
+    let a = bcx.ins().ushr_imm_u(a, 8);
     let b = bcx.ins().imul(dst_r, sa_p1);
-    let b = bcx.ins().ushr_imm(b, 8);
+    let b = bcx.ins().ushr_imm_u(b, 8);
     let blend_r = bcx.ins().umax(a, b);
     let or = emit_blend_with_edges(bcx, blend_r, src_r, dst_r, inv_da, inv_sa);
     let a = bcx.ins().imul(src_g, da_p1);
-    let a = bcx.ins().ushr_imm(a, 8);
+    let a = bcx.ins().ushr_imm_u(a, 8);
     let b = bcx.ins().imul(dst_g, sa_p1);
-    let b = bcx.ins().ushr_imm(b, 8);
+    let b = bcx.ins().ushr_imm_u(b, 8);
     let blend_g = bcx.ins().umax(a, b);
     let og = emit_blend_with_edges(bcx, blend_g, src_g, dst_g, inv_da, inv_sa);
     let a = bcx.ins().imul(src_b, da_p1);
-    let a = bcx.ins().ushr_imm(a, 8);
+    let a = bcx.ins().ushr_imm_u(a, 8);
     let b = bcx.ins().imul(dst_b, sa_p1);
-    let b = bcx.ins().ushr_imm(b, 8);
+    let b = bcx.ins().ushr_imm_u(b, 8);
     let blend_b = bcx.ins().umax(a, b);
     let ob = emit_blend_with_edges(bcx, blend_b, src_b, dst_b, inv_da, inv_sa);
     (oa, or, og, ob)
@@ -450,21 +450,21 @@ pub(super) fn compose_lighten_scalar(
     let da_p1 = bcx.ins().iadd(dst_a, one);
     let sa_p1 = bcx.ins().iadd(src_a, one);
     let a = bcx.ins().imul(src_r, da_p1);
-    let a = bcx.ins().ushr_imm(a, 8);
+    let a = bcx.ins().ushr_imm_u(a, 8);
     let b = bcx.ins().imul(dst_r, sa_p1);
-    let b = bcx.ins().ushr_imm(b, 8);
+    let b = bcx.ins().ushr_imm_u(b, 8);
     let blend_r = bcx.ins().umax(a, b);
     let or = emit_blend_with_edges(bcx, blend_r, src_r, dst_r, inv_da, inv_sa);
     let a = bcx.ins().imul(src_g, da_p1);
-    let a = bcx.ins().ushr_imm(a, 8);
+    let a = bcx.ins().ushr_imm_u(a, 8);
     let b = bcx.ins().imul(dst_g, sa_p1);
-    let b = bcx.ins().ushr_imm(b, 8);
+    let b = bcx.ins().ushr_imm_u(b, 8);
     let blend_g = bcx.ins().umax(a, b);
     let og = emit_blend_with_edges(bcx, blend_g, src_g, dst_g, inv_da, inv_sa);
     let a = bcx.ins().imul(src_b, da_p1);
-    let a = bcx.ins().ushr_imm(a, 8);
+    let a = bcx.ins().ushr_imm_u(a, 8);
     let b = bcx.ins().imul(dst_b, sa_p1);
-    let b = bcx.ins().ushr_imm(b, 8);
+    let b = bcx.ins().ushr_imm_u(b, 8);
     let blend_b = bcx.ins().umax(a, b);
     let ob = emit_blend_with_edges(bcx, blend_b, src_b, dst_b, inv_da, inv_sa);
     (oa, or, og, ob)
@@ -494,23 +494,23 @@ pub(super) fn compose_difference_simd(
     let sa_p1 = bcx.ins().iadd(src_a, one_v);
     // blend_c = abs((src_c*(dst_a+1))>>8 - (dst_c*(src_a+1))>>8)
     let a = bcx.ins().imul(src_r, da_p1);
-    let a = bcx.ins().ushr_imm(a, 8);
+    let a = bcx.ins().ushr_imm_u(a, 8);
     let b = bcx.ins().imul(dst_r, sa_p1);
-    let b = bcx.ins().ushr_imm(b, 8);
+    let b = bcx.ins().ushr_imm_u(b, 8);
     let diff = bcx.ins().isub(a, b);
     let blend_r = bcx.ins().iabs(diff);
     let or = emit_blend_with_edges(bcx, blend_r, src_r, dst_r, inv_da, inv_sa);
     let a = bcx.ins().imul(src_g, da_p1);
-    let a = bcx.ins().ushr_imm(a, 8);
+    let a = bcx.ins().ushr_imm_u(a, 8);
     let b = bcx.ins().imul(dst_g, sa_p1);
-    let b = bcx.ins().ushr_imm(b, 8);
+    let b = bcx.ins().ushr_imm_u(b, 8);
     let diff = bcx.ins().isub(a, b);
     let blend_g = bcx.ins().iabs(diff);
     let og = emit_blend_with_edges(bcx, blend_g, src_g, dst_g, inv_da, inv_sa);
     let a = bcx.ins().imul(src_b, da_p1);
-    let a = bcx.ins().ushr_imm(a, 8);
+    let a = bcx.ins().ushr_imm_u(a, 8);
     let b = bcx.ins().imul(dst_b, sa_p1);
-    let b = bcx.ins().ushr_imm(b, 8);
+    let b = bcx.ins().ushr_imm_u(b, 8);
     let diff = bcx.ins().isub(a, b);
     let blend_b = bcx.ins().iabs(diff);
     let ob = emit_blend_with_edges(bcx, blend_b, src_b, dst_b, inv_da, inv_sa);
@@ -536,23 +536,23 @@ pub(super) fn compose_difference_scalar(
     let da_p1 = bcx.ins().iadd(dst_a, one);
     let sa_p1 = bcx.ins().iadd(src_a, one);
     let a = bcx.ins().imul(src_r, da_p1);
-    let a = bcx.ins().ushr_imm(a, 8);
+    let a = bcx.ins().ushr_imm_u(a, 8);
     let b = bcx.ins().imul(dst_r, sa_p1);
-    let b = bcx.ins().ushr_imm(b, 8);
+    let b = bcx.ins().ushr_imm_u(b, 8);
     let diff = bcx.ins().isub(a, b);
     let blend_r = bcx.ins().iabs(diff);
     let or = emit_blend_with_edges(bcx, blend_r, src_r, dst_r, inv_da, inv_sa);
     let a = bcx.ins().imul(src_g, da_p1);
-    let a = bcx.ins().ushr_imm(a, 8);
+    let a = bcx.ins().ushr_imm_u(a, 8);
     let b = bcx.ins().imul(dst_g, sa_p1);
-    let b = bcx.ins().ushr_imm(b, 8);
+    let b = bcx.ins().ushr_imm_u(b, 8);
     let diff = bcx.ins().isub(a, b);
     let blend_g = bcx.ins().iabs(diff);
     let og = emit_blend_with_edges(bcx, blend_g, src_g, dst_g, inv_da, inv_sa);
     let a = bcx.ins().imul(src_b, da_p1);
-    let a = bcx.ins().ushr_imm(a, 8);
+    let a = bcx.ins().ushr_imm_u(a, 8);
     let b = bcx.ins().imul(dst_b, sa_p1);
-    let b = bcx.ins().ushr_imm(b, 8);
+    let b = bcx.ins().ushr_imm_u(b, 8);
     let diff = bcx.ins().isub(a, b);
     let blend_b = bcx.ins().iabs(diff);
     let ob = emit_blend_with_edges(bcx, blend_b, src_b, dst_b, inv_da, inv_sa);
@@ -582,15 +582,15 @@ pub(super) fn compose_multiply_simd(
     // blend_c = (src_c * (dst_c + 1)) >> 8
     let f = bcx.ins().iadd(dst_r, one_v);
     let blend_r = bcx.ins().imul(src_r, f);
-    let blend_r = bcx.ins().ushr_imm(blend_r, 8);
+    let blend_r = bcx.ins().ushr_imm_u(blend_r, 8);
     let or = emit_blend_with_edges(bcx, blend_r, src_r, dst_r, inv_da, inv_sa);
     let f = bcx.ins().iadd(dst_g, one_v);
     let blend_g = bcx.ins().imul(src_g, f);
-    let blend_g = bcx.ins().ushr_imm(blend_g, 8);
+    let blend_g = bcx.ins().ushr_imm_u(blend_g, 8);
     let og = emit_blend_with_edges(bcx, blend_g, src_g, dst_g, inv_da, inv_sa);
     let f = bcx.ins().iadd(dst_b, one_v);
     let blend_b = bcx.ins().imul(src_b, f);
-    let blend_b = bcx.ins().ushr_imm(blend_b, 8);
+    let blend_b = bcx.ins().ushr_imm_u(blend_b, 8);
     let ob = emit_blend_with_edges(bcx, blend_b, src_b, dst_b, inv_da, inv_sa);
     (oa, or, og, ob)
 }
@@ -613,15 +613,15 @@ pub(super) fn compose_multiply_scalar(
     let one = bcx.ins().iconst(types::I32, 1);
     let f = bcx.ins().iadd(dst_r, one);
     let blend_r = bcx.ins().imul(src_r, f);
-    let blend_r = bcx.ins().ushr_imm(blend_r, 8);
+    let blend_r = bcx.ins().ushr_imm_u(blend_r, 8);
     let or = emit_blend_with_edges(bcx, blend_r, src_r, dst_r, inv_da, inv_sa);
     let f = bcx.ins().iadd(dst_g, one);
     let blend_g = bcx.ins().imul(src_g, f);
-    let blend_g = bcx.ins().ushr_imm(blend_g, 8);
+    let blend_g = bcx.ins().ushr_imm_u(blend_g, 8);
     let og = emit_blend_with_edges(bcx, blend_g, src_g, dst_g, inv_da, inv_sa);
     let f = bcx.ins().iadd(dst_b, one);
     let blend_b = bcx.ins().imul(src_b, f);
-    let blend_b = bcx.ins().ushr_imm(blend_b, 8);
+    let blend_b = bcx.ins().ushr_imm_u(blend_b, 8);
     let ob = emit_blend_with_edges(bcx, blend_b, src_b, dst_b, inv_da, inv_sa);
     (oa, or, og, ob)
 }
@@ -649,7 +649,7 @@ pub(super) fn compose_linear_burn_simd(
     // sa_da = (src_a * (dst_a + 1)) >> 8
     let da_p1 = bcx.ins().iadd(dst_a, one_v);
     let sa_da = bcx.ins().imul(src_a, da_p1);
-    let sa_da = bcx.ins().ushr_imm(sa_da, 8);
+    let sa_da = bcx.ins().ushr_imm_u(sa_da, 8);
     // out_c = max(src_c + dst_c - sa_da, 0)
     let t = bcx.ins().iadd(src_r, dst_r);
     let t = bcx.ins().isub(t, sa_da);
@@ -680,7 +680,7 @@ pub(super) fn compose_linear_burn_scalar(
     let one = bcx.ins().iconst(types::I32, 1);
     let da_p1 = bcx.ins().iadd(dst_a, one);
     let sa_da = bcx.ins().imul(src_a, da_p1);
-    let sa_da = bcx.ins().ushr_imm(sa_da, 8);
+    let sa_da = bcx.ins().ushr_imm_u(sa_da, 8);
     let t = bcx.ins().iadd(src_r, dst_r);
     let t = bcx.ins().isub(t, sa_da);
     let or = bcx.ins().smax(t, zero);
@@ -707,20 +707,20 @@ pub(super) fn emit_overlay_blend_simd(
     one_v: Value,
     sa_da: Value,
 ) -> Value {
-    let two_dc = bcx.ins().ishl_imm(dst_c, 1);
+    let two_dc = bcx.ins().ishl_imm_u(dst_c, 1);
     let cond = bcx.ins().icmp(IntCC::UnsignedLessThan, two_dc, dst_a);
     // true branch
     let dc_p1 = bcx.ins().iadd(dst_c, one_v);
     let t = bcx.ins().imul(src_c, dc_p1);
-    let t = bcx.ins().ishl_imm(t, 1);
-    let blend_true = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ishl_imm_u(t, 1);
+    let blend_true = bcx.ins().ushr_imm_u(t, 8);
     // false branch
     let diff_s = bcx.ins().isub(src_a, src_c);
     let diff_d = bcx.ins().isub(dst_a, dst_c);
     let diff_d_p1 = bcx.ins().iadd(diff_d, one_v);
     let t = bcx.ins().imul(diff_s, diff_d_p1);
-    let t = bcx.ins().ishl_imm(t, 1);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ishl_imm_u(t, 1);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let blend_false = bcx.ins().isub(sa_da, t);
     bcx.ins().bitselect(cond, blend_true, blend_false)
 }
@@ -734,18 +734,18 @@ pub(super) fn emit_overlay_blend_scalar(
     one: Value,
     sa_da: Value,
 ) -> Value {
-    let two_dc = bcx.ins().ishl_imm(dst_c, 1);
+    let two_dc = bcx.ins().ishl_imm_u(dst_c, 1);
     let cond = bcx.ins().icmp(IntCC::UnsignedLessThan, two_dc, dst_a);
     let dc_p1 = bcx.ins().iadd(dst_c, one);
     let t = bcx.ins().imul(src_c, dc_p1);
-    let t = bcx.ins().ishl_imm(t, 1);
-    let blend_true = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ishl_imm_u(t, 1);
+    let blend_true = bcx.ins().ushr_imm_u(t, 8);
     let diff_s = bcx.ins().isub(src_a, src_c);
     let diff_d = bcx.ins().isub(dst_a, dst_c);
     let diff_d_p1 = bcx.ins().iadd(diff_d, one);
     let t = bcx.ins().imul(diff_s, diff_d_p1);
-    let t = bcx.ins().ishl_imm(t, 1);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ishl_imm_u(t, 1);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let blend_false = bcx.ins().isub(sa_da, t);
     bcx.ins().select(cond, blend_true, blend_false)
 }
@@ -770,7 +770,7 @@ pub(super) fn compose_overlay_simd(
     let one_v = bcx.ins().splat(types::I32X4, one_s);
     let da_p1 = bcx.ins().iadd(dst_a, one_v);
     let sa_da = bcx.ins().imul(src_a, da_p1);
-    let sa_da = bcx.ins().ushr_imm(sa_da, 8);
+    let sa_da = bcx.ins().ushr_imm_u(sa_da, 8);
     let blend_r = emit_overlay_blend_simd(bcx, src_r, dst_r, src_a, dst_a, one_v, sa_da);
     let or = emit_blend_with_edges(bcx, blend_r, src_r, dst_r, inv_da, inv_sa);
     let blend_g = emit_overlay_blend_simd(bcx, src_g, dst_g, src_a, dst_a, one_v, sa_da);
@@ -798,7 +798,7 @@ pub(super) fn compose_overlay_scalar(
     let one = bcx.ins().iconst(types::I32, 1);
     let da_p1 = bcx.ins().iadd(dst_a, one);
     let sa_da = bcx.ins().imul(src_a, da_p1);
-    let sa_da = bcx.ins().ushr_imm(sa_da, 8);
+    let sa_da = bcx.ins().ushr_imm_u(sa_da, 8);
     let blend_r = emit_overlay_blend_scalar(bcx, src_r, dst_r, src_a, dst_a, one, sa_da);
     let or = emit_blend_with_edges(bcx, blend_r, src_r, dst_r, inv_da, inv_sa);
     let blend_g = emit_overlay_blend_scalar(bcx, src_g, dst_g, src_a, dst_a, one, sa_da);
@@ -820,18 +820,18 @@ pub(super) fn emit_hard_light_blend_simd(
     one_v: Value,
     sa_da: Value,
 ) -> Value {
-    let two_sc = bcx.ins().ishl_imm(src_c, 1);
+    let two_sc = bcx.ins().ishl_imm_u(src_c, 1);
     let cond = bcx.ins().icmp(IntCC::UnsignedLessThan, two_sc, src_a);
     let dc_p1 = bcx.ins().iadd(dst_c, one_v);
     let t = bcx.ins().imul(src_c, dc_p1);
-    let t = bcx.ins().ishl_imm(t, 1);
-    let blend_true = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ishl_imm_u(t, 1);
+    let blend_true = bcx.ins().ushr_imm_u(t, 8);
     let diff_s = bcx.ins().isub(src_a, src_c);
     let diff_d = bcx.ins().isub(dst_a, dst_c);
     let diff_d_p1 = bcx.ins().iadd(diff_d, one_v);
     let t = bcx.ins().imul(diff_s, diff_d_p1);
-    let t = bcx.ins().ishl_imm(t, 1);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ishl_imm_u(t, 1);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let blend_false = bcx.ins().isub(sa_da, t);
     bcx.ins().bitselect(cond, blend_true, blend_false)
 }
@@ -845,18 +845,18 @@ pub(super) fn emit_hard_light_blend_scalar(
     one: Value,
     sa_da: Value,
 ) -> Value {
-    let two_sc = bcx.ins().ishl_imm(src_c, 1);
+    let two_sc = bcx.ins().ishl_imm_u(src_c, 1);
     let cond = bcx.ins().icmp(IntCC::UnsignedLessThan, two_sc, src_a);
     let dc_p1 = bcx.ins().iadd(dst_c, one);
     let t = bcx.ins().imul(src_c, dc_p1);
-    let t = bcx.ins().ishl_imm(t, 1);
-    let blend_true = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ishl_imm_u(t, 1);
+    let blend_true = bcx.ins().ushr_imm_u(t, 8);
     let diff_s = bcx.ins().isub(src_a, src_c);
     let diff_d = bcx.ins().isub(dst_a, dst_c);
     let diff_d_p1 = bcx.ins().iadd(diff_d, one);
     let t = bcx.ins().imul(diff_s, diff_d_p1);
-    let t = bcx.ins().ishl_imm(t, 1);
-    let t = bcx.ins().ushr_imm(t, 8);
+    let t = bcx.ins().ishl_imm_u(t, 1);
+    let t = bcx.ins().ushr_imm_u(t, 8);
     let blend_false = bcx.ins().isub(sa_da, t);
     bcx.ins().select(cond, blend_true, blend_false)
 }
@@ -881,7 +881,7 @@ pub(super) fn compose_hard_light_simd(
     let one_v = bcx.ins().splat(types::I32X4, one_s);
     let da_p1 = bcx.ins().iadd(dst_a, one_v);
     let sa_da = bcx.ins().imul(src_a, da_p1);
-    let sa_da = bcx.ins().ushr_imm(sa_da, 8);
+    let sa_da = bcx.ins().ushr_imm_u(sa_da, 8);
     let blend_r = emit_hard_light_blend_simd(bcx, src_r, dst_r, src_a, dst_a, one_v, sa_da);
     let or = emit_blend_with_edges(bcx, blend_r, src_r, dst_r, inv_da, inv_sa);
     let blend_g = emit_hard_light_blend_simd(bcx, src_g, dst_g, src_a, dst_a, one_v, sa_da);
@@ -909,7 +909,7 @@ pub(super) fn compose_hard_light_scalar(
     let one = bcx.ins().iconst(types::I32, 1);
     let da_p1 = bcx.ins().iadd(dst_a, one);
     let sa_da = bcx.ins().imul(src_a, da_p1);
-    let sa_da = bcx.ins().ushr_imm(sa_da, 8);
+    let sa_da = bcx.ins().ushr_imm_u(sa_da, 8);
     let blend_r = emit_hard_light_blend_scalar(bcx, src_r, dst_r, src_a, dst_a, one, sa_da);
     let or = emit_blend_with_edges(bcx, blend_r, src_r, dst_r, inv_da, inv_sa);
     let blend_g = emit_hard_light_blend_scalar(bcx, src_g, dst_g, src_a, dst_a, one, sa_da);
@@ -930,14 +930,14 @@ pub(super) fn emit_pin_light_blend_simd(
     one_v: Value,
     sa_da: Value,
 ) -> Value {
-    let two_sc = bcx.ins().ishl_imm(src_c, 1);
+    let two_sc = bcx.ins().ishl_imm_u(src_c, 1);
     let cond = bcx.ins().icmp(IntCC::UnsignedLessThan, two_sc, src_a);
     let da_p1 = bcx.ins().iadd(dst_a, one_v);
     let sa_p1 = bcx.ins().iadd(src_a, one_v);
     let dc_sa = bcx.ins().imul(dst_c, sa_p1);
-    let dc_sa = bcx.ins().ushr_imm(dc_sa, 8);
+    let dc_sa = bcx.ins().ushr_imm_u(dc_sa, 8);
     let sc2_da = bcx.ins().imul(two_sc, da_p1);
-    let sc2_da = bcx.ins().ushr_imm(sc2_da, 8);
+    let sc2_da = bcx.ins().ushr_imm_u(sc2_da, 8);
     // true: min(dc_sa, sc2_da)
     let blend_true = bcx.ins().umin(dc_sa, sc2_da);
     // false: max(dc_sa, sc2_da - sa_da) ; (2*Sc-Sa)*Da = sc2_da - sa_da
@@ -955,14 +955,14 @@ pub(super) fn emit_pin_light_blend_scalar(
     one: Value,
     sa_da: Value,
 ) -> Value {
-    let two_sc = bcx.ins().ishl_imm(src_c, 1);
+    let two_sc = bcx.ins().ishl_imm_u(src_c, 1);
     let cond = bcx.ins().icmp(IntCC::UnsignedLessThan, two_sc, src_a);
     let da_p1 = bcx.ins().iadd(dst_a, one);
     let sa_p1 = bcx.ins().iadd(src_a, one);
     let dc_sa = bcx.ins().imul(dst_c, sa_p1);
-    let dc_sa = bcx.ins().ushr_imm(dc_sa, 8);
+    let dc_sa = bcx.ins().ushr_imm_u(dc_sa, 8);
     let sc2_da = bcx.ins().imul(two_sc, da_p1);
-    let sc2_da = bcx.ins().ushr_imm(sc2_da, 8);
+    let sc2_da = bcx.ins().ushr_imm_u(sc2_da, 8);
     let blend_true = bcx.ins().umin(dc_sa, sc2_da);
     let sc2_minus_sa_da = bcx.ins().isub(sc2_da, sa_da);
     let blend_false = bcx.ins().smax(dc_sa, sc2_minus_sa_da);
@@ -989,7 +989,7 @@ pub(super) fn compose_pin_light_simd(
     let one_v = bcx.ins().splat(types::I32X4, one_s);
     let da_p1 = bcx.ins().iadd(dst_a, one_v);
     let sa_da = bcx.ins().imul(src_a, da_p1);
-    let sa_da = bcx.ins().ushr_imm(sa_da, 8);
+    let sa_da = bcx.ins().ushr_imm_u(sa_da, 8);
     let blend_r = emit_pin_light_blend_simd(bcx, src_r, dst_r, src_a, dst_a, one_v, sa_da);
     let or = emit_blend_with_edges(bcx, blend_r, src_r, dst_r, inv_da, inv_sa);
     let blend_g = emit_pin_light_blend_simd(bcx, src_g, dst_g, src_a, dst_a, one_v, sa_da);
@@ -1017,7 +1017,7 @@ pub(super) fn compose_pin_light_scalar(
     let one = bcx.ins().iconst(types::I32, 1);
     let da_p1 = bcx.ins().iadd(dst_a, one);
     let sa_da = bcx.ins().imul(src_a, da_p1);
-    let sa_da = bcx.ins().ushr_imm(sa_da, 8);
+    let sa_da = bcx.ins().ushr_imm_u(sa_da, 8);
     let blend_r = emit_pin_light_blend_scalar(bcx, src_r, dst_r, src_a, dst_a, one, sa_da);
     let or = emit_blend_with_edges(bcx, blend_r, src_r, dst_r, inv_da, inv_sa);
     let blend_g = emit_pin_light_blend_scalar(bcx, src_g, dst_g, src_a, dst_a, one, sa_da);
@@ -1053,33 +1053,33 @@ pub(super) fn compose_linear_light_simd(
     let sa_p1 = bcx.ins().iadd(src_a, one_v);
     // sa_da = (src_a * (dst_a+1)) >> 8
     let sa_da = bcx.ins().imul(src_a, da_p1);
-    let sa_da = bcx.ins().ushr_imm(sa_da, 8);
+    let sa_da = bcx.ins().ushr_imm_u(sa_da, 8);
     // blend_c = clamp(dc_sa + 2*sc_da - sa_da, 0, sa_da)
     let dc_sa = bcx.ins().imul(dst_r, sa_p1);
-    let dc_sa = bcx.ins().ushr_imm(dc_sa, 8);
+    let dc_sa = bcx.ins().ushr_imm_u(dc_sa, 8);
     let sc_da = bcx.ins().imul(src_r, da_p1);
-    let sc_da = bcx.ins().ushr_imm(sc_da, 8);
-    let sc_da_2 = bcx.ins().ishl_imm(sc_da, 1);
+    let sc_da = bcx.ins().ushr_imm_u(sc_da, 8);
+    let sc_da_2 = bcx.ins().ishl_imm_u(sc_da, 1);
     let unclamped = bcx.ins().iadd(dc_sa, sc_da_2);
     let unclamped = bcx.ins().isub(unclamped, sa_da);
     let blend_r = bcx.ins().smax(unclamped, zero_v);
     let blend_r = bcx.ins().umin(blend_r, sa_da);
     let or = emit_blend_with_edges(bcx, blend_r, src_r, dst_r, inv_da, inv_sa);
     let dc_sa = bcx.ins().imul(dst_g, sa_p1);
-    let dc_sa = bcx.ins().ushr_imm(dc_sa, 8);
+    let dc_sa = bcx.ins().ushr_imm_u(dc_sa, 8);
     let sc_da = bcx.ins().imul(src_g, da_p1);
-    let sc_da = bcx.ins().ushr_imm(sc_da, 8);
-    let sc_da_2 = bcx.ins().ishl_imm(sc_da, 1);
+    let sc_da = bcx.ins().ushr_imm_u(sc_da, 8);
+    let sc_da_2 = bcx.ins().ishl_imm_u(sc_da, 1);
     let unclamped = bcx.ins().iadd(dc_sa, sc_da_2);
     let unclamped = bcx.ins().isub(unclamped, sa_da);
     let blend_g = bcx.ins().smax(unclamped, zero_v);
     let blend_g = bcx.ins().umin(blend_g, sa_da);
     let og = emit_blend_with_edges(bcx, blend_g, src_g, dst_g, inv_da, inv_sa);
     let dc_sa = bcx.ins().imul(dst_b, sa_p1);
-    let dc_sa = bcx.ins().ushr_imm(dc_sa, 8);
+    let dc_sa = bcx.ins().ushr_imm_u(dc_sa, 8);
     let sc_da = bcx.ins().imul(src_b, da_p1);
-    let sc_da = bcx.ins().ushr_imm(sc_da, 8);
-    let sc_da_2 = bcx.ins().ishl_imm(sc_da, 1);
+    let sc_da = bcx.ins().ushr_imm_u(sc_da, 8);
+    let sc_da_2 = bcx.ins().ishl_imm_u(sc_da, 1);
     let unclamped = bcx.ins().iadd(dc_sa, sc_da_2);
     let unclamped = bcx.ins().isub(unclamped, sa_da);
     let blend_b = bcx.ins().smax(unclamped, zero_v);
@@ -1108,32 +1108,32 @@ pub(super) fn compose_linear_light_scalar(
     let da_p1 = bcx.ins().iadd(dst_a, one);
     let sa_p1 = bcx.ins().iadd(src_a, one);
     let sa_da = bcx.ins().imul(src_a, da_p1);
-    let sa_da = bcx.ins().ushr_imm(sa_da, 8);
+    let sa_da = bcx.ins().ushr_imm_u(sa_da, 8);
     let dc_sa = bcx.ins().imul(dst_r, sa_p1);
-    let dc_sa = bcx.ins().ushr_imm(dc_sa, 8);
+    let dc_sa = bcx.ins().ushr_imm_u(dc_sa, 8);
     let sc_da = bcx.ins().imul(src_r, da_p1);
-    let sc_da = bcx.ins().ushr_imm(sc_da, 8);
-    let sc_da_2 = bcx.ins().ishl_imm(sc_da, 1);
+    let sc_da = bcx.ins().ushr_imm_u(sc_da, 8);
+    let sc_da_2 = bcx.ins().ishl_imm_u(sc_da, 1);
     let unclamped = bcx.ins().iadd(dc_sa, sc_da_2);
     let unclamped = bcx.ins().isub(unclamped, sa_da);
     let blend_r = bcx.ins().smax(unclamped, zero);
     let blend_r = bcx.ins().umin(blend_r, sa_da);
     let or = emit_blend_with_edges(bcx, blend_r, src_r, dst_r, inv_da, inv_sa);
     let dc_sa = bcx.ins().imul(dst_g, sa_p1);
-    let dc_sa = bcx.ins().ushr_imm(dc_sa, 8);
+    let dc_sa = bcx.ins().ushr_imm_u(dc_sa, 8);
     let sc_da = bcx.ins().imul(src_g, da_p1);
-    let sc_da = bcx.ins().ushr_imm(sc_da, 8);
-    let sc_da_2 = bcx.ins().ishl_imm(sc_da, 1);
+    let sc_da = bcx.ins().ushr_imm_u(sc_da, 8);
+    let sc_da_2 = bcx.ins().ishl_imm_u(sc_da, 1);
     let unclamped = bcx.ins().iadd(dc_sa, sc_da_2);
     let unclamped = bcx.ins().isub(unclamped, sa_da);
     let blend_g = bcx.ins().smax(unclamped, zero);
     let blend_g = bcx.ins().umin(blend_g, sa_da);
     let og = emit_blend_with_edges(bcx, blend_g, src_g, dst_g, inv_da, inv_sa);
     let dc_sa = bcx.ins().imul(dst_b, sa_p1);
-    let dc_sa = bcx.ins().ushr_imm(dc_sa, 8);
+    let dc_sa = bcx.ins().ushr_imm_u(dc_sa, 8);
     let sc_da = bcx.ins().imul(src_b, da_p1);
-    let sc_da = bcx.ins().ushr_imm(sc_da, 8);
-    let sc_da_2 = bcx.ins().ishl_imm(sc_da, 1);
+    let sc_da = bcx.ins().ushr_imm_u(sc_da, 8);
+    let sc_da_2 = bcx.ins().ishl_imm_u(sc_da, 1);
     let unclamped = bcx.ins().iadd(dc_sa, sc_da_2);
     let unclamped = bcx.ins().isub(unclamped, sa_da);
     let blend_b = bcx.ins().smax(unclamped, zero);
@@ -1229,7 +1229,7 @@ pub(super) fn compose_color_dodge_scalar(
     let ratio = bcx.ins().udiv(numer, denom);
     let capped = bcx.ins().umin(ratio, dst_a);
     let blend_r = bcx.ins().imul(capped, sa_p1);
-    let blend_r = bcx.ins().ushr_imm(blend_r, 8);
+    let blend_r = bcx.ins().ushr_imm_u(blend_r, 8);
     let or = emit_blend_with_edges(bcx, blend_r, src_r, dst_r, inv_da, inv_sa);
     let denom = bcx.ins().isub(src_a, src_g);
     let denom = bcx.ins().umax(denom, one);
@@ -1237,7 +1237,7 @@ pub(super) fn compose_color_dodge_scalar(
     let ratio = bcx.ins().udiv(numer, denom);
     let capped = bcx.ins().umin(ratio, dst_a);
     let blend_g = bcx.ins().imul(capped, sa_p1);
-    let blend_g = bcx.ins().ushr_imm(blend_g, 8);
+    let blend_g = bcx.ins().ushr_imm_u(blend_g, 8);
     let og = emit_blend_with_edges(bcx, blend_g, src_g, dst_g, inv_da, inv_sa);
     let denom = bcx.ins().isub(src_a, src_b);
     let denom = bcx.ins().umax(denom, one);
@@ -1245,7 +1245,7 @@ pub(super) fn compose_color_dodge_scalar(
     let ratio = bcx.ins().udiv(numer, denom);
     let capped = bcx.ins().umin(ratio, dst_a);
     let blend_b = bcx.ins().imul(capped, sa_p1);
-    let blend_b = bcx.ins().ushr_imm(blend_b, 8);
+    let blend_b = bcx.ins().ushr_imm_u(blend_b, 8);
     let ob = emit_blend_with_edges(bcx, blend_b, src_b, dst_b, inv_da, inv_sa);
     (oa, or, og, ob)
 }
@@ -1341,7 +1341,7 @@ pub(super) fn compose_color_burn_scalar(
     let inner = bcx.ins().isub(dst_a, ratio);
     let inner = bcx.ins().smax(inner, zero);
     let blend_r = bcx.ins().imul(inner, sa_p1);
-    let blend_r = bcx.ins().ushr_imm(blend_r, 8);
+    let blend_r = bcx.ins().ushr_imm_u(blend_r, 8);
     let or = emit_blend_with_edges(bcx, blend_r, src_r, dst_r, inv_da, inv_sa);
     let denom = bcx.ins().umax(src_g, one);
     let da_minus_dc = bcx.ins().isub(dst_a, dst_g);
@@ -1350,7 +1350,7 @@ pub(super) fn compose_color_burn_scalar(
     let inner = bcx.ins().isub(dst_a, ratio);
     let inner = bcx.ins().smax(inner, zero);
     let blend_g = bcx.ins().imul(inner, sa_p1);
-    let blend_g = bcx.ins().ushr_imm(blend_g, 8);
+    let blend_g = bcx.ins().ushr_imm_u(blend_g, 8);
     let og = emit_blend_with_edges(bcx, blend_g, src_g, dst_g, inv_da, inv_sa);
     let denom = bcx.ins().umax(src_b, one);
     let da_minus_dc = bcx.ins().isub(dst_a, dst_b);
@@ -1359,7 +1359,7 @@ pub(super) fn compose_color_burn_scalar(
     let inner = bcx.ins().isub(dst_a, ratio);
     let inner = bcx.ins().smax(inner, zero);
     let blend_b = bcx.ins().imul(inner, sa_p1);
-    let blend_b = bcx.ins().ushr_imm(blend_b, 8);
+    let blend_b = bcx.ins().ushr_imm_u(blend_b, 8);
     let ob = emit_blend_with_edges(bcx, blend_b, src_b, dst_b, inv_da, inv_sa);
     (oa, or, og, ob)
 }

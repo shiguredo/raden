@@ -16,8 +16,8 @@ license: Apache-2.0
 
 ## 依存関係
 
-- cranelift-codegen / cranelift-frontend / cranelift-jit / cranelift-module / cranelift-native (~0.133)
-- Rust edition 2024 / rust-version 1.94
+- cranelift-codegen / cranelift-frontend / cranelift-jit / cranelift-module / cranelift-native (~0.135)
+- Rust edition 2024 / rust-version 1.95
 
 ## 公開型
 

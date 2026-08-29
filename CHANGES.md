@@ -13,6 +13,10 @@
 
 ### misc
 
+- [CHANGE] MSRV を 1.94 から 1.95 に引き上げる
+  - @voluntas
+- [UPDATE] cranelift を 0.133.3 から 0.135.1 に更新する
+  - @voluntas
 - [UPDATE] `Pattern::prepare` のアルファ値不透明判定を `chunks_exact` から `as_chunks` に変更する
   - @voluntas
 

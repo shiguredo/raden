@@ -374,7 +374,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## 制約
 
-- Rust 1.94 以上が必要 (`Cargo.toml` の `rust-version`)
+- Rust 1.95 以上が必要 (`Cargo.toml` の `rust-version`)
 - `PixelFormat::A8` は単色 `fill_rect` / `clear_*` / blit 宛先とスカラ合成 (`SrcOver` / `SrcCopy` / `Clear` / `Plus`) に対応。`fill_path`・グラデーション塗り・パターン塗りは未対応
 - フォントは TrueType アウトライン (glyf/loca) に対応。OpenType Layout のうち GSUB Single/Ligature (Type 1/4) と GPOS Single/Pair (Type 1/2) による基本シェーピング (liga / kern / clig) に対応。CFF / CFF2 アウトライン、Microsoft `kern` テーブル v0、可変フォントは未対応。Compound Glyph の point-matching (`ARGS_ARE_XY_VALUES == 0`) は原点フォールバック
 - クリッピングは矩形のみ対応 (パスクリッピングは未対応)
