@@ -1,25 +1,32 @@
-use proptest::prelude::*;
 use raden::api::stroke::{StrokeOptions, stroke_to_fill};
 use raden::{Path, StrokeCap, StrokeJoin};
+
+/// 1 テストあたりのケース数。
+const CASES: usize = 256;
+
+/// シード再現用の環境変数名。
+const SEED_ENV: &str = "RADEN_PBT_SEED";
 
 /// 線分をストロークした面積が length * width に近いことを検証する。
 /// Butt キャップでは矩形になるので面積は length * width に一致する。
 #[test]
-fn stroke_line_area() {
-    proptest!(|(
-        x0 in -50.0f64..50.0,
-        y0 in -50.0f64..50.0,
-        x1 in -50.0f64..50.0,
-        y1 in -50.0f64..50.0,
-        width in 0.5f64..10.0,
-    )| {
+fn stroke_line_area() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time(SEED_ENV)?;
+    let mut runner = noprop::Runner::new(seed);
+    runner.run(CASES, |ctx| {
+        let x0 = noprop::sample_f64_in(ctx, -50.0, 50.0);
+        let y0 = noprop::sample_f64_in(ctx, -50.0, 50.0);
+        let x1 = noprop::sample_f64_in(ctx, -50.0, 50.0);
+        let y1 = noprop::sample_f64_in(ctx, -50.0, 50.0);
+        let width = noprop::sample_f64_in(ctx, 0.5, 10.0);
+
         let dx = x1 - x0;
         let dy = y1 - y0;
         let length = (dx * dx + dy * dy).sqrt();
 
-        // ゼロ長の線分はスキップする
+        // ゼロ長の線分はケースごと棄却する
         if length < 0.01 {
-            return Ok(());
+            ctx.reject_case();
         }
 
         let mut input = Path::new();
@@ -31,14 +38,15 @@ fn stroke_line_area() {
             start_cap: StrokeCap::Butt,
             end_cap: StrokeCap::Butt,
             join: StrokeJoin::Bevel,
-            miter_limit: 4.0, ..Default::default()
+            miter_limit: 4.0,
+            ..Default::default()
         };
 
         let mut output = Path::new();
         stroke_to_fill(&input, &options, &mut output);
 
         // 出力パスが空でないことを確認する
-        prop_assert!(!output.is_empty(), "ストローク出力が空");
+        assert!(!output.is_empty(), "ストローク出力が空");
 
         // Shoelace formula で面積を計算する
         let area = compute_path_area(&output);
@@ -46,24 +54,27 @@ fn stroke_line_area() {
 
         // 誤差 10% 以内
         let ratio = area / expected_area;
-        prop_assert!(
+        assert!(
             (0.9..=1.1).contains(&ratio),
-            "面積比が許容範囲外: area={}, expected={}, ratio={}",
-            area, expected_area, ratio
+            "面積比が許容範囲外: area={area}, expected={expected_area}, ratio={ratio}"
         );
-    });
+        Ok(())
+    })?;
+    Ok(())
 }
 
 /// 閉じた矩形パスのストローク輪郭が空でないことを検証する。
 #[test]
-fn stroke_closed_path_symmetry() {
-    proptest!(|(
-        x in -50.0f64..50.0,
-        y in -50.0f64..50.0,
-        w in 5.0f64..50.0,
-        h in 5.0f64..50.0,
-        width in 0.5f64..5.0,
-    )| {
+fn stroke_closed_path_symmetry() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time(SEED_ENV)?;
+    let mut runner = noprop::Runner::new(seed);
+    runner.run(CASES, |ctx| {
+        let x = noprop::sample_f64_in(ctx, -50.0, 50.0);
+        let y = noprop::sample_f64_in(ctx, -50.0, 50.0);
+        let w = noprop::sample_f64_in(ctx, 5.0, 50.0);
+        let h = noprop::sample_f64_in(ctx, 5.0, 50.0);
+        let width = noprop::sample_f64_in(ctx, 0.5, 5.0);
+
         let mut input = Path::new();
         input.move_to(x, y);
         input.line_to(x + w, y);
@@ -76,26 +87,35 @@ fn stroke_closed_path_symmetry() {
             start_cap: StrokeCap::Butt,
             end_cap: StrokeCap::Butt,
             join: StrokeJoin::Bevel,
-            miter_limit: 4.0, ..Default::default()
+            miter_limit: 4.0,
+            ..Default::default()
         };
 
         let mut output = Path::new();
         stroke_to_fill(&input, &options, &mut output);
 
-        prop_assert!(!output.is_empty(), "閉じたパスのストローク出力が空");
-        prop_assert!(output.points().len() >= 4, "点が不足: {}", output.points().len());
-    });
+        assert!(!output.is_empty(), "閉じたパスのストローク出力が空");
+        assert!(
+            output.points().len() >= 4,
+            "点が不足: {}",
+            output.points().len()
+        );
+        Ok(())
+    })?;
+    Ok(())
 }
 
 /// width=0 でストロークすると空パスになることを検証する。
 #[test]
-fn stroke_zero_width_empty() {
-    proptest!(|(
-        x0 in -50.0f64..50.0,
-        y0 in -50.0f64..50.0,
-        x1 in -50.0f64..50.0,
-        y1 in -50.0f64..50.0,
-    )| {
+fn stroke_zero_width_empty() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time(SEED_ENV)?;
+    let mut runner = noprop::Runner::new(seed);
+    runner.run(CASES, |ctx| {
+        let x0 = noprop::sample_f64_in(ctx, -50.0, 50.0);
+        let y0 = noprop::sample_f64_in(ctx, -50.0, 50.0);
+        let x1 = noprop::sample_f64_in(ctx, -50.0, 50.0);
+        let y1 = noprop::sample_f64_in(ctx, -50.0, 50.0);
+
         let mut input = Path::new();
         input.move_to(x0, y0);
         input.line_to(x1, y1);
@@ -105,24 +125,29 @@ fn stroke_zero_width_empty() {
             start_cap: StrokeCap::Butt,
             end_cap: StrokeCap::Butt,
             join: StrokeJoin::Bevel,
-            miter_limit: 4.0, ..Default::default()
+            miter_limit: 4.0,
+            ..Default::default()
         };
 
         let mut output = Path::new();
         stroke_to_fill(&input, &options, &mut output);
 
-        prop_assert!(output.is_empty(), "width=0 なのに出力が空でない");
-    });
+        assert!(output.is_empty(), "width=0 なのに出力が空でない");
+        Ok(())
+    })?;
+    Ok(())
 }
 
 /// ゼロ長線分、同一点 MoveTo 等の退化ケースでパニックしないことを検証する。
 #[test]
-fn stroke_degenerate_no_panic() {
-    proptest!(|(
-        x in -100.0f64..100.0,
-        y in -100.0f64..100.0,
-        width in 0.1f64..10.0,
-    )| {
+fn stroke_degenerate_no_panic() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time(SEED_ENV)?;
+    let mut runner = noprop::Runner::new(seed);
+    runner.run(CASES, |ctx| {
+        let x = noprop::sample_f64_in(ctx, -100.0, 100.0);
+        let y = noprop::sample_f64_in(ctx, -100.0, 100.0);
+        let width = noprop::sample_f64_in(ctx, 0.1, 10.0);
+
         // ゼロ長線分
         let mut input = Path::new();
         input.move_to(x, y);
@@ -133,7 +158,8 @@ fn stroke_degenerate_no_panic() {
             start_cap: StrokeCap::Butt,
             end_cap: StrokeCap::Butt,
             join: StrokeJoin::Bevel,
-            miter_limit: 4.0, ..Default::default()
+            miter_limit: 4.0,
+            ..Default::default()
         };
 
         let mut output = Path::new();
@@ -158,31 +184,30 @@ fn stroke_degenerate_no_panic() {
 
         output.clear();
         stroke_to_fill(&input4, &options, &mut output);
-    });
+        Ok(())
+    })?;
+    Ok(())
 }
 
 /// 全 Cap タイプでパニックしないことを検証する。
 #[test]
-fn stroke_cap_types_no_panic() {
-    proptest!(|(
-        x0 in -50.0f64..50.0,
-        y0 in -50.0f64..50.0,
-        x1 in -50.0f64..50.0,
-        y1 in -50.0f64..50.0,
-        width in 0.5f64..10.0,
-        cap_idx in 0u8..3,
-    )| {
+fn stroke_cap_types_no_panic() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time(SEED_ENV)?;
+    let mut runner = noprop::Runner::new(seed);
+    runner.run(CASES, |ctx| {
+        let x0 = noprop::sample_f64_in(ctx, -50.0, 50.0);
+        let y0 = noprop::sample_f64_in(ctx, -50.0, 50.0);
+        let x1 = noprop::sample_f64_in(ctx, -50.0, 50.0);
+        let y1 = noprop::sample_f64_in(ctx, -50.0, 50.0);
+        let width = noprop::sample_f64_in(ctx, 0.5, 10.0);
+        let cap =
+            noprop::sample_choice(ctx, &[StrokeCap::Butt, StrokeCap::Square, StrokeCap::Round]);
+
         let dx = x1 - x0;
         let dy = y1 - y0;
         if (dx * dx + dy * dy).sqrt() < 0.01 {
-            return Ok(());
+            ctx.reject_case();
         }
-
-        let cap = match cap_idx {
-            0 => StrokeCap::Butt,
-            1 => StrokeCap::Square,
-            _ => StrokeCap::Round,
-        };
 
         let mut input = Path::new();
         input.move_to(x0, y0);
@@ -193,43 +218,49 @@ fn stroke_cap_types_no_panic() {
             start_cap: cap,
             end_cap: cap,
             join: StrokeJoin::Bevel,
-            miter_limit: 4.0, ..Default::default()
+            miter_limit: 4.0,
+            ..Default::default()
         };
 
         let mut output = Path::new();
         stroke_to_fill(&input, &options, &mut output);
 
-        prop_assert!(!output.is_empty(), "cap={:?} で出力が空", cap);
-    });
+        assert!(!output.is_empty(), "cap={cap:?} で出力が空");
+        Ok(())
+    })?;
+    Ok(())
 }
 
 /// 全 Join タイプでパニックしないことを検証する。
 #[test]
-fn stroke_join_types_no_panic() {
-    proptest!(|(
-        x0 in -30.0f64..30.0,
-        y0 in -30.0f64..30.0,
-        x1 in -30.0f64..30.0,
-        y1 in -30.0f64..30.0,
-        x2 in -30.0f64..30.0,
-        y2 in -30.0f64..30.0,
-        width in 0.5f64..5.0,
-        join_idx in 0u8..5,
-    )| {
-        // 退化した線分をスキップする
+fn stroke_join_types_no_panic() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time(SEED_ENV)?;
+    let mut runner = noprop::Runner::new(seed);
+    runner.run(CASES, |ctx| {
+        let x0 = noprop::sample_f64_in(ctx, -30.0, 30.0);
+        let y0 = noprop::sample_f64_in(ctx, -30.0, 30.0);
+        let x1 = noprop::sample_f64_in(ctx, -30.0, 30.0);
+        let y1 = noprop::sample_f64_in(ctx, -30.0, 30.0);
+        let x2 = noprop::sample_f64_in(ctx, -30.0, 30.0);
+        let y2 = noprop::sample_f64_in(ctx, -30.0, 30.0);
+        let width = noprop::sample_f64_in(ctx, 0.5, 5.0);
+        let join = noprop::sample_choice(
+            ctx,
+            &[
+                StrokeJoin::MiterClip,
+                StrokeJoin::MiterBevel,
+                StrokeJoin::MiterRound,
+                StrokeJoin::Bevel,
+                StrokeJoin::Round,
+            ],
+        );
+
+        // 退化した線分をケースごと棄却する
         let d1 = ((x1 - x0).powi(2) + (y1 - y0).powi(2)).sqrt();
         let d2 = ((x2 - x1).powi(2) + (y2 - y1).powi(2)).sqrt();
         if d1 < 0.01 || d2 < 0.01 {
-            return Ok(());
+            ctx.reject_case();
         }
-
-        let join = match join_idx {
-            0 => StrokeJoin::MiterClip,
-            1 => StrokeJoin::MiterBevel,
-            2 => StrokeJoin::MiterRound,
-            3 => StrokeJoin::Bevel,
-            _ => StrokeJoin::Round,
-        };
 
         let mut input = Path::new();
         input.move_to(x0, y0);
@@ -241,14 +272,17 @@ fn stroke_join_types_no_panic() {
             start_cap: StrokeCap::Butt,
             end_cap: StrokeCap::Butt,
             join,
-            miter_limit: 4.0, ..Default::default()
+            miter_limit: 4.0,
+            ..Default::default()
         };
 
         let mut output = Path::new();
         stroke_to_fill(&input, &options, &mut output);
 
-        prop_assert!(!output.is_empty(), "join={:?} で出力が空", join);
-    });
+        assert!(!output.is_empty(), "join={join:?} で出力が空");
+        Ok(())
+    })?;
+    Ok(())
 }
 
 /// Shoelace formula でパスの面積 (絶対値) を計算する。

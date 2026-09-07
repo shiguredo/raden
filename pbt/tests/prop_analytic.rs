@@ -1,7 +1,12 @@
-use proptest::prelude::*;
 use raden::FillRule;
 use raden::pipeline::compiler::PipelineCompiler;
 use raden::raster::analytic::sweep_reference;
+
+/// 1 テストあたりのケース数。
+const CASES: usize = 256;
+
+/// シード再現用の環境変数名。
+const SEED_ENV: &str = "RADEN_PBT_SEED";
 
 /// テスト用の JIT sweep 関数をコンパイルする。
 ///
@@ -12,26 +17,34 @@ fn compile_sweep(fill_rule: FillRule) -> raden::pipeline::cache::SweepFn {
     compiler.compile_sweep(fill_rule)
 }
 
-/// JIT sweep の出力がリファレンス実装と一致することを検証する strategy。
-///
+/// 半開区間 `[min, max)` の一様 `i32` をサンプリングする。
+fn sample_i32_in(ctx: &mut noprop::TestCaseContext, min: i32, max: i32) -> i32 {
+    let span = (max as i64 - min as i64) as u64;
+    min + noprop::sample_u64_in(ctx, 0..span) as i32
+}
+
 /// cells の各要素は area-cover パック値 (512 倍スケール) なので、
 /// 実際の使用範囲 (-131072..131072) で生成する。
-fn cells_strategy(max_len: usize) -> impl Strategy<Value = Vec<i32>> {
-    prop::collection::vec(-131072i32..131072, 0..=max_len)
+fn sample_cells(ctx: &mut noprop::TestCaseContext, max_len: usize) -> Vec<i32> {
+    let len = noprop::sample_usize_in(ctx, 0..=max_len);
+    (0..len)
+        .map(|_| sample_i32_in(ctx, -131072, 131072))
+        .collect()
 }
 
-/// FillRule の strategy。
-fn fill_rule_strategy() -> impl Strategy<Value = FillRule> {
-    prop_oneof![Just(FillRule::NonZero), Just(FillRule::EvenOdd)]
+/// FillRule を一様に選ぶ。
+fn sample_fill_rule(ctx: &mut noprop::TestCaseContext) -> FillRule {
+    noprop::sample_choice(ctx, &[FillRule::NonZero, FillRule::EvenOdd])
 }
 
-proptest! {
-    /// JIT sweep と Rust リファレンスの出力が完全に一致する。
-    #[test]
-    fn jit_sweep_matches_reference(
-        cells in cells_strategy(256),
-        fill_rule in fill_rule_strategy()
-    ) {
+/// JIT sweep と Rust リファレンスの出力が完全に一致する。
+#[test]
+fn jit_sweep_matches_reference() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time(SEED_ENV)?;
+    let mut runner = noprop::Runner::new(seed);
+    runner.run(CASES, |ctx| {
+        let cells = sample_cells(ctx, 256);
+        let fill_rule = sample_fill_rule(ctx);
         let sweep_fn = compile_sweep(fill_rule);
         let len = cells.len();
 
@@ -50,34 +63,53 @@ proptest! {
             }
         }
 
-        prop_assert_eq!(&jit_buf, &ref_buf, "JIT sweep とリファレンスの出力が不一致 (fill_rule={:?})", fill_rule);
+        assert_eq!(
+            &jit_buf, &ref_buf,
+            "JIT sweep とリファレンスの出力が不一致 (fill_rule={fill_rule:?})"
+        );
 
         // JIT sweep がセルをゼロクリアしたことを検証する
         if len > 0 {
-            prop_assert!(jit_cells.iter().all(|&c| c == 0), "JIT sweep がセルをゼロクリアしていない");
+            assert!(
+                jit_cells.iter().all(|&c| c == 0),
+                "JIT sweep がセルをゼロクリアしていない"
+            );
         }
-    }
+        Ok(())
+    })?;
+    Ok(())
+}
 
-    /// len=0 で JIT sweep がクラッシュしないことを検証する。
-    #[test]
-    fn jit_sweep_empty(fill_rule in fill_rule_strategy()) {
+/// len=0 で JIT sweep がクラッシュしないことを検証する。
+#[test]
+fn jit_sweep_empty() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time(SEED_ENV)?;
+    let mut runner = noprop::Runner::new(seed);
+    runner.run(CASES, |ctx| {
+        let fill_rule = sample_fill_rule(ctx);
         let sweep_fn = compile_sweep(fill_rule);
         let mut cells: Vec<i32> = vec![];
         let mut buf: Vec<u8> = vec![];
         unsafe {
             sweep_fn(cells.as_mut_ptr(), buf.as_mut_ptr(), 0);
         }
-        prop_assert!(buf.is_empty());
-    }
+        assert!(buf.is_empty());
+        Ok(())
+    })?;
+    Ok(())
+}
 
-    /// 4 の倍数でない長さでも正しく処理される。
-    #[test]
-    fn jit_sweep_non_multiple_of_4(
-        base in cells_strategy(60),
-        extra_len in 1usize..4,
-        fill_rule in fill_rule_strategy()
-    ) {
+/// 4 の倍数でない長さでも正しく処理される。
+#[test]
+fn jit_sweep_non_multiple_of_4() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time(SEED_ENV)?;
+    let mut runner = noprop::Runner::new(seed);
+    runner.run(CASES, |ctx| {
+        let base = sample_cells(ctx, 60);
+        let extra_len = noprop::sample_usize_in(ctx, 1..4);
+        let fill_rule = sample_fill_rule(ctx);
         let sweep_fn = compile_sweep(fill_rule);
+
         // base の長さを 4 の倍数にしてから extra_len を足す
         let aligned_len = (base.len() / 4) * 4;
         let total_len = aligned_len + extra_len;
@@ -98,15 +130,23 @@ proptest! {
             }
         }
 
-        prop_assert_eq!(&jit_buf, &ref_buf, "余り要素の処理が不一致 (len={}, fill_rule={:?})", total_len, fill_rule);
-    }
+        assert_eq!(
+            &jit_buf, &ref_buf,
+            "余り要素の処理が不一致 (len={total_len}, fill_rule={fill_rule:?})"
+        );
+        Ok(())
+    })?;
+    Ok(())
+}
 
-    /// 大きな累積値 (|cover >> 9| > 255) が 255 にクランプされる。
-    #[test]
-    fn jit_sweep_clamp_large_values(
-        scale in 131072i32..262144,
-        fill_rule in fill_rule_strategy()
-    ) {
+/// 大きな累積値 (|cover >> 9| > 255) が 255 にクランプされる。
+#[test]
+fn jit_sweep_clamp_large_values() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time(SEED_ENV)?;
+    let mut runner = noprop::Runner::new(seed);
+    runner.run(CASES, |ctx| {
+        let scale = sample_i32_in(ctx, 131072, 262144);
+        let fill_rule = sample_fill_rule(ctx);
         let sweep_fn = compile_sweep(fill_rule);
         let mut cells = vec![scale, 0, 0, -scale];
         let mut ref_buf = vec![0u8; 4];
@@ -117,22 +157,27 @@ proptest! {
             sweep_fn(cells.as_mut_ptr(), jit_buf.as_mut_ptr(), 4);
         }
 
-        prop_assert_eq!(&jit_buf, &ref_buf);
+        assert_eq!(&jit_buf, &ref_buf);
         // NonZero では |cover >> 9| > 255 なので必ず 255 にクランプされる。
         // EvenOdd では周期的折り返しにより 255 とは限らない。
         if fill_rule == FillRule::NonZero {
-            prop_assert_eq!(jit_buf[0], 255, "NonZero: 255 にクランプされるべき");
+            assert_eq!(jit_buf[0], 255, "NonZero: 255 にクランプされるべき");
         }
-    }
+        Ok(())
+    })?;
+    Ok(())
+}
 
-    /// 負の累積値が sshr(9) + fill_rule 変換で正しく処理される。
-    #[test]
-    fn jit_sweep_negative_cover(
-        cells in prop::collection::vec(-131072i32..0, 1..=32),
-        fill_rule in fill_rule_strategy()
-    ) {
+/// 負の累積値が sshr(9) + fill_rule 変換で正しく処理される。
+#[test]
+fn jit_sweep_negative_cover() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time(SEED_ENV)?;
+    let mut runner = noprop::Runner::new(seed);
+    runner.run(CASES, |ctx| {
+        let len = noprop::sample_usize_in(ctx, 1..=32);
+        let cells: Vec<i32> = (0..len).map(|_| sample_i32_in(ctx, -131072, 0)).collect();
+        let fill_rule = sample_fill_rule(ctx);
         let sweep_fn = compile_sweep(fill_rule);
-        let len = cells.len();
         let mut ref_buf = vec![0u8; len];
         sweep_reference(&cells, &mut ref_buf, 0, len, fill_rule);
 
@@ -142,20 +187,25 @@ proptest! {
             sweep_fn(jit_cells.as_mut_ptr(), jit_buf.as_mut_ptr(), len);
         }
 
-        prop_assert_eq!(&jit_buf, &ref_buf);
-    }
+        assert_eq!(&jit_buf, &ref_buf);
+        Ok(())
+    })?;
+    Ok(())
+}
 
-    /// area-cover パック値の sweep が正しいカバレッジを生成する。
-    ///
-    /// cover * 512 - area を cells[x] に、area を cells[x+1] に書き込み、
-    /// sweep で正しいカバレッジが得られることを検証する。
-    #[test]
-    fn jit_sweep_area_cover_pack(
-        cover_val in 1i32..=256,
-        area_frac in 0.0f64..=1.0,
-        cell_pos in 0usize..8,
-        fill_rule in fill_rule_strategy()
-    ) {
+/// area-cover パック値の sweep が正しいカバレッジを生成する。
+///
+/// cover * 512 - area を cells[x] に、area を cells[x+1] に書き込み、
+/// sweep で正しいカバレッジが得られることを検証する。
+#[test]
+fn jit_sweep_area_cover_pack() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time(SEED_ENV)?;
+    let mut runner = noprop::Runner::new(seed);
+    runner.run(CASES, |ctx| {
+        let cover_val = noprop::sample_usize_in(ctx, 1..=256) as i32;
+        let area_frac = noprop::sample_f64_in(ctx, 0.0, 1.0);
+        let cell_pos = noprop::sample_usize_in(ctx, 0..8);
+        let fill_rule = sample_fill_rule(ctx);
         let sweep_fn = compile_sweep(fill_rule);
         let len = cell_pos + 2; // cell_pos と cell_pos+1 に書き込むため
         let mut cells = vec![0i32; len];
@@ -175,24 +225,35 @@ proptest! {
             sweep_fn(cells.as_mut_ptr(), jit_buf.as_mut_ptr(), len);
         }
 
-        prop_assert_eq!(&jit_buf, &ref_buf, "area-cover パック値の sweep が不一致 (fill_rule={:?})", fill_rule);
+        assert_eq!(
+            &jit_buf, &ref_buf,
+            "area-cover パック値の sweep が不一致 (fill_rule={fill_rule:?})"
+        );
 
         // NonZero の場合のみ、cell_pos+1 の累積値は cover_val*512 → coverage = cover_val
         if fill_rule == FillRule::NonZero && cell_pos + 1 < len {
             let expected_full = (cover_val as u32).min(255) as u8;
-            prop_assert_eq!(
-                jit_buf[cell_pos + 1], expected_full,
+            assert_eq!(
+                jit_buf[cell_pos + 1],
+                expected_full,
                 "cell_pos+1 のカバレッジが cover_val に一致するべき"
             );
         }
-    }
+        Ok(())
+    })?;
+    Ok(())
+}
 
-    /// EvenOdd の周期性を検証する。
-    ///
-    /// 2 winding (cover >> 9 == 512) でカバレッジが 0 に戻ること、
-    /// 奇数 winding (cover >> 9 == 256) でカバレッジが 255 になることを確認する。
-    #[test]
-    fn even_odd_periodicity(winding_count in 0u32..8) {
+/// EvenOdd の周期性を検証する。
+///
+/// 2 winding (cover >> 9 == 512) でカバレッジが 0 に戻ること、
+/// 奇数 winding (cover >> 9 == 256) でカバレッジが 255 になることを確認する。
+#[test]
+fn even_odd_periodicity() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time(SEED_ENV)?;
+    let mut runner = noprop::Runner::new(seed);
+    runner.run(CASES, |ctx| {
+        let winding_count = noprop::sample_usize_in(ctx, 0..8) as u32;
         let sweep_fn = compile_sweep(FillRule::EvenOdd);
         // winding_count 個分の cover を蓄積する
         // 1 winding = cover >> 9 == 256 → cells 値 = 256 * 512 = 131072
@@ -211,18 +272,29 @@ proptest! {
             sweep_fn(cells.as_mut_ptr(), jit_buf.as_mut_ptr(), len);
         }
 
-        prop_assert_eq!(&jit_buf, &ref_buf, "EvenOdd 周期性テストで JIT とリファレンスが不一致");
+        assert_eq!(
+            &jit_buf, &ref_buf,
+            "EvenOdd 周期性テストで JIT とリファレンスが不一致"
+        );
 
         // 最後の要素 (winding_count 個目の加算後) のカバレッジを検証
         if winding_count > 0 {
             let last = jit_buf[winding_count as usize - 1];
             if winding_count % 2 == 1 {
                 // 奇数 winding → 内側 → 255
-                prop_assert_eq!(last, 255, "奇数 winding でカバレッジが 255 になるべき (winding={})", winding_count);
+                assert_eq!(
+                    last, 255,
+                    "奇数 winding でカバレッジが 255 になるべき (winding={winding_count})"
+                );
             } else {
                 // 偶数 winding → 外側 → 0
-                prop_assert_eq!(last, 0, "偶数 winding でカバレッジが 0 になるべき (winding={})", winding_count);
+                assert_eq!(
+                    last, 0,
+                    "偶数 winding でカバレッジが 0 になるべき (winding={winding_count})"
+                );
             }
         }
-    }
+        Ok(())
+    })?;
+    Ok(())
 }

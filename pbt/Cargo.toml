@@ -14,4 +14,5 @@ path = "tests/prop_font/main.rs"
 raden = { path = ".." }
 
 [dev-dependencies]
-proptest = "1"
+# Property-Based Testing (命令的サンプラー)
+noprop = "0.2"
