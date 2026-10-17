@@ -13,11 +13,11 @@
 
 ### misc
 
-- [CHANGE] MSRV を 1.94 から 1.95 に引き上げる
+- [CHANGE] MSRV を 1.94 から 1.96 に引き上げる
   - @voluntas
 - [CHANGE] PBT に noprop を導入する
   - @voluntas
-- [UPDATE] cranelift を 0.133.3 から 0.135.1 に更新する
+- [UPDATE] cranelift を 0.133.1 から 0.136.3 に更新する
   - @voluntas
 - [UPDATE] `Pattern::prepare` のアルファ値不透明判定を `chunks_exact` から `as_chunks` に変更する
   - @voluntas
