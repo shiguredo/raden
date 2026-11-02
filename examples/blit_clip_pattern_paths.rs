@@ -4,9 +4,12 @@ use raden::{
     Circle, CompOp, Context, Image, Matrix2D, Path, Pattern, PatternFilter, PipelineRuntime,
     PixelFormat, Rect, Rgba32, StrokeCap, StrokeJoin, premultiply_rgba,
 };
-use raw_player::{
-    Event, KEYCODE_ESCAPE, Renderer, Texture, VideoFormat, Window, init, poll_event, quit,
-};
+use raw_player::event::{Event, KEYCODE_ESCAPE, poll_event};
+use raw_player::renderer::Renderer;
+use raw_player::texture::Texture;
+use raw_player::video_format::VideoFormat;
+use raw_player::window::Window;
+use raw_player::{init, quit};
 
 /// チェッカー模様の `Prgb32` 画像 (blit 用。回転や拡大の違いが分かる)。
 fn checkerboard_tile(size: u32) -> Image {

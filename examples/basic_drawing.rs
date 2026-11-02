@@ -1,7 +1,10 @@
 use raden::{CompOp, Context, Image, PipelineRuntime, PixelFormat, Rect, Rgba32};
-use raw_player::{
-    Event, KEYCODE_ESCAPE, Renderer, Texture, VideoFormat, Window, init, poll_event, quit,
-};
+use raw_player::event::{Event, KEYCODE_ESCAPE, poll_event};
+use raw_player::renderer::Renderer;
+use raw_player::texture::Texture;
+use raw_player::video_format::VideoFormat;
+use raw_player::window::Window;
+use raw_player::{init, quit};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // raden で描画

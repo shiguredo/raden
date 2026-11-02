@@ -2,7 +2,7 @@
 name = "raden"
 version = "2026.2.0"
 edition = "2024"
-rust-version = "1.96"
+rust-version = "1.97"
 description = "2D Vector Graphics Library"
 readme = "README.md"
 homepage = "https://github.com/shiguredo/raden"
@@ -60,11 +60,11 @@ name = "matrix"
 
 [dependencies]
 # Cranelift JIT (ピクセル合成パイプラインのネイティブコード生成)
-cranelift-codegen = "~0.136"
-cranelift-frontend = "~0.136"
-cranelift-jit = "~0.136"
-cranelift-module = "~0.136"
-cranelift-native = "~0.136"
+cranelift-codegen = "0.137"
+cranelift-frontend = "0.137"
+cranelift-jit = "0.137"
+cranelift-module = "0.137"
+cranelift-native = "0.137"
 
 [dev-dependencies]
 # ベンチマークフレームワーク
@@ -72,4 +72,4 @@ criterion = { version = "0.8", features = ["html_reports"] }
 # ベンチマークの乱数生成
 rand = { version = "0.10", features = ["chacha"] }
 # サンプルの SDL3 ウィンドウ表示
-raw_player = "2026.2"
+raw_player = "2026.3"

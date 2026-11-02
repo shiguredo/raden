@@ -2,9 +2,12 @@ use raden::{
     Circle, CompOp, Context, Image, Line, Path, PipelineRuntime, PixelFormat, Rect, Rgba32,
     StrokeCap, StrokeJoin,
 };
-use raw_player::{
-    Event, KEYCODE_ESCAPE, Renderer, Texture, VideoFormat, Window, init, poll_event, quit,
-};
+use raw_player::event::{Event, KEYCODE_ESCAPE, poll_event};
+use raw_player::renderer::Renderer;
+use raw_player::texture::Texture;
+use raw_player::video_format::VideoFormat;
+use raw_player::window::Window;
+use raw_player::{init, quit};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let width = 1280u32;

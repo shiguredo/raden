@@ -332,7 +332,7 @@ cargo run --example tiger --release
 ### raden_player
 
 [raw-player](https://github.com/shiguredo/raw-player) の `blend2d_player.py` と同等のアニメーションを
-`raw_player::VideoPlayer` API で表示する。
+`raw_player::video_player::VideoPlayer` API で表示する。
 
 ```bash
 cargo run --example raden_player --release

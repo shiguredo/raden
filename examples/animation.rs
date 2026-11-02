@@ -1,10 +1,12 @@
 use std::time::Instant;
 
 use raden::{Circle, CompOp, Context, Image, PipelineRuntime, PixelFormat, Rgba32};
-use raw_player::{
-    BLENDMODE_BLEND, Event, KEYCODE_ESCAPE, Renderer, Texture, VideoFormat, Window, init,
-    poll_event, quit,
-};
+use raw_player::event::{Event, KEYCODE_ESCAPE, poll_event};
+use raw_player::renderer::Renderer;
+use raw_player::texture::Texture;
+use raw_player::video_format::VideoFormat;
+use raw_player::window::Window;
+use raw_player::{BLENDMODE_BLEND, init, quit};
 
 const NUM_WAVES: usize = 5;
 const NUM_BALLS: usize = 8;
@@ -127,7 +129,7 @@ fn render_text_overlay(
     width: u32,
     height: u32,
     target_fps: u32,
-) -> Result<(), raw_player::Error> {
+) -> Result<(), raw_player::error::Error> {
     renderer.set_draw_blend_mode(BLENDMODE_BLEND)?;
 
     // 経過時間をミリ秒で大きく表示 (影付き)
