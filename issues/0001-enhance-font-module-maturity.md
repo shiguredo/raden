@@ -232,6 +232,6 @@ closed にする順序は 0024 → 0026 → 0027 の直列を原則とする。0
 
 ### クロスプラットフォーム
 
-- `.github/workflows/ci.yml` の matrix 全構成 (`ubuntu-24.04` / `ubuntu-24.04-arm` / `ubuntu-22.04` / `ubuntu-22.04-arm` / `macos-26` / `macos-15` / `windows-2025`) で font テストがパス。GitHub Actions の現行 macOS ランナーはいずれも arm64 (x86_64 ランナーは現状提供されていない)
+- `.github/workflows/ci.yml` の matrix 全構成 (`ubuntu-24.04` / `ubuntu-24.04-arm` / `ubuntu-26.04` / `ubuntu-26.04-arm` / `xcode-27` / `macos-15` / `windows-2025-vs2026`) で font テストがパス。GitHub Actions の現行 macOS ランナーはいずれも arm64 (x86_64 ランナーは現状提供されていない)
 - `fetch_source_sans_3_bytes` / `fetch_source_serif_4_bytes` 経由で全プラットフォームのフォントテストが pass する
 - Arial.ttf への依存テストはリポジトリフォントへ切り替えるか、`load_arial()` ヘルパー撤去を別 concrete issue / PR で実施し、CI でスキップされないテスト構成にする

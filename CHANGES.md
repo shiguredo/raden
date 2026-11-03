@@ -21,6 +21,12 @@
   - @voluntas
 - [UPDATE] raw_player を 2026.2.0 から 2026.3.0 に更新する
   - @voluntas
+- [UPDATE] CI の Ubuntu 22.04 を外し Ubuntu 26.04 を加える
+  - @voluntas
+- [UPDATE] CI の Windows ランナーを windows-2025-vs2026 に切り替える
+  - @voluntas
+- [UPDATE] CI の macOS 26 を外し xcode-27 を加える
+  - @voluntas
 - [UPDATE] `Pattern::prepare` のアルファ値不透明判定を `chunks_exact` から `as_chunks` に変更する
   - @voluntas
 
